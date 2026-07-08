@@ -925,14 +925,18 @@
     document.getElementById('cancelAutoModal').onclick = () => root.innerHTML = '';
     document.getElementById('backdrop').onclick = (e) => { if(e.target.id==='backdrop') root.innerHTML=''; };
     document.getElementById('confirmAutoModal').onclick = () => {
+      let skipped = 0;
       plan.filter(r=>r.ok).forEach(r => {
         const pl = planners.find(p=>p.id===r.plannerId);
-        if(!pl) return;
+        // 미리보기와 확정 사이에 다른 사람이 이미 이 프로젝트를 배정했을 수도 있으니(실시간 협업 도구라) 다시 확인
+        const alreadyTaken = planners.some(p2 => p2.projects.includes(r.code));
+        if(!pl || alreadyTaken){ skipped++; return; }
         pl.projects.push(r.code);
         autoFillTemplate(pl, r.code);
       });
       savePlanners(); recalcAll(); persist(); rerender();
       root.innerHTML = '';
+      if(skipped > 0) alert(`${skipped}개 프로젝트는 그 사이 다른 곳에서 이미 배정되어 건너뛰었습니다.`);
     };
   }
 
