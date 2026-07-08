@@ -1023,7 +1023,7 @@
       const span = Math.round((t.end-t.start)/86400000)+1;
       const bar = document.createElement('div');
       bar.className = 'cal-bar ' + (conflictIds.has(t.id) ? 'flag' : (t.locked?'locked':'normal'));
-      bar.style.left = (startOffset*dayW)+'px'; bar.style.width = (span*span-2)+'px';
+      bar.style.left = (startOffset*dayW)+'px'; bar.style.width = (span*dayW-2)+'px';
       bar.textContent = (t.locked?'🔒 ':'') + `[${t.project}] ` + t.name;
       bar.title = `${t.name} (${fmt(t.start)} ~ ${fmt(t.end)})`;
       track.appendChild(bar);
@@ -1054,7 +1054,7 @@
       badge.style.marginRight = '6px';
       nameTd.appendChild(badge);
     }
-    const nameInput = document.createElement('input'); nameInput.type='text'; nameInput.style.width='220px'; nameInput.value=t.name;
+    const nameInput = document.createElement('input'); nameInput.type='text'; nameInput.style.width='170px'; nameInput.value=t.name;
     // [수정] 기획자 뷰 업무명 수정 시에도 깜빡임 제거
     nameInput.onchange = () => { t.name = nameInput.value; persist(); };
     nameTd.appendChild(nameInput);
@@ -1123,13 +1123,13 @@
     if(allMyTasks.length === 0) return;
 
     const horizonEnd = addDays(TODAY, 60);
-    let freeCount = 0, overloadCount = 0;
+    let netCapacity = 0, overloadCount = 0;
     let cursor = new Date(TODAY);
     while(cursor <= horizonEnd){
       if(!isNonWorking(cursor)){
         const load = allMyTasks.filter(t => t.start <= cursor && cursor <= t.end).length;
-        if(load === 0) freeCount++;
-        else if(load >= 2) overloadCount++;
+        netCapacity += (1 - load); // 하루 용량 1 - 그날 업무 수 (0건이면 +1, 2건이면 -1)
+        if(load >= 2) overloadCount++;
       }
       cursor = addDays(cursor, 1);
     }
@@ -1139,7 +1139,7 @@
     panel.innerHTML = `<h2>${pl.name} 전체 업무량 (담당+지원 프로젝트 전체 기준)</h2>
       <div class="stats" style="margin-bottom:8px;">
         <div class="stat"><div class="num">${allMyTasks.length}</div><div class="lbl">전체 업무 (지원 ${supportTasks.length}건 포함)</div></div>
-        <div class="stat ok"><div class="num">${freeCount}</div><div class="lbl">앞으로 60일 중 여유일(근무일)</div></div>
+        <div class="stat ${netCapacity<0?'warn':'ok'}"><div class="num">${netCapacity>0?'+':''}${netCapacity}</div><div class="lbl">앞으로 60일 순 여유(근무일 기준)</div></div>
         <div class="stat ${overloadCount>0?'warn':'ok'}"><div class="num">${overloadCount}</div><div class="lbl">2건 이상 겹치는 날</div></div>
       </div>`;
     container.appendChild(panel);
@@ -1252,7 +1252,7 @@
     splitRow.style.display = 'flex'; splitRow.style.gap = '14px'; splitRow.style.alignItems = 'flex-start';
     main.appendChild(splitRow);
 
-    const leftCol = document.createElement('div'); leftCol.style.flex = '1'; leftCol.style.minWidth = '0';
+    const leftCol = document.createElement('div'); leftCol.style.flex = '1.6'; leftCol.style.minWidth = '0';
     const rightCol = document.createElement('div');
     rightCol.style.flex = '1'; rightCol.style.minWidth = '0';
     rightCol.style.position = 'sticky'; rightCol.style.top = '18px'; rightCol.style.alignSelf = 'flex-start';
@@ -1272,38 +1272,6 @@
       tabsBlock.appendChild(note);
     }
 
-    const kwToggle = document.createElement('button');
-    kwToggle.className = 'sub-nav-toggle';
-    kwToggle.style.marginTop = '10px';
-    kwToggle.textContent = (showExcludePanel ? '▾' : '▸') + ' 기획 업무와 무관한 항목 제외 설정';
-    kwToggle.onclick = () => { showExcludePanel = !showExcludePanel; rerender(); };
-    tabsBlock.appendChild(kwToggle);
-    if(showExcludePanel){
-      const kwPanel = document.createElement('div');
-      kwPanel.style.marginTop = '8px';
-      kwPanel.innerHTML = `<p class="sub">마스터 일정 중 촬영/영상 제작 쪽 업무(후시 녹음, 색보정, 캐스팅 등)는 고정 일정 참고 목록과 겹침 확인에서 제외됩니다. 업무명에 아래 단어가 포함되면 제외돼요.</p>`;
-      const chipsWrap = document.createElement('div');
-      EXCLUDE_KEYWORDS.forEach((k, idx) => {
-        const chip = document.createElement('div'); chip.className='chip';
-        chip.innerHTML = `<span>${k}</span>`;
-        const del = document.createElement('button'); del.textContent='×';
-        del.onclick = () => { EXCLUDE_KEYWORDS.splice(idx,1); saveExcludeKeywords(); rerender(); };
-        chip.appendChild(del);
-        chipsWrap.appendChild(chip);
-      });
-      kwPanel.appendChild(chipsWrap);
-      const kwRow = document.createElement('div'); kwRow.className='row';
-      const kwInput = document.createElement('input'); kwInput.type='text'; kwInput.placeholder='예: 오디션';
-      const kwAddBtn = document.createElement('button'); kwAddBtn.className='tiny'; kwAddBtn.textContent='추가';
-      kwAddBtn.onclick = () => {
-        const v = kwInput.value.trim();
-        if(v && !EXCLUDE_KEYWORDS.includes(v)){ EXCLUDE_KEYWORDS.push(v); saveExcludeKeywords(); rerender(); }
-      };
-      kwRow.appendChild(kwInput); kwRow.appendChild(kwAddBtn);
-      kwPanel.appendChild(kwRow);
-      tabsBlock.appendChild(kwPanel);
-    }
-
     if(selectedPlannerProject){
       const code = selectedPlannerProject;
       const anchors = tasks.filter(t => t.project===code && t.locked && !matchesKeyword(t.name)).sort((a,b)=>a.start-b.start);
@@ -1314,28 +1282,28 @@
       sub.style.paddingTop = '10px';
       sub.style.borderTop = '1px solid var(--border)';
 
-      // [수정] 클래스화하여 일관성 있게 헤더 고정 처리
       const tableWrap = document.createElement('div');
       tableWrap.className = 'table-wrap';
       const table = document.createElement('table');
       table.style.tableLayout = 'auto';
-      table.style.minWidth = '600px';
       table.innerHTML = `<tr><th>기획 업무명</th><th>시작일</th><th>종료일</th><th>기간</th><th></th></tr>`;
       ownTasks.forEach(t => table.appendChild(plannerTaskRow(t, conflictIds, pl.id)));
       tableWrap.appendChild(table);
       sub.appendChild(tableWrap);
 
-      const addTaskBtn = document.createElement('button');
-      addTaskBtn.className = 'tiny'; addTaskBtn.textContent = `+ ${code} 기획 업무 추가`;
-      addTaskBtn.onclick = () => {
-        const afterAnchor = anchors[0];
-        const start = afterAnchor ? nextWorkingDay(afterAnchor.end) : new Date(TODAY);
-        const nt = { id:genId(), project:code, category:'', name:'새 기획 업무', start, workingDays:1, progress:0, locked:false, fixed:false, ownerPlanner:pl.id };
-        nt.end = endFromWorkingDays(nt.start, nt.workingDays);
-        tasks.push(nt);
-        recalcAll(); persist(); rerender();
-      };
-      sub.appendChild(addTaskBtn);
+      if(ownTasks.length === 0){
+        const addTaskBtn = document.createElement('button');
+        addTaskBtn.className = 'tiny'; addTaskBtn.textContent = `+ ${code} 기획 업무 추가`;
+        addTaskBtn.onclick = () => {
+          const afterAnchor = anchors[0];
+          const start = afterAnchor ? nextWorkingDay(afterAnchor.end) : new Date(TODAY);
+          const nt = { id:genId(), project:code, category:'', name:'새 기획 업무', start, workingDays:1, progress:0, locked:false, fixed:false, ownerPlanner:pl.id };
+          nt.end = endFromWorkingDays(nt.start, nt.workingDays);
+          tasks.push(nt);
+          recalcAll(); persist(); rerender();
+        };
+        sub.appendChild(addTaskBtn);
+      }
 
       tabsBlock.appendChild(sub);
     }
@@ -1351,6 +1319,8 @@
     const firstDay = new Date(year, month, 1);
     const daysInMonth = new Date(year, month+1, 0).getDate();
     const startWeekday = firstDay.getDay();
+    const totalCells = Math.ceil((startWeekday + daysInMonth)/7) * 7;
+    const weeksCount = totalCells / 7;
 
     const wrap = document.createElement('div');
 
@@ -1365,50 +1335,82 @@
     });
     wrap.appendChild(head);
 
-    const grid = document.createElement('div');
-    grid.style.display = 'grid'; grid.style.gridTemplateColumns = 'repeat(7,1fr)';
-    grid.style.gap = '1px'; grid.style.background = 'var(--border)'; grid.style.borderRadius = '8px'; grid.style.overflow = 'hidden';
+    const BAR_H = 16, BAR_GAP = 2, TOP_PAD = 20, BOTTOM_PAD = 4;
 
-    const totalCells = Math.ceil((startWeekday + daysInMonth)/7) * 7;
-    for(let i=0;i<totalCells;i++){
-      const dayNum = i - startWeekday + 1;
-      const cell = document.createElement('div');
-      cell.style.minHeight = '92px'; cell.style.padding = '4px'; cell.style.overflow = 'hidden';
-      if(dayNum < 1 || dayNum > daysInMonth){
-        cell.style.background = 'var(--bg)';
-      } else {
-        cell.style.background = 'var(--panel)';
-        const cellDate = new Date(year, month, dayNum);
-        const isToday = sameDay(cellDate, TODAY);
-        const num = document.createElement('div');
-        num.textContent = dayNum;
-        num.style.fontSize = '11px'; num.style.marginBottom = '3px';
-        num.style.color = isToday ? 'var(--accent)' : 'var(--text-dim)';
-        num.style.fontWeight = isToday ? '700' : '400';
-        cell.appendChild(num);
+    for(let w=0; w<weeksCount; w++){
+      const weekStartIdx = w*7;
+      const dayNums = [0,1,2,3,4,5,6].map(c => weekStartIdx + c - startWeekday + 1);
+      const weekStartDate = new Date(year, month, dayNums[0]);
+      const weekEndDate = new Date(year, month, dayNums[6]);
 
-        const dayItems = items.filter(it => it.start <= cellDate && cellDate <= it.end);
-        dayItems.slice(0,4).forEach(it => {
-          const pill = document.createElement('div');
-          pill.textContent = it.label;
-          pill.title = `${it.label} (${fmt(it.start)} ~ ${fmt(it.end)})`;
-          pill.style.background = 'var(--accent-soft)'; pill.style.color = 'var(--accent)';
-          pill.style.borderRadius = '4px'; pill.style.padding = '2px 5px'; pill.style.fontSize = '10.5px'; pill.style.fontWeight = '600';
-          pill.style.marginBottom = '2px'; pill.style.overflow = 'hidden'; pill.style.textOverflow = 'ellipsis';
-          pill.style.whiteSpace = 'nowrap'; pill.style.cursor = it.onClick ? 'pointer' : 'default';
-          if(it.onClick) pill.onclick = it.onClick;
-          cell.appendChild(pill);
-        });
-        if(dayItems.length > 4){
-          const more = document.createElement('div');
-          more.textContent = `+${dayItems.length-4}건 더`;
-          more.style.fontSize = '9px'; more.style.color = 'var(--text-dim)';
-          cell.appendChild(more);
+      // 이 주와 겹치는 항목들을 겹치지 않게 슬롯에 배치 (여러 날에 걸친 업무는 이어진 막대 하나로)
+      const weekItems = items.filter(it => it.start <= weekEndDate && it.end >= weekStartDate)
+        .sort((a,b)=>a.start-b.start);
+      const slotEnds = [];
+      const placements = [];
+      weekItems.forEach(it => {
+        const segStart = it.start < weekStartDate ? weekStartDate : it.start;
+        const segEnd = it.end > weekEndDate ? weekEndDate : it.end;
+        const colStart = Math.round((segStart-weekStartDate)/86400000);
+        const colSpan = Math.round((segEnd-segStart)/86400000) + 1;
+        let slot = slotEnds.findIndex(end => end < segStart);
+        if(slot === -1){ slot = slotEnds.length; slotEnds.push(segEnd); }
+        else slotEnds[slot] = segEnd;
+        placements.push({ it, slot, colStart, colSpan });
+      });
+      const slotCount = slotEnds.length;
+      const weekHeight = TOP_PAD + Math.max(1, slotCount) * (BAR_H + BAR_GAP) + BOTTOM_PAD;
+
+      const weekWrap = document.createElement('div');
+      weekWrap.style.position = 'relative';
+      weekWrap.style.minHeight = weekHeight + 'px';
+      weekWrap.style.marginBottom = '1px';
+
+      const bgRow = document.createElement('div');
+      bgRow.style.position = 'absolute'; bgRow.style.inset = '0';
+      bgRow.style.display = 'flex';
+      dayNums.forEach(dayNum => {
+        const cell = document.createElement('div');
+        cell.style.flex = '1'; cell.style.borderRight = '1px solid var(--border)'; cell.style.padding = '4px';
+        cell.style.boxSizing = 'border-box';
+        if(dayNum < 1 || dayNum > daysInMonth){
+          cell.style.background = 'var(--bg)';
+        } else {
+          cell.style.background = 'var(--panel)';
+          const cellDate = new Date(year, month, dayNum);
+          const isToday = sameDay(cellDate, TODAY);
+          const num = document.createElement('div');
+          num.textContent = dayNum;
+          num.style.fontSize = '11px';
+          num.style.color = isToday ? 'var(--accent)' : 'var(--text-dim)';
+          num.style.fontWeight = isToday ? '700' : '400';
+          cell.appendChild(num);
         }
-      }
-      grid.appendChild(cell);
+        bgRow.appendChild(cell);
+      });
+      weekWrap.appendChild(bgRow);
+
+      placements.forEach(p => {
+        const bar = document.createElement('div');
+        bar.textContent = p.it.label;
+        bar.title = `${p.it.label} (${fmt(p.it.start)} ~ ${fmt(p.it.end)})`;
+        bar.style.position = 'absolute';
+        bar.style.left = (p.colStart/7*100) + '%';
+        bar.style.width = (p.colSpan/7*100) + '%';
+        bar.style.top = (TOP_PAD + p.slot*(BAR_H+BAR_GAP)) + 'px';
+        bar.style.height = BAR_H + 'px';
+        bar.style.background = 'var(--accent-soft)'; bar.style.color = 'var(--accent)';
+        bar.style.borderRadius = '4px'; bar.style.padding = '0 5px'; bar.style.fontSize = '10.5px'; bar.style.fontWeight = '600';
+        bar.style.overflow = 'hidden'; bar.style.textOverflow = 'ellipsis'; bar.style.whiteSpace = 'nowrap';
+        bar.style.boxSizing = 'border-box';
+        bar.style.cursor = p.it.onClick ? 'pointer' : 'default';
+        if(p.it.onClick) bar.onclick = p.it.onClick;
+        weekWrap.appendChild(bar);
+      });
+
+      wrap.appendChild(weekWrap);
     }
-    wrap.appendChild(grid);
+
     container.appendChild(wrap);
   }
 
