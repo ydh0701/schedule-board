@@ -2,13 +2,18 @@
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
-<title>일정 보드</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>팀원 종합 일정 관리 자율화 시스템</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Sans+KR:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Pretendard+Variable:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css">
+
+<!-- Firebase App & Firestore SDK -->
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
 <script>
+  // 초기 개발자용 설정 정보 탑재
   const firebaseConfig = {
     apiKey: "AIzaSyDAOIvQGB3CxG4Sndok8eZcjKHm8__kgZ8",
     authDomain: "fmv-schedule.firebaseapp.com",
@@ -23,40 +28,56 @@
 <body>
 <div class="app">
 
-  <div class="topbar">
-    <h1>일정 보드</h1>
+  <!-- 메인 상단 헤더 영역 -->
+  <header class="topbar">
+    <h1>일정 자동화 보드</h1>
     <div class="spacer"></div>
-    <span class="status" id="holidayStatus">공휴일 데이터: 기본값</span>
-    <button class="tiny" id="refreshHolidaysBtn" title="공개 공휴일 API(date.nager.at)에서 가져옵니다. 인터넷 연결만 있으면 파일을 저장해서 열어도 동작합니다.">공휴일 새로고침</button>
-    <button class="tiny ghost" id="manageHolidaysBtn">공휴일 직접 관리</button>
-  </div>
+    <span class="status" id="holidayStatus">공휴일 상태 동기화 대기 중</span>
+    <button class="tiny primary" id="refreshHolidaysBtn" title="공개 API 연동을 통해 동적으로 공휴일을 동기화합니다.">공휴일 API 갱신</button>
+    <button class="tiny ghost" id="manageHolidaysBtn">수동 편집</button>
+  </header>
 
-  <div class="panel" id="holidayManagerPanel" style="display:none;"></div>
+  <!-- 수동 공휴일 매니저 패널 (기본 숨김) -->
+  <section class="panel" id="holidayManagerPanel" style="display:none;"></section>
 
+  <!-- 전체 메인 레이아웃 프레임 -->
   <div class="layout">
+    <!-- 좌측 상시 고정 내비게이션 바 -->
     <nav class="sidebar">
-      <button class="nav-item active" data-view="project">프로젝트별 일정</button>
-      <button class="nav-item" data-view="planner">기획자별 일정</button>
-      <button class="nav-item" data-view="overview">전체 일정 캘린더</button>
-      <div class="row" style="margin-top:6px; flex-direction:column; gap:6px;">
-        <button class="tiny ghost" id="sidebarPasteBtn" style="width:100%;">+ 붙여넣기로 일정 추가</button>
-        <button class="tiny ghost" id="sidebarAddPlannerBtn" style="width:100%;">+ 기획자 추가</button>
-        <button class="tiny ghost" id="sidebarAutoAssignBtn" style="width:100%;">⚡ 미배정 프로젝트 자동 배정</button>
+      <button class="nav-item active" data-view="project">프로젝트별 타겟 일정</button>
+      <button class="nav-item" data-view="planner">팀원별 기획 로드맵</button>
+      <button class="nav-item" data-view="overview">종합 캘린더 매트릭스</button>
+      
+      <hr style="width:100%; border:none; border-top:1px solid var(--border); margin:8px 0;">
+      
+      <div class="row" style="margin-top:0; flex-direction:column; gap:6px; width:100%;">
+        <button class="tiny ghost" id="sidebarPasteBtn" style="width:100%; text-align:left;">+ 스프레드시트 연동</button>
+        <button class="tiny ghost" id="sidebarAddPlannerBtn" style="width:100%; text-align:left;">+ 기획 팀원 추가</button>
+        <button class="tiny ghost" id="sidebarAutoAssignBtn" style="width:100%; text-align:left; color:var(--accent);">⚡ 최적 자원 자율 배정</button>
       </div>
       <div id="sidebarExtra"></div>
     </nav>
+
+    <!-- 우측 가변 뷰 포트 영역 -->
     <main id="main"></main>
   </div>
 
 </div>
+
+<!-- 모달 컨테이너 루트 포탈 -->
 <div id="modalRoot"></div>
 
-<button id="themeToggleBtn" class="theme-toggle" title="다크/라이트 모드 전환">🌙</button>
+<!-- 테마 전환 버튼 스위치 -->
+<button id="themeToggleBtn" class="theme-toggle" aria-label="다크 라이트 테마 토글 스위치">🌙</button>
+
 <script>
   (function(){
     const btn = document.getElementById('themeToggleBtn');
     const saved = localStorage.getItem('scheduleBoardTheme');
-    if(saved === 'light'){ document.body.classList.add('light-theme'); btn.textContent = '☀️'; }
+    if(saved === 'light'){ 
+      document.body.classList.add('light-theme'); 
+      btn.textContent = '☀️'; 
+    }
     btn.onclick = function(){
       document.body.classList.toggle('light-theme');
       const isLight = document.body.classList.contains('light-theme');
@@ -66,6 +87,7 @@
   })();
 </script>
 
+<!-- 코어 비즈니스 로직 스크립트 바인딩 -->
 <script src="app.js"></script>
 </body>
 </html>
