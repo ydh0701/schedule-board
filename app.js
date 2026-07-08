@@ -61,6 +61,8 @@
   let showPaste = false;
   let showDonePC = false;
   let showDoneMobile = false;
+  let collapsePC = false;
+  let collapseMobile = false;
   let overviewGroupBy = 'project';
 
   function createRowMenu(actions){
@@ -848,12 +850,17 @@
   function renderProjectSidebar(stats){
     const box = document.getElementById('sidebarExtra');
     box.innerHTML = '';
-    function group(label, list, showDone, toggleShowDone){
+    function group(label, list, showDone, toggleShowDone, collapsed, toggleCollapsed){
       if(list.length === 0) return;
       const active = list.filter(s=>!s.done);
       const doneList = list.filter(s=>s.done);
-      const lbl = document.createElement('div'); lbl.className='sidebar-group-label'; lbl.textContent = label;
+      const lbl = document.createElement('div');
+      lbl.className = 'sidebar-group-label';
+      lbl.style.cursor = 'pointer'; lbl.style.display = 'flex'; lbl.style.alignItems = 'center'; lbl.style.gap = '4px';
+      lbl.innerHTML = `<span>${collapsed ? '▸' : '▾'}</span><span>${label}</span>`;
+      lbl.onclick = () => { toggleCollapsed(); rerender(); };
       box.appendChild(lbl);
+      if(collapsed) return;
       const mkItem = (s) => {
         const item = document.createElement('button');
         item.className = 'sub-nav-item' + (s.code===selectedProject ? ' active' : '');
@@ -871,8 +878,8 @@
         if(showDone) doneList.forEach(s => box.appendChild(mkItem(s)));
       }
     }
-    group('🖥️ PC 버전', stats.filter(s=>s.type==='pc'), showDonePC, ()=>{ showDonePC = !showDonePC; });
-    group('📱 모바일 버전', stats.filter(s=>s.type==='mobile'), showDoneMobile, ()=>{ showDoneMobile = !showDoneMobile; });
+    group('🖥️ PC 버전', stats.filter(s=>s.type==='pc'), showDonePC, ()=>{ showDonePC = !showDonePC; }, collapsePC, ()=>{ collapsePC = !collapsePC; });
+    group('📱 모바일 버전', stats.filter(s=>s.type==='mobile'), showDoneMobile, ()=>{ showDoneMobile = !showDoneMobile; }, collapseMobile, ()=>{ collapseMobile = !collapseMobile; });
   }
 
   function renderProjectView(){
@@ -943,8 +950,8 @@
     const headActions = document.createElement('div');
     headActions.style.marginLeft = 'auto';
     headActions.style.display = 'flex';
-    headActions.style.flexDirection = 'column';
-    headActions.style.gap = '4px';
+    headActions.style.flexDirection = 'row';
+    headActions.style.gap = '6px';
     const doneBtn = document.createElement('button');
     doneBtn.className = 'tiny ghost';
     doneBtn.textContent = manualCompleted.has(selectedProject) ? '완료 취소' : '완료 처리';
@@ -1407,8 +1414,9 @@
         bar.style.width = (p.colSpan/7*100) + '%';
         bar.style.top = (TOP_PAD + p.slot*(BAR_H+BAR_GAP)) + 'px';
         bar.style.height = BAR_H + 'px';
-        bar.style.background = 'var(--accent-soft)'; bar.style.color = 'var(--accent)';
+        bar.style.background = 'var(--accent)'; bar.style.color = '#ffffff';
         bar.style.borderRadius = '4px'; bar.style.padding = '0 5px'; bar.style.fontSize = '10.5px'; bar.style.fontWeight = '600';
+        bar.style.boxShadow = '0 1px 3px var(--shadow-color)';
         bar.style.overflow = 'hidden'; bar.style.textOverflow = 'ellipsis'; bar.style.whiteSpace = 'nowrap';
         bar.style.boxSizing = 'border-box';
         bar.style.cursor = p.it.onClick ? 'pointer' : 'default';
