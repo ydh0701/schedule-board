@@ -781,14 +781,16 @@
     endInput.onchange = () => { const d = isoToDate(endInput.value); if(!d) return; t.end = d; t.workingDays = workingDaysBetween(t.start,t.end); recalcFrom(t); persist(); rerender(); }; enablePickerOnClick(endInput);
     endTd.appendChild(endInput);
 
-    const wdTd = document.createElement('td'); wdTd.style.whiteSpace='nowrap'; wdTd.style.display='flex'; wdTd.style.alignItems='center'; wdTd.style.justifyContent='center'; wdTd.style.gap='5px';
+    const wdTd = document.createElement('td'); wdTd.style.whiteSpace='nowrap'; wdTd.style.textAlign='center';
+    const wdWrap = document.createElement('div'); wdWrap.style.display='inline-flex'; wdWrap.style.alignItems='center'; wdWrap.style.gap='5px';
     const minus = document.createElement('button'); minus.className='tiny ghost'; minus.textContent='−';
     const wdInput = document.createElement('input'); wdInput.type='number'; wdInput.value=t.workingDays; wdInput.min=1;
     const plus = document.createElement('button'); plus.className='tiny ghost'; plus.textContent='+';
     function applyWd(v){ t.workingDays=Math.max(1,v); t.end=endFromWorkingDays(t.start,t.workingDays); recalcFrom(t); persist(); rerender(); }
     minus.onclick=()=>applyWd(t.workingDays-1); plus.onclick=()=>applyWd(t.workingDays+1);
     wdInput.onchange=()=>applyWd(parseInt(wdInput.value,10)||1);
-    wdTd.appendChild(minus); wdTd.appendChild(wdInput); wdTd.appendChild(plus);
+    wdWrap.appendChild(minus); wdWrap.appendChild(wdInput); wdWrap.appendChild(plus);
+    wdTd.appendChild(wdWrap);
 
     const pctTd = document.createElement('td'); pctTd.style.textAlign='center';
     const pctInput = document.createElement('input'); pctInput.type='number'; pctInput.value=t.progress; pctInput.min=0; pctInput.max=100;
@@ -1071,14 +1073,16 @@
     enablePickerOnClick(endInput);
     endTd.appendChild(endInput);
 
-    const wdTd = document.createElement('td'); wdTd.style.whiteSpace='nowrap'; wdTd.style.display='flex'; wdTd.style.alignItems='center'; wdTd.style.justifyContent='center'; wdTd.style.gap='5px';
+    const wdTd = document.createElement('td'); wdTd.style.whiteSpace='nowrap'; wdTd.style.textAlign='center';
+    const wdWrap = document.createElement('div'); wdWrap.style.display='inline-flex'; wdWrap.style.alignItems='center'; wdWrap.style.gap='5px';
     const minus = document.createElement('button'); minus.className='tiny ghost'; minus.textContent='−';
     const wdInput = document.createElement('input'); wdInput.type='number'; wdInput.value=t.workingDays; wdInput.min=1;
     const plus = document.createElement('button'); plus.className='tiny ghost'; plus.textContent='+';
     function applyWd(v){ t.workingDays=Math.max(1,v); t.end=endFromWorkingDays(t.start,t.workingDays); recalcFrom(t); persist(); rerender(); }
     minus.onclick=()=>applyWd(t.workingDays-1); plus.onclick=()=>applyWd(t.workingDays+1);
     wdInput.onchange=()=>applyWd(parseInt(wdInput.value,10)||1);
-    wdTd.appendChild(minus); wdTd.appendChild(wdInput); wdTd.appendChild(plus);
+    wdWrap.appendChild(minus); wdWrap.appendChild(wdInput); wdWrap.appendChild(plus);
+    wdTd.appendChild(wdWrap);
 
     const actTd = document.createElement('td'); actTd.style.textAlign='center';
     actTd.appendChild(createRowMenu([
