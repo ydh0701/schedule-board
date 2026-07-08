@@ -1581,15 +1581,17 @@
       const weekWrap = document.createElement('div');
       weekWrap.style.position = 'relative';
       weekWrap.style.minHeight = weekHeight + 'px';
-      weekWrap.style.marginBottom = '1px';
+      weekWrap.style.marginBottom = '10px';
+      weekWrap.style.paddingBottom = '4px';
+      weekWrap.style.borderBottom = '2px solid var(--border)';
 
       const bgRow = document.createElement('div');
       bgRow.style.position = 'absolute'; bgRow.style.inset = '0';
       bgRow.style.display = 'flex';
       dayNums.forEach(dayNum => {
         const cell = document.createElement('div');
-        cell.style.flex = '1'; cell.style.borderRight = '1px solid var(--border)'; cell.style.padding = '4px';
-        cell.style.boxSizing = 'border-box';
+        cell.style.flex = '1'; cell.style.borderRight = '1px solid var(--text-dim)'; cell.style.padding = '4px';
+        cell.style.boxSizing = 'border-box'; cell.style.position = 'relative';
         if(dayNum < 1 || dayNum > daysInMonth){
           cell.style.background = 'var(--bg)';
         } else {
@@ -1602,6 +1604,13 @@
           num.style.color = isToday ? 'var(--accent)' : 'var(--text-dim)';
           num.style.fontWeight = isToday ? '700' : '400';
           cell.appendChild(num);
+          const numBottom = document.createElement('div');
+          numBottom.textContent = dayNum;
+          numBottom.style.position = 'absolute'; numBottom.style.bottom = '2px'; numBottom.style.left = '4px';
+          numBottom.style.fontSize = '10px'; numBottom.style.opacity = '0.55';
+          numBottom.style.color = isToday ? 'var(--accent)' : 'var(--text-dim)';
+          numBottom.style.fontWeight = isToday ? '700' : '400';
+          cell.appendChild(numBottom);
         }
         bgRow.appendChild(cell);
       });
