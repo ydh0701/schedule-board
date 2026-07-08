@@ -159,7 +159,11 @@
           holidays: [...HOLIDAYS.entries()].map(([d,n]) => ({d,n}))
         };
         try{ await boardRef.set(data); }
-        catch(e){ console.error('저장 실패:', e); }
+        catch(e){
+          console.error('저장 실패:', e);
+          const statusEl = document.getElementById('holidayStatus');
+          if(statusEl){ statusEl.textContent = '⚠ 저장 실패 — 인터넷 연결을 확인해주세요'; statusEl.style.color = 'var(--danger)'; }
+        }
         finally {
           persistResolvers.forEach(res => res());
           persistResolvers = [];
@@ -807,7 +811,7 @@
         tasks.splice(idx+1,0,nt);
         recalcAll(); persist(); rerender();
       }},
-      { label:'삭제', onClick: () => { tasks = tasks.filter(x=>x.id!==t.id); recalcAll(); persist(); rerender(); } }
+      { label:'삭제', onClick: () => { if(!confirm(`"${t.name}" 업무를 삭제할까요?`)) return; tasks = tasks.filter(x=>x.id!==t.id); recalcAll(); persist(); rerender(); } }
     ]));
 
     [nameTd,startTd,endTd,wdTd,pctTd,actTd].forEach(td=>tr.appendChild(td));
@@ -1096,7 +1100,7 @@
       { label:'▲ 위로 이동', onClick: () => moveTask(t, -1) },
       { label:'▼ 아래로 이동', onClick: () => moveTask(t, 1) },
       { label:'지원 기획자 관리', onClick: () => showSupportModal(t) },
-      { label:'삭제', onClick: () => { tasks = tasks.filter(x=>x.id!==t.id); recalcAll(); persist(); rerender(); } }
+      { label:'삭제', onClick: () => { if(!confirm(`"${t.name}" 업무를 삭제할까요?`)) return; tasks = tasks.filter(x=>x.id!==t.id); recalcAll(); persist(); rerender(); } }
     ]));
 
     [nameTd,startTd,endTd,wdTd,actTd].forEach(td=>tr.appendChild(td));
