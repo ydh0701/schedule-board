@@ -145,6 +145,8 @@ input:disabled{opacity:0.55; font-weight:500;}
   max-height: 540px;
   overflow-y: auto;
   overflow-x: auto;
+  scrollbar-gutter: stable;
+  padding-right: 4px;
 }
 
 table{width:100%; border-collapse:collapse; table-layout:fixed;}
