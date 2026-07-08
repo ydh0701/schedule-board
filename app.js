@@ -917,8 +917,13 @@
         row.style.background = 'var(--ok-soft)';
         row.innerHTML = `<b>${r.code}</b> → <b>${r.plannerName}</b> <span class="foot-note" style="color:var(--ok);">겹침 없음</span>`;
       } else {
-        row.style.background = 'var(--danger-soft)';
-        row.innerHTML = `<b>${r.code}</b> <span class="foot-note" style="color:var(--danger);">겹치지 않게 배정할 수 있는 기획자가 없음</span>`;
+        row.style.background = 'var(--danger-soft)'; row.style.display = 'flex'; row.style.alignItems = 'center'; row.style.justifyContent = 'space-between'; row.style.gap = '8px';
+        const info = document.createElement('span');
+        info.innerHTML = `<b>${r.code}</b> <span class="foot-note" style="color:var(--danger);">겹치지 않게 배정할 수 있는 기획자가 없음</span>`;
+        const manualBtn = document.createElement('button');
+        manualBtn.className = 'tiny ghost'; manualBtn.style.flexShrink = '0'; manualBtn.textContent = '수동으로 배정하기';
+        manualBtn.onclick = () => { showAssignPlannerModal(r.code); };
+        row.appendChild(info); row.appendChild(manualBtn);
       }
       listBox.appendChild(row);
     });
