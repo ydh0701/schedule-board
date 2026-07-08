@@ -1561,7 +1561,7 @@
     });
     wrap.appendChild(head);
 
-    const BAR_H = 16, BAR_GAP = 2, TOP_PAD = 20, BOTTOM_PAD = 4;
+    const BAR_H = 16, BAR_GAP = 2, TOP_PAD = 20, BOTTOM_PAD = 16;
 
     for(let w=0; w<weeksCount; w++){
       const weekStartIdx = w*7;
