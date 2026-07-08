@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>일정 보드</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Sans+KR:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
+<script>
+  const firebaseConfig = {
+    apiKey: "AIzaSyDAOIvQGB3CxG4Sndok8eZcjKHm8__kgZ8",
+    authDomain: "fmv-schedule.firebaseapp.com",
+    projectId: "fmv-schedule",
+    storageBucket: "fmv-schedule.firebasestorage.app",
+    messagingSenderId: "219583463660",
+    appId: "1:219583463660:web:74dca5304d9ec4408ca5c9"
+  };
+  firebase.initializeApp(firebaseConfig);
+</script>
+</head>
+<body>
+<div class="app">
+
+  <div class="topbar">
+    <h1>일정 보드</h1>
+    <div class="spacer"></div>
+    <span class="status" id="holidayStatus">공휴일 데이터: 기본값</span>
+    <button class="tiny" id="refreshHolidaysBtn" title="공개 공휴일 API(date.nager.at)에서 가져옵니다. 인터넷 연결만 있으면 파일을 저장해서 열어도 동작합니다.">공휴일 새로고침</button>
+    <button class="tiny ghost" id="manageHolidaysBtn">공휴일 직접 관리</button>
+  </div>
+
+  <div class="panel" id="holidayManagerPanel" style="display:none;"></div>
+
+  <div class="layout">
+    <nav class="sidebar">
+      <button class="nav-item active" data-view="project">프로젝트별 일정</button>
+      <button class="nav-item" data-view="planner">기획자별 일정</button>
+      <button class="nav-item" data-view="overview">전체 일정 캘린더</button>
+      <div class="row" style="margin-top:6px; flex-direction:column; gap:6px;">
+        <button class="tiny ghost" id="sidebarPasteBtn" style="width:100%;">+ 붙여넣기로 일정 추가</button>
+        <button class="tiny ghost" id="sidebarAddPlannerBtn" style="width:100%;">+ 기획자 추가</button>
+      </div>
+      <div id="sidebarExtra"></div>
+    </nav>
+    <main id="main"></main>
+  </div>
+
+</div>
+<div id="modalRoot"></div>
+
+<button id="themeToggleBtn" class="theme-toggle" title="다크/라이트 모드 전환">🌙</button>
+<script>
+  (function(){
+    const btn = document.getElementById('themeToggleBtn');
+    const saved = localStorage.getItem('scheduleBoardTheme');
+    if(saved === 'light'){ document.body.classList.add('light-theme'); btn.textContent = '☀️'; }
+    btn.onclick = function(){
+      document.body.classList.toggle('light-theme');
+      const isLight = document.body.classList.contains('light-theme');
+      localStorage.setItem('scheduleBoardTheme', isLight ? 'light' : 'dark');
+      btn.textContent = isLight ? '☀️' : '🌙';
+    };
+  })();
+</script>
+
+<script src="app.js"></script>
+</body>
+</html>
