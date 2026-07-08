@@ -427,8 +427,7 @@
   }
 
   function autoFillTemplate(pl, code){
-    const anchors = tasks.filter(t => t.project===code && t.locked).sort((a,b)=>a.start-b.start);
-    const built = projectType(code) === 'mobile' ? buildMobileTasks(anchors) : buildPCTasks(anchors);
+    const built = simulateTemplateTasks(code);
     built.forEach(item => {
       tasks.push({
         id: genId(), project: code, category: item.cat, name: item.name,
@@ -437,6 +436,80 @@
       });
     });
   }
+
+  // 실제로 추가하지 않고, 이 프로젝트에 배치될 기획 업무 일정만 미리 계산해봅니다
+  // (담당자 지정 시 기존 일정과 겹치는지 미리 확인하는 데 사용).
+  function simulateTemplateTasks(code){
+    const anchors = tasks.filter(t => t.project===code && t.locked).sort((a,b)=>a.start-b.start);
+    return projectType(code) === 'mobile' ? buildMobileTasks(anchors) : buildPCTasks(anchors);
+  }
+
+  // 이 기획자가 지금 이 프로젝트를 새로 맡아도 되는지, 기존 일정이랑 겹치는지 확인합니다.
+  // 반환값: { available: true } 또는 { available:false, conflictWith: existingTask, overlapStart, overlapEnd }
+  function checkPlannerAvailability(code, pl){
+    const candidateTasks = simulateTemplateTasks(code).filter(c => !matchesKeyword(c.name));
+    const existing = tasks.filter(t =>
+      (t.ownerPlanner === pl.id || (Array.isArray(t.supporters) && t.supporters.includes(pl.id))) &&
+      t.project !== code && !matchesKeyword(t.name)
+    );
+    for(const cand of candidateTasks){
+      for(const ex of existing){
+        if(cand.start <= ex.end && ex.start <= cand.end){
+          return { available:false, conflictWith: ex, overlapStart: cand.start>ex.start?cand.start:ex.start, overlapEnd: cand.end<ex.end?cand.end:ex.end };
+        }
+      }
+    }
+    return { available:true };
+  }
+
+  function showAssignPlannerModal(code){
+    const root = document.getElementById('modalRoot');
+    root.innerHTML = `
+      <div class="modal-backdrop" id="backdrop">
+        <div class="modal" style="max-width:520px;">
+          <h3 style="color:var(--text);">${code} 담당자 지정</h3>
+          <div class="foot-note" style="margin-bottom:10px;">기획자별 기존 일정을 확인해서, 이 프로젝트를 맡아도 겹치지 않는 사람만 선택할 수 있어요.</div>
+          <div id="assignList" style="max-height:340px; overflow-y:auto;"></div>
+          <div class="row" style="justify-content:flex-end; margin-top:14px;"><button class="tiny ghost" id="closeAssignModal">닫기</button></div>
+        </div>
+      </div>`;
+    const listBox = document.getElementById('assignList');
+    if(planners.length === 0){
+      listBox.innerHTML = '<div class="foot-note">등록된 기획자가 없습니다. 먼저 기획자를 추가해주세요.</div>';
+    } else {
+      planners.forEach(pl => {
+        const alreadyAssigned = pl.projects.includes(code);
+        const row = document.createElement('div');
+        row.style.marginBottom = '8px'; row.style.padding = '10px 12px';
+        row.style.border = '1px solid var(--border)'; row.style.borderRadius = '8px';
+        if(alreadyAssigned){
+          row.style.background = 'var(--ok-soft)';
+          row.innerHTML = `<b>${pl.name}</b> <span class="foot-note">이미 이 프로젝트를 담당하고 있어요 ✅</span>`;
+        } else {
+          const check = checkPlannerAvailability(code, pl);
+          if(check.available){
+            row.style.background = 'var(--ok-soft)'; row.style.cursor = 'pointer';
+            row.innerHTML = `<b>${pl.name}</b> <span class="foot-note" style="color:var(--ok);">일정 가능 — 바로 배정할 수 있어요</span>`;
+            row.onclick = () => {
+              pl.projects.push(code);
+              autoFillTemplate(pl, code);
+              savePlanners(); recalcAll(); persist();
+              root.innerHTML = '';
+              rerender();
+            };
+          } else {
+            row.style.background = 'var(--danger-soft)'; row.style.opacity = '0.85';
+            const c = check.conflictWith;
+            row.innerHTML = `<b>${pl.name}</b> <span class="foot-note" style="color:var(--danger);">일정 겹침 — [${c.project}] "${c.name}" (${fmt(c.start)}~${fmt(c.end)})와 ${fmt(check.overlapStart)}~${fmt(check.overlapEnd)} 겹침</span>`;
+          }
+        }
+        listBox.appendChild(row);
+      });
+    }
+    document.getElementById('closeAssignModal').onclick = () => root.innerHTML = '';
+    document.getElementById('backdrop').onclick = (e) => { if(e.target.id==='backdrop') root.innerHTML=''; };
+  }
+
 
   function normalizeName(s){ return (s||'').replace(/\s+/g,'').toLowerCase(); }
   function levenshtein(a,b){
@@ -718,16 +791,37 @@
       addBox.innerHTML = '<div class="foot-note">추가할 수 있는 기획자가 없습니다.</div>';
     } else {
       available.forEach(p => {
-        const btn = document.createElement('button');
-        btn.className = 'sub-nav-item'; btn.style.marginBottom = '4px';
-        btn.textContent = p.name;
-        btn.onclick = () => {
-          t.supporters.push(p.id);
-          if(!p.projects.includes(t.project)) p.projects.push(t.project);
-          savePlanners(); recalcAll(); persist(); rerender();
-          root.innerHTML = '';
-        };
-        addBox.appendChild(btn);
+        const row = document.createElement('div');
+        row.style.marginBottom = '6px'; row.style.padding = '8px 10px';
+        row.style.border = '1px solid var(--border)'; row.style.borderRadius = '7px';
+        let conflict = null;
+        if(!matchesKeyword(t.name)){
+          const existing = tasks.filter(t2 =>
+            (t2.ownerPlanner===p.id || (Array.isArray(t2.supporters) && t2.supporters.includes(p.id))) &&
+            t2.id !== t.id && !matchesKeyword(t2.name)
+          );
+          for(const ex of existing){
+            if(t.start <= ex.end && ex.start <= t.end){
+              conflict = { conflictWith: ex, overlapStart: t.start>ex.start?t.start:ex.start, overlapEnd: t.end<ex.end?t.end:ex.end };
+              break;
+            }
+          }
+        }
+        if(!conflict){
+          row.style.background = 'var(--ok-soft)'; row.style.cursor = 'pointer';
+          row.innerHTML = `<b>${p.name}</b> <span class="foot-note" style="color:var(--ok);">일정 가능</span>`;
+          row.onclick = () => {
+            t.supporters.push(p.id);
+            if(!p.projects.includes(t.project)) p.projects.push(t.project);
+            savePlanners(); recalcAll(); persist(); rerender();
+            root.innerHTML = '';
+          };
+        } else {
+          const c = conflict.conflictWith;
+          row.style.background = 'var(--danger-soft)'; row.style.opacity = '0.85';
+          row.innerHTML = `<b>${p.name}</b> <span class="foot-note" style="color:var(--danger);">일정 겹침 — [${c.project}] "${c.name}" (${fmt(c.start)}~${fmt(c.end)})와 ${fmt(conflict.overlapStart)}~${fmt(conflict.overlapEnd)} 겹침</span>`;
+        }
+        addBox.appendChild(row);
       });
     }
     document.getElementById('closeSupportModal').onclick = () => root.innerHTML = '';
@@ -744,6 +838,102 @@
     const i1 = groupIdx[pos], i2 = groupIdx[targetPos];
     const tmp = tasks[i1]; tasks[i1] = tasks[i2]; tasks[i2] = tmp;
     recalcAll(); persist(); rerender();
+  }
+
+  // ---------------- 미배정 프로젝트 자동 배정 ----------------
+  // 실제로 배정하지 않고, 각 미배정 프로젝트를 (현재 업무량이 가장 적은 순서로) 기획자에게
+  // 시뮬레이션으로 시도해서 겹치지 않는 사람을 찾아 배정안을 만듭니다.
+  function computeAutoAssignPlan(){
+    const allProjects = [...new Set(tasks.map(t=>t.project))];
+    const unassigned = allProjects.filter(code => !planners.some(pl=>pl.projects.includes(code)));
+    const staged = new Map();
+    planners.forEach(pl => {
+      const existing = tasks.filter(t =>
+        (t.ownerPlanner===pl.id || (Array.isArray(t.supporters) && t.supporters.includes(pl.id))) && !matchesKeyword(t.name)
+      );
+      staged.set(pl.id, existing.map(t => ({start:t.start, end:t.end})));
+    });
+    const results = [];
+    unassigned.forEach(code => {
+      const candidate = simulateTemplateTasks(code).filter(c => !matchesKeyword(c.name));
+      const order = planners.slice().sort((a,b) => staged.get(a.id).length - staged.get(b.id).length);
+      let assigned = null;
+      for(const pl of order){
+        const existing = staged.get(pl.id);
+        const conflict = candidate.some(cand => existing.some(ex => cand.start<=ex.end && ex.start<=cand.end));
+        if(!conflict){ assigned = pl; break; }
+      }
+      if(assigned){
+        candidate.forEach(c => staged.get(assigned.id).push({start:c.start, end:c.end}));
+        results.push({ code, plannerId: assigned.id, plannerName: assigned.name, ok:true });
+      } else {
+        results.push({ code, plannerId:null, plannerName:null, ok:false });
+      }
+    });
+    return results;
+  }
+
+  function showAutoAssignModal(){
+    if(planners.length === 0){ alert('먼저 기획자를 등록해주세요.'); return; }
+    const plan = computeAutoAssignPlan();
+    const root = document.getElementById('modalRoot');
+    if(plan.length === 0){
+      root.innerHTML = `
+        <div class="modal-backdrop" id="backdrop">
+          <div class="modal">
+            <h3 style="color:var(--text);">자동 배정</h3>
+            <div class="foot-note">담당자가 없는 프로젝트가 없습니다. 전부 이미 배정되어 있어요.</div>
+            <div class="row" style="justify-content:flex-end; margin-top:14px;"><button class="tiny ghost" id="closeAutoModal">닫기</button></div>
+          </div>
+        </div>`;
+      document.getElementById('closeAutoModal').onclick = () => root.innerHTML = '';
+      document.getElementById('backdrop').onclick = (e) => { if(e.target.id==='backdrop') root.innerHTML=''; };
+      return;
+    }
+    const okCount = plan.filter(p=>p.ok).length;
+    const failCount = plan.length - okCount;
+    root.innerHTML = `
+      <div class="modal-backdrop" id="backdrop">
+        <div class="modal" style="max-width:520px;">
+          <h3 style="color:var(--text);">자동 배정 결과 (미리보기)</h3>
+          <div class="foot-note" style="margin-bottom:10px;">겹치지 않는 사람을 찾아서 배정안을 만들어봤어요. 확정을 누르기 전까지는 아무것도 실제로 바뀌지 않습니다.</div>
+          <div class="stats" style="margin-bottom:10px;">
+            <div class="stat ok"><div class="num">${okCount}</div><div class="lbl">배정 가능</div></div>
+            <div class="stat ${failCount>0?'warn':'ok'}"><div class="num">${failCount}</div><div class="lbl">배정 불가</div></div>
+          </div>
+          <div id="autoAssignList" style="max-height:300px; overflow-y:auto;"></div>
+          <div class="row" style="justify-content:flex-end; margin-top:14px;">
+            <button class="tiny ghost" id="cancelAutoModal">취소</button>
+            <button class="tiny primary" id="confirmAutoModal">확정하고 적용</button>
+          </div>
+        </div>
+      </div>`;
+    const listBox = document.getElementById('autoAssignList');
+    plan.forEach(r => {
+      const row = document.createElement('div');
+      row.style.marginBottom = '6px'; row.style.padding = '8px 10px';
+      row.style.border = '1px solid var(--border)'; row.style.borderRadius = '7px';
+      if(r.ok){
+        row.style.background = 'var(--ok-soft)';
+        row.innerHTML = `<b>${r.code}</b> → <b>${r.plannerName}</b> <span class="foot-note" style="color:var(--ok);">겹침 없음</span>`;
+      } else {
+        row.style.background = 'var(--danger-soft)';
+        row.innerHTML = `<b>${r.code}</b> <span class="foot-note" style="color:var(--danger);">겹치지 않게 배정할 수 있는 기획자가 없음</span>`;
+      }
+      listBox.appendChild(row);
+    });
+    document.getElementById('cancelAutoModal').onclick = () => root.innerHTML = '';
+    document.getElementById('backdrop').onclick = (e) => { if(e.target.id==='backdrop') root.innerHTML=''; };
+    document.getElementById('confirmAutoModal').onclick = () => {
+      plan.filter(r=>r.ok).forEach(r => {
+        const pl = planners.find(p=>p.id===r.plannerId);
+        if(!pl) return;
+        pl.projects.push(r.code);
+        autoFillTemplate(pl, r.code);
+      });
+      savePlanners(); recalcAll(); persist(); rerender();
+      root.innerHTML = '';
+    };
   }
 
   function showConflictModal(c){
@@ -971,6 +1161,10 @@
         rerender();
       }
     };
+    const assignBtn = document.createElement('button');
+    assignBtn.className = 'tiny'; assignBtn.textContent = '담당자 지정';
+    assignBtn.onclick = () => showAssignPlannerModal(selectedProject);
+    headActions.appendChild(assignBtn);
     headActions.appendChild(doneBtn);
     headActions.appendChild(delProjBtn);
     head.appendChild(headActions);
@@ -1181,6 +1375,7 @@
       return {
         start: t.start, end: t.end,
         label: `[${t.project}] ${t.name}${isSupport ? ' (지원)' : ''}`,
+        colorKey: t.project,
         onClick: () => { selectedPlannerProject = t.project; rerender(); }
       };
     });
@@ -1240,11 +1435,18 @@
     });
     const available = allProjects.filter(p => !pl.projects.includes(p));
     tabsRow.appendChild(createAddProjectButton(available, (code) => {
+      const check = checkPlannerAvailability(code, pl);
+      if(!check.available){
+        const c = check.conflictWith;
+        const proceed = confirm(`⚠ 일정이 겹쳐요.\n\n${pl.name}님의 [${c.project}] "${c.name}" (${fmt(c.start)}~${fmt(c.end)}) 업무와 ${fmt(check.overlapStart)}~${fmt(check.overlapEnd)} 구간이 겹칩니다.\n\n그래도 ${code}를 배정할까요?`);
+        if(!proceed) return;
+      }
       pl.projects.push(code);
       autoFillTemplate(pl, code);
       selectedPlannerProject = code;
       savePlanners();
       recalcAll();
+      persist();
       rerender();
     }));
     headRow.appendChild(tabsRow);
@@ -1414,8 +1616,8 @@
         bar.style.width = (p.colSpan/7*100) + '%';
         bar.style.top = (TOP_PAD + p.slot*(BAR_H+BAR_GAP)) + 'px';
         bar.style.height = BAR_H + 'px';
-        bar.style.background = 'var(--accent)'; bar.style.color = '#ffffff';
-        bar.style.borderRadius = '4px'; bar.style.padding = '0 5px'; bar.style.fontSize = '10.5px'; bar.style.fontWeight = '600';
+        bar.style.background = p.it.colorKey ? colorFor(p.it.colorKey) : 'var(--accent)'; bar.style.color = '#ffffff';
+        bar.style.borderRadius = '4px'; bar.style.padding = '0 5px'; bar.style.fontSize = '10.5px'; bar.style.fontWeight = '600'; bar.style.textAlign = 'center';
         bar.style.boxShadow = '0 1px 3px var(--shadow-color)';
         bar.style.overflow = 'hidden'; bar.style.textOverflow = 'ellipsis'; bar.style.whiteSpace = 'nowrap';
         bar.style.boxSizing = 'border-box';
@@ -1429,6 +1631,87 @@
 
     container.appendChild(wrap);
   }
+
+  // 날짜별로 "그날 업무가 하나도 없는" 기획자 이름을 보여주는 달력 (누가 언제 비어있는지 한눈에)
+  function renderFreePlannerGrid(container, monthDate){
+    if(planners.length === 0){
+      const e = document.createElement('div'); e.className='empty'; e.textContent='등록된 기획자가 없습니다.';
+      container.appendChild(e); return;
+    }
+    const year = monthDate.getFullYear(), month = monthDate.getMonth();
+    const firstDay = new Date(year, month, 1);
+    const daysInMonth = new Date(year, month+1, 0).getDate();
+    const startWeekday = firstDay.getDay();
+    const totalCells = Math.ceil((startWeekday + daysInMonth)/7) * 7;
+
+    const plannerTasks = new Map();
+    planners.forEach(pl => {
+      const own = tasks.filter(t => t.ownerPlanner===pl.id);
+      const support = tasks.filter(t => t.ownerPlanner!==pl.id && Array.isArray(t.supporters) && t.supporters.includes(pl.id));
+      plannerTasks.set(pl.id, [...own, ...support].filter(t => !matchesKeyword(t.name)));
+    });
+
+    const wrap = document.createElement('div');
+    const head = document.createElement('div');
+    head.style.display = 'grid'; head.style.gridTemplateColumns = 'repeat(7,1fr)'; head.style.marginBottom = '2px';
+    ['일','월','화','수','목','금','토'].forEach((d,i) => {
+      const c = document.createElement('div');
+      c.textContent = d;
+      c.style.textAlign = 'center'; c.style.fontSize = '11.5px'; c.style.padding = '6px 0'; c.style.fontWeight = '600';
+      c.style.color = i===0 ? '#c9776a' : (i===6 ? '#6a8caf' : 'var(--text-dim)');
+      head.appendChild(c);
+    });
+    wrap.appendChild(head);
+
+    const grid = document.createElement('div');
+    grid.style.display = 'grid'; grid.style.gridTemplateColumns = 'repeat(7,1fr)';
+    grid.style.gap = '1px'; grid.style.background = 'var(--border)'; grid.style.borderRadius = '8px'; grid.style.overflow = 'hidden';
+
+    for(let i=0;i<totalCells;i++){
+      const dayNum = i - startWeekday + 1;
+      const cell = document.createElement('div');
+      cell.style.minHeight = '92px'; cell.style.padding = '5px'; cell.style.boxSizing = 'border-box';
+      if(dayNum < 1 || dayNum > daysInMonth){
+        cell.style.background = 'var(--bg)';
+      } else {
+        const cellDate = new Date(year, month, dayNum);
+        const isToday = sameDay(cellDate, TODAY);
+        const isNonWork = isNonWorking(cellDate);
+        cell.style.background = isNonWork ? 'var(--weekend)' : 'var(--panel)';
+        const num = document.createElement('div');
+        num.textContent = dayNum;
+        num.style.fontSize = '11px'; num.style.marginBottom = '4px';
+        num.style.color = isToday ? 'var(--accent)' : 'var(--text-dim)';
+        num.style.fontWeight = isToday ? '700' : '400';
+        cell.appendChild(num);
+
+        const freeNames = planners.filter(pl => {
+          const list = plannerTasks.get(pl.id);
+          return !list.some(t => t.start <= cellDate && cellDate <= t.end);
+        }).map(pl => pl.name);
+
+        if(freeNames.length > 0){
+          const tag = document.createElement('div');
+          tag.textContent = freeNames.join(', ');
+          tag.title = `여유: ${freeNames.join(', ')}`;
+          tag.style.fontSize = '10px'; tag.style.fontWeight = '600';
+          tag.style.color = 'var(--ok)'; tag.style.background = 'var(--ok-soft)';
+          tag.style.borderRadius = '4px'; tag.style.padding = '2px 5px';
+          tag.style.overflow = 'hidden'; tag.style.textOverflow = 'ellipsis';
+          cell.appendChild(tag);
+        } else {
+          const tag = document.createElement('div');
+          tag.textContent = '전원 배정됨';
+          tag.style.fontSize = '10px'; tag.style.color = 'var(--text-dim)';
+          cell.appendChild(tag);
+        }
+      }
+      grid.appendChild(cell);
+    }
+    wrap.appendChild(grid);
+    container.appendChild(wrap);
+  }
+
 
   function renderOverviewView(){
     document.getElementById('sidebarExtra').innerHTML = '';
@@ -1458,9 +1741,11 @@
     const toggleGroup = document.createElement('div'); toggleGroup.className = 'row'; toggleGroup.style.marginTop = '0';
     const pBtn = document.createElement('button'); pBtn.className = 'tiny ' + (overviewGroupBy==='project' ? 'primary' : 'ghost'); pBtn.textContent = '프로젝트별';
     const plBtn = document.createElement('button'); plBtn.className = 'tiny ' + (overviewGroupBy==='planner' ? 'primary' : 'ghost'); plBtn.textContent = '기획자별';
+    const freeBtn = document.createElement('button'); freeBtn.className = 'tiny ' + (overviewGroupBy==='free' ? 'primary' : 'ghost'); freeBtn.textContent = '여유 기획자';
     pBtn.onclick = () => { overviewGroupBy = 'project'; rerender(); };
     plBtn.onclick = () => { overviewGroupBy = 'planner'; rerender(); };
-    toggleGroup.appendChild(pBtn); toggleGroup.appendChild(plBtn);
+    freeBtn.onclick = () => { overviewGroupBy = 'free'; rerender(); };
+    toggleGroup.appendChild(pBtn); toggleGroup.appendChild(plBtn); toggleGroup.appendChild(freeBtn);
 
     controlRow.appendChild(navGroup); controlRow.appendChild(toggleGroup);
     panel.appendChild(controlRow);
@@ -1468,6 +1753,12 @@
 
     const calPanel = document.createElement('div');
     calPanel.className = 'panel';
+
+    if(overviewGroupBy === 'free'){
+      renderFreePlannerGrid(calPanel, overviewMonthCursor);
+      main.appendChild(calPanel);
+      return;
+    }
 
     const items = [];
     if(overviewGroupBy === 'project'){
@@ -1477,6 +1768,7 @@
         anchors.forEach(a => {
           items.push({
             start: a.start, end: a.end, label: `[${s.code}] ${a.name}`,
+            colorKey: s.code,
             onClick: () => { view='project'; selectedProject=s.code; syncNavActive(); rerender(); }
           });
         });
@@ -1488,6 +1780,7 @@
         [...own, ...support].forEach(t => {
           items.push({
             start: t.start, end: t.end, label: `[${pl.name}] ${t.name}`,
+            colorKey: pl.name,
             onClick: () => { view='planner'; selectedPlanner=pl.id; syncNavActive(); rerender(); }
           });
         });
@@ -1534,6 +1827,8 @@
     syncNavActive();
     rerender();
   };
+
+  document.getElementById('sidebarAutoAssignBtn').onclick = () => showAutoAssignModal();
 
   subscribeBoard();
   rerender();
