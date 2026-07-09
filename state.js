@@ -52,7 +52,7 @@
       id: t.id, project: t.project, category: t.category||'', name: t.name,
       start: dateToIso(t.start), end: dateToIso(t.end),
       workingDays: t.workingDays||1, progress: t.progress||0,
-      locked: !!t.locked, fixed: !!t.fixed,
+      locked: !!t.locked, fixed: !!t.fixed, done: !!t.done, memo: t.memo || '',
       ownerPlanner: t.ownerPlanner || null, rowGroup: t.rowGroup || null,
       supporters: Array.isArray(t.supporters) ? t.supporters : []
     };
@@ -62,7 +62,7 @@
       id: o.id, project: o.project, category: o.category||'', name: o.name,
       start: isoToDate(o.start), end: isoToDate(o.end),
       workingDays: o.workingDays||1, progress: o.progress||0,
-      locked: !!o.locked, fixed: !!o.fixed,
+      locked: !!o.locked, fixed: !!o.fixed, done: !!o.done, memo: o.memo || '',
       ownerPlanner: o.ownerPlanner || null, rowGroup: o.rowGroup || undefined,
       supporters: Array.isArray(o.supporters) ? o.supporters : []
     };
@@ -123,6 +123,8 @@
   function dateToIso(d){ if(!d || isNaN(d.getTime())) return ''; const p=n=>String(n).padStart(2,'0'); return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`; }
   function isoToDate(s){ if(!s) return null; const [y,m,d]=s.split('-').map(Number); return new Date(y,m-1,d); }
   function sameDay(a,b){ return a && b && a.getFullYear()===b.getFullYear() && a.getMonth()===b.getMonth() && a.getDate()===b.getDate(); }
+  const TODAY_START = new Date(TODAY.getFullYear(), TODAY.getMonth(), TODAY.getDate());
+  function isDelayed(t){ return !t.done && !t.locked && t.end < TODAY_START; }
   function isWeekend(d){ const w=d.getDay(); return w===0||w===6; }
   function isHoliday(d){ return HOLIDAYS.has(dateToIso(d)); }
   function isNonWorking(d){ return isWeekend(d) || isHoliday(d); }
@@ -359,6 +361,30 @@
     return projectType(code) === 'mobile' ? buildMobileTasks(anchors) : buildPCTasks(anchors);
   }
 
+  // 마스터 앵커가 나중에 바뀌었을 때, 이미 생성된 기획자의 "고정(fixed)" 업무만
+  // 최신 앵커 날짜로 다시 맞춥니다. 기획자가 직접 수정/추가한(fixed:false) 업무는 건드리지 않습니다.
+  function resyncPlannerProjectAnchors(pl, code){
+    const fresh = simulateTemplateTasks(code).filter(item => item.fixed);
+    const existing = tasks.filter(t => t.project===code && t.ownerPlanner===pl.id && t.fixed);
+    let updated = 0, added = 0;
+    fresh.forEach(item => {
+      const match = existing.find(t => t.name === item.name);
+      if(match){
+        match.start = new Date(item.start); match.end = new Date(item.end); match.workingDays = item.d;
+        updated++;
+      } else {
+        tasks.push({
+          id: genId(), project: code, category: item.cat, name: item.name,
+          start: new Date(item.start), end: new Date(item.end), workingDays: item.d,
+          progress: 0, locked: false, fixed: true, ownerPlanner: pl.id
+        });
+        added++;
+      }
+    });
+    recalcAll(); persist(); rerender();
+    return { updated, added };
+  }
+
   function checkPlannerAvailability(code, pl){
     const candidateTasks = simulateTemplateTasks(code).filter(c => !matchesKeyword(c.name));
     const existing = tasks.filter(t =>
@@ -557,6 +583,29 @@
       }
     });
     return conflicts;
+  }
+
+  // 특정 기획자의 전체 일정(담당+지원, 모든 프로젝트 통틀어) 안에서 겹치는 업무 쌍을 찾습니다.
+  // 앵커 재동기화 후 "이 사람 일정이 이제 겹치게 됐는지" 확인하는 데 씁니다.
+  function findPlannerConflicts(pl){
+    const list = tasks.filter(t =>
+      (t.ownerPlanner===pl.id || (Array.isArray(t.supporters) && t.supporters.includes(pl.id))) && !matchesKeyword(t.name)
+    );
+    const conflicts = [];
+    for(let i=0;i<list.length;i++) for(let j=i+1;j<list.length;j++){
+      const a=list[i], b=list[j];
+      if(a.rowGroup && a.rowGroup===b.rowGroup) continue;
+      if(overlaps(a,b)) conflicts.push({a,b});
+    }
+    return conflicts;
+  }
+
+  // 이 업무를 새 날짜로 옮겼을 때, 같은 프로젝트의 고정(마스터) 앵커와 겹치는지 확인합니다.
+  // 겹치면 그 앵커를 반환하고, 아니면 null을 반환합니다.
+  function findFixedAnchorOverlap(t, newStart, newEnd){
+    if(matchesKeyword(t.name)) return null;
+    const anchors = tasks.filter(x => x.project===t.project && x.locked && x.id!==t.id && !matchesKeyword(x.name));
+    return anchors.find(a => newStart <= a.end && a.start <= newEnd) || null;
   }
 
   // ---------------- 모달 창 ----------------

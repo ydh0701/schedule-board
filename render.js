@@ -202,6 +202,47 @@
     document.getElementById('backdrop').onclick = (e) => { if(e.target.id==='backdrop') root.innerHTML=''; };
   }
 
+  function showSheetsImportResultModal(report){
+    const root = document.getElementById('modalRoot');
+    const conflictRows = [];
+    report.conflictReport.forEach(entry => {
+      entry.conflicts.forEach(c => {
+        conflictRows.push({ plannerName: entry.plannerName, a: c.a, b: c.b });
+      });
+    });
+    root.innerHTML = `
+      <div class="modal-backdrop" id="backdrop">
+        <div class="modal" style="max-width:560px;">
+          <h3 style="color:var(--text);">구글 시트 갱신 완료</h3>
+          <div class="stats" style="margin-bottom:10px;">
+            <div class="stat"><div class="num">${report.projectCount}</div><div class="lbl">갱신된 프로젝트</div></div>
+            <div class="stat"><div class="num">${report.plannerCount}</div><div class="lbl">재동기화된 기획자</div></div>
+            <div class="stat ${conflictRows.length>0?'warn':'ok'}"><div class="num">${conflictRows.length}</div><div class="lbl">남은 겹침</div></div>
+          </div>
+          <div class="foot-note" style="margin-bottom:8px;">마스터 앵커를 최신 날짜로 교체했고, 이 프로젝트를 담당/지원하던 기획자들의 고정 업무(${report.resyncUpdated}건 갱신, ${report.resyncAdded}건 신규)도 같이 맞췄습니다.</div>
+          <div id="importConflictList"></div>
+          <div class="row" style="justify-content:flex-end; margin-top:14px;"><button class="tiny primary" id="closeImportModal">확인</button></div>
+        </div>
+      </div>`;
+    const listBox = document.getElementById('importConflictList');
+    if(conflictRows.length === 0){
+      const ok = document.createElement('div'); ok.className = 'foot-note'; ok.style.color = 'var(--ok)';
+      ok.textContent = '날짜 겹침 없이 전부 정상적으로 맞춰졌습니다.';
+      listBox.appendChild(ok);
+    } else {
+      const title = document.createElement('div'); title.className = 'foot-note'; title.style.marginBottom = '6px';
+      title.textContent = '아래 업무들은 앵커 날짜가 바뀌면서 서로 겹치게 됐어요. 직접 확인해서 조정해주세요:';
+      listBox.appendChild(title);
+      conflictRows.forEach(c => {
+        const row = document.createElement('div'); row.className = 'conflict-item';
+        row.innerHTML = `<span><b>${c.plannerName}</b> — [${c.a.project}] "${c.a.name}" (${fmt(c.a.start)}~${fmt(c.a.end)}) ↔ [${c.b.project}] "${c.b.name}" (${fmt(c.b.start)}~${fmt(c.b.end)})</span>`;
+        listBox.appendChild(row);
+      });
+    }
+    document.getElementById('closeImportModal').onclick = () => root.innerHTML = '';
+    document.getElementById('backdrop').onclick = (e) => { if(e.target.id==='backdrop') root.innerHTML=''; };
+  }
+
   function showAutoAssignModal(){
     if(planners.length === 0){ alert('등록된 기획자가 없습니다.'); return; }
     const plan = computeAutoAssignPlan();
@@ -265,43 +306,82 @@
     };
   }
 
-  function showConflictModal(c){
-    const root = document.getElementById('modalRoot');
-    const os = c.a.start > c.b.start ? c.a.start : c.b.start;
-    const oe = c.a.end < c.b.end ? c.a.end : c.b.end;
-    root.innerHTML = `
-      <div class="modal-backdrop" id="backdrop">
-        <div class="modal">
-          <h3 style="color:var(--danger)">⚠ 업무 일정 충돌 발생</h3>
-          <div class="line"><b>${c.a.locked?'🔒 ':''}${c.a.name}</b> <span class="range">${fmt(c.a.start)} ~ ${fmt(c.a.end)}</span></div>
-          <div class="line"><b>${c.b.locked?'🔒 ':''}${c.b.name}</b> <span class="range">${fmt(c.b.start)} ~ ${fmt(c.b.end)}</span></div>
-          <div class="line" style="color:var(--danger); margin-top:10px;">겹치는 중복 기간: <span class="range">${fmt(os)} ~ ${fmt(oe)}</span></div>
-          <div class="row" style="justify-content:flex-end; margin-top:14px;"><button class="primary" id="closeModal">닫기</button></div>
-        </div>
-      </div>`;
-    document.getElementById('closeModal').onclick = () => root.innerHTML = '';
-    document.getElementById('backdrop').onclick = (e) => { if(e.target.id==='backdrop') root.innerHTML=''; };
+  // ---------------- 프로젝트 뷰 ----------------
+  function conflictReasonText(partners){
+    return partners.map(p => `[${p.project}] "${p.name}" (${fmt(p.start)}~${fmt(p.end)})`).join(', ');
   }
 
-  // ---------------- 프로젝트 뷰 ----------------
-  function taskRow(t, conflictIds){
+  function memoIcon(t){
+    const icon = document.createElement('span');
+    icon.textContent = '📝';
+    icon.style.fontSize = '12px'; icon.style.cursor = 'pointer'; icon.style.flexShrink = '0';
+    icon.style.opacity = t.memo ? '1' : '0.3';
+    icon.title = t.memo ? ('메모: ' + t.memo + ' (클릭해서 수정)') : '메모 추가 (클릭)';
+    icon.onclick = (e) => {
+      e.stopPropagation();
+      const v = prompt('메모를 입력하세요 (비워두면 삭제):', t.memo || '');
+      if(v === null) return;
+      t.memo = v.trim(); persist(); rerender();
+    };
+    return icon;
+  }
+
+  function taskRow(t, conflictIds, conflictMap){
     const tr = document.createElement('tr');
     if(t.locked) tr.className = 'locked';
     if(conflictIds.has(t.id)) tr.className += ' conflict';
+    if(isDelayed(t)) tr.className += ' delayed';
 
     const nameTd = document.createElement('td');
+    const nameWrap = document.createElement('div'); nameWrap.style.display = 'inline-flex'; nameWrap.style.alignItems = 'center'; nameWrap.style.gap = '6px'; nameWrap.style.width = '100%';
+    if(conflictMap && conflictMap.has(t.id)){
+      const warnIcon = document.createElement('span'); warnIcon.textContent = '!';
+      warnIcon.title = '겹침: ' + conflictReasonText(conflictMap.get(t.id));
+      warnIcon.style.display = 'inline-flex'; warnIcon.style.alignItems = 'center'; warnIcon.style.justifyContent = 'center';
+      warnIcon.style.width = '16px'; warnIcon.style.height = '16px'; warnIcon.style.borderRadius = '50%';
+      warnIcon.style.background = 'var(--danger)'; warnIcon.style.color = '#fff'; warnIcon.style.fontSize = '11px'; warnIcon.style.fontWeight = '700';
+      warnIcon.style.cursor = 'help'; warnIcon.style.flexShrink = '0';
+      nameWrap.appendChild(warnIcon);
+    }
+    if(isDelayed(t)){
+      const delayIcon = document.createElement('span'); delayIcon.textContent = '⏰';
+      delayIcon.title = `종료일(${fmt(t.end)})이 지났는데 아직 완료 처리되지 않았습니다.`;
+      delayIcon.style.fontSize = '12px'; delayIcon.style.cursor = 'help'; delayIcon.style.flexShrink = '0';
+      nameWrap.appendChild(delayIcon);
+    }
+    nameWrap.appendChild(memoIcon(t));
     const nameInput = document.createElement('input'); nameInput.type='text'; nameInput.style.width='100%'; nameInput.value=t.name;
     nameInput.onchange = () => { t.name = nameInput.value; persist(); };
-    nameTd.appendChild(nameInput);
+    nameWrap.appendChild(nameInput);
+    nameTd.appendChild(nameWrap);
 
     const startTd = document.createElement('td'); startTd.style.textAlign='center';
     const startInput = document.createElement('input'); startInput.type='date'; startInput.value=dateToIso(t.start); startInput.disabled = t.locked; startInput.style.width='100%'; enablePickerOnClick(startInput);
-    startInput.onchange = () => { const d = isoToDate(startInput.value); if(!d) return; t.start = d; t.end = endFromWorkingDays(t.start, t.workingDays); recalcFrom(t); persist(); rerender(); };
+    startInput.onchange = () => {
+      const d = isoToDate(startInput.value); if(!d) return;
+      const newEnd = endFromWorkingDays(d, t.workingDays);
+      const conflict = findFixedAnchorOverlap(t, d, newEnd);
+      if(conflict){
+        alert(`이 날짜로 수정할 수 없습니다.\n이유: 고정 일정 "${conflict.name}" (${fmt(conflict.start)}~${fmt(conflict.end)})과 겹칩니다.`);
+        startInput.value = dateToIso(t.start);
+        return;
+      }
+      t.start = d; t.end = newEnd; recalcFrom(t); persist(); rerender();
+    };
     startTd.appendChild(startInput);
 
     const endTd = document.createElement('td'); endTd.style.textAlign='center';
     const endInput = document.createElement('input'); endInput.type='date'; endInput.value=dateToIso(t.end); endInput.disabled = t.locked; endInput.style.width='100%'; enablePickerOnClick(endInput);
-    endInput.onchange = () => { const d = isoToDate(endInput.value); if(!d) return; t.end = d; t.workingDays = workingDaysBetween(t.start,t.end); recalcFrom(t); persist(); rerender(); };
+    endInput.onchange = () => {
+      const d = isoToDate(endInput.value); if(!d) return;
+      const conflict = findFixedAnchorOverlap(t, t.start, d);
+      if(conflict){
+        alert(`이 날짜로 수정할 수 없습니다.\n이유: 고정 일정 "${conflict.name}" (${fmt(conflict.start)}~${fmt(conflict.end)})과 겹칩니다.`);
+        endInput.value = dateToIso(t.end);
+        return;
+      }
+      t.end = d; t.workingDays = workingDaysBetween(t.start,t.end); recalcFrom(t); persist(); rerender();
+    };
     endTd.appendChild(endInput);
 
     const wdTd = document.createElement('td'); wdTd.style.whiteSpace='nowrap'; wdTd.style.textAlign='center';
@@ -309,7 +389,16 @@
     const minus = document.createElement('button'); minus.className='tiny ghost'; minus.textContent='−';
     const wdInput = document.createElement('input'); wdInput.type='number'; wdInput.value=t.workingDays; wdInput.min=1;
     const plus = document.createElement('button'); plus.className='tiny ghost'; plus.textContent='+';
-    function applyWd(v){ t.workingDays=Math.max(1,v); t.end=endFromWorkingDays(t.start,t.workingDays); recalcFrom(t); persist(); rerender(); }
+    function applyWd(v){
+      const newWd = Math.max(1,v);
+      const newEnd = endFromWorkingDays(t.start, newWd);
+      const conflict = findFixedAnchorOverlap(t, t.start, newEnd);
+      if(conflict){
+        alert(`이 기간으로 조정할 수 없습니다.\n이유: 고정 일정 "${conflict.name}" (${fmt(conflict.start)}~${fmt(conflict.end)})과 겹칩니다.`);
+        return;
+      }
+      t.workingDays = newWd; t.end = newEnd; recalcFrom(t); persist(); rerender();
+    }
     minus.onclick=()=>applyWd(t.workingDays-1); plus.onclick=()=>applyWd(t.workingDays+1);
     wdInput.onchange=()=>applyWd(parseInt(wdInput.value,10)||1);
     wdWrap.appendChild(minus); wdWrap.appendChild(wdInput); wdWrap.appendChild(plus);
@@ -320,34 +409,25 @@
     pctInput.onchange = () => { t.progress = parseInt(pctInput.value,10)||0; persist(); };
     pctTd.appendChild(pctInput);
 
+    const doneTd = document.createElement('td'); doneTd.style.textAlign='center';
+    const doneCb = document.createElement('input'); doneCb.type='checkbox'; doneCb.checked = !!t.done; doneCb.disabled = t.locked;
+    doneCb.title = '완료 처리';
+    doneCb.onchange = () => { t.done = doneCb.checked; persist(); rerender(); };
+    doneTd.appendChild(doneCb);
+
     const actTd = document.createElement('td'); actTd.style.textAlign='center';
     actTd.appendChild(createRowMenu([
       { label:'+ 아래에 업무 추가', onClick: () => {
         const idx = tasks.indexOf(t);
-        const nt = { id:genId(), project:t.project, category:t.category, name:'새 업무', start:nextWorkingDay(t.end), workingDays:1, progress:0, locked:false, fixed:false };
+        const nt = { id:genId(), project:t.project, category:t.category, name:'새 업무', start:nextWorkingDay(t.end), workingDays:1, progress:0, locked:false, fixed:false, done:false, memo:'' };
         nt.end = endFromWorkingDays(nt.start, nt.workingDays);
         tasks.splice(idx+1,0,nt); recalcAll(); persist(); rerender();
       }},
       { label:'업무 삭제', onClick: () => { if(!confirm(`"${t.name}" 업무를 삭제할까요?`)) return; tasks = tasks.filter(x=>x.id!==t.id); recalcAll(); persist(); rerender(); } }
     ]));
 
-    [nameTd,startTd,endTd,wdTd,pctTd,actTd].forEach(td=>tr.appendChild(td));
+    [nameTd,startTd,endTd,wdTd,pctTd,doneTd,actTd].forEach(td=>tr.appendChild(td));
     return tr;
-  }
-
-  function renderConflictPanel(container, conflicts){
-    if(conflicts.length===0) return;
-    const panel = document.createElement('div'); panel.className = 'panel';
-    panel.innerHTML = `<h2>⚠ 일정 중복 안내 (${conflicts.length}건)</h2>`;
-    const list = document.createElement('div');
-    conflicts.forEach(c => {
-      const item = document.createElement('div'); item.className='conflict-item';
-      item.innerHTML = `<span>${c.a.locked?'🔒 ':''}${c.a.name} ↔ ${c.b.locked?'🔒 ':''}${c.b.name}</span>`;
-      const btn = document.createElement('button'); btn.className='tiny'; btn.textContent='상세보기';
-      btn.onclick = () => showConflictModal(c);
-      item.appendChild(btn); list.appendChild(item);
-    });
-    panel.appendChild(list); container.appendChild(panel);
   }
 
   function renderProjectSidebar(stats){
@@ -406,6 +486,30 @@
     dash.appendChild(dashSheetsBtn);
     main.appendChild(dash);
 
+    // ---------------- 이번 주 마감 요약 ----------------
+    const weekEnd = addDays(TODAY_START, 7);
+    const dueSoon = tasks.filter(t => !t.locked && !t.done && t.end >= TODAY_START && t.end <= weekEnd)
+      .sort((a,b)=>a.end-b.end);
+    const overdue = tasks.filter(t => isDelayed(t)).sort((a,b)=>a.end-b.end);
+    if(dueSoon.length > 0 || overdue.length > 0){
+      const duePanel = document.createElement('div'); duePanel.className = 'panel';
+      duePanel.innerHTML = `<h2>이번 주 마감 요약</h2><p class="sub">아직 완료 처리되지 않은 업무 중, 마감이 지났거나(⏰) 이번 주(7일 내) 마감인 것들이에요.</p>`;
+      const list = document.createElement('div');
+      overdue.forEach(t => {
+        const row = document.createElement('div'); row.className = 'conflict-item';
+        row.innerHTML = `<span>⏰ <b>[${t.project}]</b> ${t.name} — 마감 ${fmt(t.end)} (지연)</span>`;
+        list.appendChild(row);
+      });
+      dueSoon.forEach(t => {
+        const row = document.createElement('div'); row.className = 'conflict-item';
+        row.style.background = 'var(--panel-alt)'; row.style.border = '1px solid var(--border)';
+        row.innerHTML = `<span><b>[${t.project}]</b> ${t.name} — 마감 ${fmt(t.end)}</span>`;
+        list.appendChild(row);
+      });
+      duePanel.appendChild(list);
+      main.appendChild(duePanel);
+    }
+
     if(showPaste){
       const loadPanel = document.createElement('div'); loadPanel.className = 'panel';
       loadPanel.innerHTML = `
@@ -433,10 +537,10 @@
 
     const sel = stats.find(s=>s.code===selectedProject);
     
-    // [버그 수정] 프로젝트 상세 뷰에서도 충돌 상태를 정상 감지하도록 Set 채우기 로직 적용
-    const conflicts = computeConflicts();
+    // 마스터 일정(프로젝트별 일정)에서는 타코-글비/영상/제작실 같은 여러 트랙이
+    // 원래 같은 기간에 동시에 진행되는 게 정상이라, 겹침 경고를 표시하지 않습니다.
     const conflictIds = new Set();
-    conflicts.forEach(c => { conflictIds.add(c.a.id); conflictIds.add(c.b.id); });
+    const conflictMap = new Map();
 
     const wrap = document.createElement('div'); wrap.className='panel';
     const head = document.createElement('div'); head.className='proj-head';
@@ -468,21 +572,36 @@
 
     const tableWrap = document.createElement('div'); tableWrap.className = 'table-wrap';
     const table = document.createElement('table');
-    table.innerHTML = `<colgroup><col style="width:40%"><col style="width:14%"><col style="width:14%"><col style="width:18%"><col style="width:10%"><col style="width:4%"></colgroup><tr><th>업무명</th><th>시작일</th><th>종료일</th><th>기간(근무일수)</th><th>진행률</th><th></th></tr>`;
-    tasks.filter(t=>t.project===selectedProject).forEach(t => table.appendChild(taskRow(t, conflictIds)));
+    table.innerHTML = `<colgroup><col style="width:36%"><col style="width:13%"><col style="width:13%"><col style="width:16%"><col style="width:9%"><col style="width:9%"><col style="width:4%"></colgroup><tr><th>업무명</th><th>시작일</th><th>종료일</th><th>기간(근무일수)</th><th>진행률</th><th style="text-align:center;">완료</th><th></th></tr>`;
+    tasks.filter(t=>t.project===selectedProject).forEach(t => table.appendChild(taskRow(t, conflictIds, conflictMap)));
     
     tableWrap.appendChild(table); wrap.appendChild(tableWrap); main.appendChild(wrap);
-    renderConflictPanel(main, conflicts.filter(c=>c.project===selectedProject));
   }
 
   // ---------------- 기획자 뷰 ----------------
-  function plannerTaskRow(t, conflictIds, viewerPlannerId){
+  function plannerTaskRow(t, conflictIds, viewerPlannerId, conflictMap){
     const tr = document.createElement('tr');
     if(t.fixed) tr.className = 'locked';
     if(conflictIds.has(t.id)) tr.className += ' conflict';
+    if(isDelayed(t)) tr.className += ' delayed';
     const isSupportRow = viewerPlannerId && t.ownerPlanner !== viewerPlannerId;
 
     const nameTd = document.createElement('td');
+    if(conflictMap && conflictMap.has(t.id)){
+      const warnIcon = document.createElement('span'); warnIcon.textContent = '!';
+      warnIcon.title = '겹침: ' + conflictReasonText(conflictMap.get(t.id));
+      warnIcon.style.display = 'inline-flex'; warnIcon.style.alignItems = 'center'; warnIcon.style.justifyContent = 'center';
+      warnIcon.style.width = '16px'; warnIcon.style.height = '16px'; warnIcon.style.borderRadius = '50%';
+      warnIcon.style.background = 'var(--danger)'; warnIcon.style.color = '#fff'; warnIcon.style.fontSize = '11px'; warnIcon.style.fontWeight = '700';
+      warnIcon.style.cursor = 'help'; warnIcon.style.marginRight = '6px'; warnIcon.style.verticalAlign = 'middle';
+      nameTd.appendChild(warnIcon);
+    }
+    if(isDelayed(t)){
+      const delayIcon = document.createElement('span'); delayIcon.textContent = '⏰';
+      delayIcon.title = `종료일(${fmt(t.end)})이 지났는데 아직 완료 처리되지 않았습니다.`;
+      delayIcon.style.fontSize = '12px'; delayIcon.style.cursor = 'help'; delayIcon.style.marginRight = '6px';
+      nameTd.appendChild(delayIcon);
+    }
     if(t.fixed){
       const lockBadge = document.createElement('span'); lockBadge.textContent = '🔒 '; lockBadge.title = '고정 고립 상태 업무';
       nameTd.appendChild(lockBadge);
@@ -491,18 +610,38 @@
       const badge = document.createElement('span'); badge.className = 'tag anchor'; badge.textContent = '지원'; badge.style.marginRight = '6px';
       nameTd.appendChild(badge);
     }
+    nameTd.appendChild(memoIcon(t));
     const nameInput = document.createElement('input'); nameInput.type='text'; nameInput.style.width='200px'; nameInput.value=t.name;
     nameInput.onchange = () => { t.name = nameInput.value; persist(); };
     nameTd.appendChild(nameInput);
 
     const startTd = document.createElement('td'); startTd.style.textAlign='center';
     const startInput = document.createElement('input'); startInput.type='date'; startInput.value=dateToIso(t.start); startInput.disabled = t.fixed; startInput.style.width='100%'; enablePickerOnClick(startInput);
-    startInput.onchange = () => { const d = isoToDate(startInput.value); if(!d) return; t.start = d; t.end = endFromWorkingDays(t.start, t.workingDays); recalcFrom(t); persist(); rerender(); };
+    startInput.onchange = () => {
+      const d = isoToDate(startInput.value); if(!d) return;
+      const newEnd = endFromWorkingDays(d, t.workingDays);
+      const conflict = findFixedAnchorOverlap(t, d, newEnd);
+      if(conflict){
+        alert(`이 날짜로 수정할 수 없습니다.\n이유: 고정 일정 "${conflict.name}" (${fmt(conflict.start)}~${fmt(conflict.end)})과 겹칩니다.`);
+        startInput.value = dateToIso(t.start);
+        return;
+      }
+      t.start = d; t.end = newEnd; recalcFrom(t); persist(); rerender();
+    };
     startTd.appendChild(startInput);
 
     const endTd = document.createElement('td'); endTd.style.textAlign='center';
     const endInput = document.createElement('input'); endInput.type='date'; endInput.value=dateToIso(t.end); endInput.style.width='100%'; endInput.disabled = t.fixed; enablePickerOnClick(endInput);
-    endInput.onchange = () => { const d = isoToDate(endInput.value); if(!d) return; t.end = d; t.workingDays = workingDaysBetween(t.start,t.end); recalcFrom(t); persist(); rerender(); };
+    endInput.onchange = () => {
+      const d = isoToDate(endInput.value); if(!d) return;
+      const conflict = findFixedAnchorOverlap(t, t.start, d);
+      if(conflict){
+        alert(`이 날짜로 수정할 수 없습니다.\n이유: 고정 일정 "${conflict.name}" (${fmt(conflict.start)}~${fmt(conflict.end)})과 겹칩니다.`);
+        endInput.value = dateToIso(t.end);
+        return;
+      }
+      t.end = d; t.workingDays = workingDaysBetween(t.start,t.end); recalcFrom(t); persist(); rerender();
+    };
     endTd.appendChild(endInput);
 
     const wdTd = document.createElement('td'); wdTd.style.whiteSpace='nowrap'; wdTd.style.textAlign='center';
@@ -510,17 +649,32 @@
     const minus = document.createElement('button'); minus.className='tiny ghost'; minus.textContent='−';
     const wdInput = document.createElement('input'); wdInput.type='number'; wdInput.value=t.workingDays; wdInput.min=1;
     const plus = document.createElement('button'); plus.className='tiny ghost'; plus.textContent='+';
-    function applyWd(v){ t.workingDays=Math.max(1,v); t.end=endFromWorkingDays(t.start,t.workingDays); recalcFrom(t); persist(); rerender(); }
+    function applyWd(v){
+      const newWd = Math.max(1,v);
+      const newEnd = endFromWorkingDays(t.start, newWd);
+      const conflict = findFixedAnchorOverlap(t, t.start, newEnd);
+      if(conflict){
+        alert(`이 기간으로 조정할 수 없습니다.\n이유: 고정 일정 "${conflict.name}" (${fmt(conflict.start)}~${fmt(conflict.end)})과 겹칩니다.`);
+        return;
+      }
+      t.workingDays = newWd; t.end = newEnd; recalcFrom(t); persist(); rerender();
+    }
     minus.onclick=()=>applyWd(t.workingDays-1); plus.onclick=()=>applyWd(t.workingDays+1);
     wdInput.onchange=()=>applyWd(parseInt(wdInput.value,10)||1);
     wdWrap.appendChild(minus); wdWrap.appendChild(wdInput); wdWrap.appendChild(plus);
     wdTd.appendChild(wdWrap);
 
+    const doneTd = document.createElement('td'); doneTd.style.textAlign='center';
+    const doneCb = document.createElement('input'); doneCb.type='checkbox'; doneCb.checked = !!t.done;
+    doneCb.title = '완료 처리';
+    doneCb.onchange = () => { t.done = doneCb.checked; persist(); rerender(); };
+    doneTd.appendChild(doneCb);
+
     const actTd = document.createElement('td'); actTd.style.textAlign='center';
     actTd.appendChild(createRowMenu([
       { label:'+ 아래에 추가', onClick: () => {
         const idx = tasks.indexOf(t);
-        const nt = { id:genId(), project:t.project, category:'', name:'새 업무', start:nextWorkingDay(t.end), workingDays:1, progress:0, locked:false, fixed:false, ownerPlanner:t.ownerPlanner };
+        const nt = { id:genId(), project:t.project, category:'', name:'새 업무', start:nextWorkingDay(t.end), workingDays:1, progress:0, locked:false, fixed:false, done:false, memo:'', ownerPlanner:t.ownerPlanner };
         nt.end = endFromWorkingDays(nt.start, nt.workingDays);
         tasks.splice(idx+1,0,nt); recalcAll(); persist(); rerender();
       }},
@@ -530,7 +684,7 @@
       { label:'업무 삭제', onClick: () => { if(!confirm(`"${t.name}" 업무를 삭제할까요?`)) return; tasks = tasks.filter(x=>x.id!==t.id); recalcAll(); persist(); rerender(); } }
     ]));
 
-    [nameTd,startTd,endTd,wdTd,actTd].forEach(td=>tr.appendChild(td));
+    [nameTd,startTd,endTd,wdTd,doneTd,actTd].forEach(td=>tr.appendChild(td));
     return tr;
   }
 
@@ -610,7 +764,14 @@
     const pl = planners.find(p=>p.id===selectedPlanner);
     const conflicts = computeConflicts();
     const conflictIds = new Set();
-    conflicts.forEach(c => { conflictIds.add(c.a.id); conflictIds.add(c.b.id); });
+    const conflictMap = new Map();
+    conflicts.forEach(c => {
+      conflictIds.add(c.a.id); conflictIds.add(c.b.id);
+      if(!conflictMap.has(c.a.id)) conflictMap.set(c.a.id, []);
+      if(!conflictMap.has(c.b.id)) conflictMap.set(c.b.id, []);
+      conflictMap.get(c.a.id).push(c.b);
+      conflictMap.get(c.b.id).push(c.a);
+    });
     const allProjects = [...new Set(tasks.map(t=>t.project))];
 
     if(!selectedPlannerProject || !pl.projects.includes(selectedPlannerProject)){
@@ -677,10 +838,20 @@
       const ownTasks = tasks.filter(t => t.project===code && (t.ownerPlanner===pl.id || (Array.isArray(t.supporters) && t.supporters.includes(pl.id))));
 
       const sub = document.createElement('div');
+      const actionsRow = document.createElement('div'); actionsRow.className = 'row'; actionsRow.style.marginTop = '0'; actionsRow.style.marginBottom = '10px';
+      const resyncBtn = document.createElement('button'); resyncBtn.className = 'tiny ghost'; resyncBtn.textContent = '🔄 최신 앵커로 재동기화';
+      resyncBtn.title = '마스터 일정(구글 시트)에서 앵커 날짜가 바뀌었을 때, 고정된 업무만 최신 날짜로 다시 맞춥니다. 직접 수정한 업무는 안 건드립니다.';
+      resyncBtn.onclick = () => {
+        const { updated, added } = resyncPlannerProjectAnchors(pl, code);
+        alert(`${code} 고정 업무를 최신 앵커 기준으로 맞췄습니다. (갱신 ${updated}건, 새로 추가 ${added}건)`);
+      };
+      actionsRow.appendChild(resyncBtn);
+      sub.appendChild(actionsRow);
+
       const tableWrap = document.createElement('div'); tableWrap.className = 'table-wrap';
       const table = document.createElement('table'); table.style.tableLayout = 'auto';
-      table.innerHTML = `<tr><th>단위 업무 내용</th><th>시작 기한</th><th>종료 기한</th><th>근무일수</th><th></th></tr>`;
-      ownTasks.forEach(t => table.appendChild(plannerTaskRow(t, conflictIds, pl.id)));
+      table.innerHTML = `<tr><th>단위 업무 내용</th><th>시작 기한</th><th>종료 기한</th><th>근무일수</th><th style="text-align:center;">완료</th><th></th></tr>`;
+      ownTasks.forEach(t => table.appendChild(plannerTaskRow(t, conflictIds, pl.id, conflictMap)));
       tableWrap.appendChild(table); sub.appendChild(tableWrap);
 
       if(ownTasks.length === 0){
@@ -753,14 +924,24 @@
         } else {
           const cellDate = new Date(year, month, dayNum);
           const isToday = sameDay(cellDate, TODAY);
-          cell.style.background = isNonWorking(cellDate) ? 'var(--weekend)' : 'var(--panel)';
+          const holidayName = HOLIDAYS.get(dateToIso(cellDate));
+          if(holidayName){ cell.style.background = 'var(--holiday)'; }
+          else if(isNonWorking(cellDate)){ cell.style.background = 'var(--weekend)'; }
+          else { cell.style.background = 'var(--panel)'; }
           const num = document.createElement('div'); num.textContent = dayNum; num.style.fontSize = '11px';
-          num.style.color = isToday ? 'var(--accent)' : 'var(--text-dim)'; num.style.fontWeight = isToday ? '700' : '400';
+          num.style.color = isToday ? 'var(--accent)' : (holidayName ? 'var(--holiday-text)' : 'var(--text-dim)');
+          num.style.fontWeight = isToday ? '700' : '400';
           cell.appendChild(num);
+          if(holidayName){
+            const hLabel = document.createElement('div'); hLabel.textContent = holidayName;
+            hLabel.style.fontSize = '9px'; hLabel.style.color = 'var(--holiday-text)'; hLabel.style.fontWeight = '600';
+            hLabel.style.overflow = 'hidden'; hLabel.style.textOverflow = 'ellipsis'; hLabel.style.whiteSpace = 'nowrap';
+            cell.appendChild(hLabel);
+          }
           const numBottom = document.createElement('div'); numBottom.textContent = dayNum;
           numBottom.style.position = 'absolute'; numBottom.style.bottom = '2px'; numBottom.style.left = '4px';
           numBottom.style.fontSize = '10px'; numBottom.style.opacity = '0.55';
-          numBottom.style.color = isToday ? 'var(--accent)' : 'var(--text-dim)'; numBottom.style.fontWeight = isToday ? '700' : '400';
+          numBottom.style.color = isToday ? 'var(--accent)' : (holidayName ? 'var(--holiday-text)' : 'var(--text-dim)'); numBottom.style.fontWeight = isToday ? '700' : '400';
           cell.appendChild(numBottom);
         }
         bgRow.appendChild(cell);
@@ -896,9 +1077,13 @@
 
   // ---------------- 마스터 동기화 렌더러 ----------------
   function rerender(){
+    const tw = document.querySelector('.table-wrap');
+    const savedScroll = tw ? tw.scrollTop : 0;
     if(view === 'project') renderProjectView();
     else if(view === 'planner') renderPlannerView();
     else renderOverviewView();
+    const tw2 = document.querySelector('.table-wrap');
+    if(tw2) tw2.scrollTop = savedScroll;
   }
 
   function syncNavActive(){

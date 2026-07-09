@@ -72,8 +72,39 @@
       const touchedProjects = new Set(newTasks.map(t => t.project));
       tasks = tasks.filter(t => !(t.locked && touchedProjects.has(t.project)));
       tasks.push(...newTasks);
+
+      // 이 프로젝트들을 담당/지원하고 있던 기획자들의 고정 업무도 최신 앵커로 같이 맞춰줍니다.
+      let resyncUpdated = 0, resyncAdded = 0;
+      const affectedPlanners = new Set();
+      planners.forEach(pl => {
+        pl.projects.forEach(code => {
+          if(!touchedProjects.has(code)) return;
+          const { updated, added } = resyncPlannerProjectAnchors(pl, code);
+          resyncUpdated += updated; resyncAdded += added;
+          if(updated || added) affectedPlanners.add(pl);
+        });
+        // 지원으로만 들어간 프로젝트도 확인 (담당 프로젝트 목록엔 없어도 지원 업무가 있을 수 있음)
+        const supportProjects = new Set(
+          tasks.filter(t => t.ownerPlanner!==pl.id && Array.isArray(t.supporters) && t.supporters.includes(pl.id) && touchedProjects.has(t.project))
+            .map(t => t.project)
+        );
+        supportProjects.forEach(code => affectedPlanners.add(pl));
+      });
+
+      // 재동기화 후에도 이 사람들 일정에 겹침이 남아있는지 확인
+      const conflictReport = [];
+      affectedPlanners.forEach(pl => {
+        const conflicts = findPlannerConflicts(pl);
+        if(conflicts.length) conflictReport.push({ plannerName: pl.name, conflicts });
+      });
+
       recalcAll(); persist(); rerender();
-      alert(`구글 시트에서 마스터 일정을 갱신했습니다 (PC 마일스톤 + M 마일스톤, ${touchedProjects.size}개 프로젝트).`);
+      showSheetsImportResultModal({
+        projectCount: touchedProjects.size,
+        resyncUpdated, resyncAdded,
+        plannerCount: affectedPlanners.size,
+        conflictReport
+      });
     }catch(e){
       console.error(e);
       alert('구글 시트를 불러오지 못했습니다: ' + e.message);
