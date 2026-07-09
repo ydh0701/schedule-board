@@ -593,8 +593,8 @@
     return rows;
   }
 
-  function parseAndAppend(text){
-    const rows = parseTSVQuoted(text).filter(r => r.some(c => c && c.trim()));
+  function parseRows(rows){
+    rows = rows.filter(r => r.some(c => c && String(c).trim()));
     let curProject = null, curCategory = '';
     rows.forEach(r => {
       const c0 = (r[0]||'').trim();
@@ -648,6 +648,49 @@
       }
     });
   }
+
+  function parseAndAppend(text){
+    parseRows(parseTSVQuoted(text));
+  }
+
+  // ---------------- 구글 시트 연동 ----------------
+  const SHEETS_API_KEY = 'AIzaSyCQz-vCVDjRtEcyQfaC9kLSwZV0pIFfwGA';
+  const SPREADSHEET_ID = '1Ayc0tHFughRDG-0C_V_YJZdHz7GR-KKf2lt4HVlLQyQ';
+  const SHEET_TABS = [
+    { name: 'PC 마일스톤', label: 'PC' },
+    { name: 'M 마일스톤', label: '모바일' }
+  ];
+
+  async function fetchSheetTab(tabName){
+    const range = encodeURIComponent(tabName);
+    const url = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${range}?key=${SHEETS_API_KEY}`;
+    const res = await fetch(url);
+    if(!res.ok){
+      const body = await res.json().catch(()=>({}));
+      throw new Error(body?.error?.message || `${tabName} 불러오기 실패 (${res.status})`);
+    }
+    const data = await res.json();
+    return data.values || [];
+  }
+
+  async function importFromGoogleSheets(){
+    const btn = document.getElementById('sidebarSheetsBtn');
+    if(btn){ btn.disabled = true; btn.textContent = '⏳ 구글 시트 불러오는 중...'; }
+    try{
+      for(const tab of SHEET_TABS){
+        const rows = await fetchSheetTab(tab.name);
+        parseRows(rows);
+      }
+      recalcAll(); persist(); rerender();
+      alert('구글 시트에서 마스터 일정을 불러왔습니다 (PC 마일스톤 + M 마일스톤).');
+    }catch(e){
+      console.error(e);
+      alert('구글 시트를 불러오지 못했습니다: ' + e.message);
+    }
+    if(btn){ btn.disabled = false; btn.textContent = '📊 구글 시트에서 가져오기'; }
+  }
+
+
 
   // ---------------- 연쇄 계산 및 충돌 감지 ----------------
   function recalcAll(){
@@ -1348,11 +1391,11 @@
       const slotCount = slotEnds.length;
       const weekHeight = TOP_PAD + Math.max(1, slotCount) * (BAR_H + BAR_GAP) + BOTTOM_PAD;
 
-      const weekWrap = document.createElement('div'); weekWrap.style.position = 'relative'; weekWrap.style.minHeight = weekHeight + 'px'; weekWrap.style.borderBottom = '1px solid var(--border)';
+      const weekWrap = document.createElement('div'); weekWrap.style.position = 'relative'; weekWrap.style.minHeight = weekHeight + 'px'; weekWrap.style.borderBottom = '2px solid var(--border)'; weekWrap.style.marginBottom = '8px';
       const bgRow = document.createElement('div'); bgRow.style.position = 'absolute'; bgRow.style.inset = '0'; bgRow.style.display = 'flex';
       
       dayNums.forEach(dayNum => {
-        const cell = document.createElement('div'); cell.style.flex = '1'; cell.style.borderRight = '1px solid var(--border)'; cell.style.padding = '4px'; cell.style.position = 'relative';
+        const cell = document.createElement('div'); cell.style.flex = '1'; cell.style.borderRight = '1px solid var(--text-dim)'; cell.style.padding = '4px'; cell.style.position = 'relative';
         if(dayNum < 1 || dayNum > daysInMonth){
           cell.style.background = 'var(--bg)';
         } else {
@@ -1362,6 +1405,11 @@
           const num = document.createElement('div'); num.textContent = dayNum; num.style.fontSize = '11px';
           num.style.color = isToday ? 'var(--accent)' : 'var(--text-dim)'; num.style.fontWeight = isToday ? '700' : '400';
           cell.appendChild(num);
+          const numBottom = document.createElement('div'); numBottom.textContent = dayNum;
+          numBottom.style.position = 'absolute'; numBottom.style.bottom = '2px'; numBottom.style.left = '4px';
+          numBottom.style.fontSize = '10px'; numBottom.style.opacity = '0.55';
+          numBottom.style.color = isToday ? 'var(--accent)' : 'var(--text-dim)'; numBottom.style.fontWeight = isToday ? '700' : '400';
+          cell.appendChild(numBottom);
         }
         bgRow.appendChild(cell);
       });
@@ -1513,6 +1561,8 @@
     if(view === 'project') showPaste = !showPaste; else { view = 'project'; showPaste = true; syncNavActive(); }
     rerender();
   };
+
+  document.getElementById('sidebarSheetsBtn').onclick = () => importFromGoogleSheets();
 
   document.getElementById('sidebarAddPlannerBtn').onclick = () => {
     const name = prompt('추가할 기획자의 이름을 입력하세요:'); if(!name) return;
