@@ -174,16 +174,17 @@
   function findAnchor(anchors, pred) { return anchors.find(pred); }
   const isKickoff   = a => a.name.includes('킥오프');
   const isConcept   = a => a.name.includes('컨셉') && a.name.includes('확정');
-  const isDemoJudgeQA  = a => a.name.includes('데모') && a.name.includes('심사') && a.name.includes('QA') && !a.name.includes('LQA');
-  const isDemoJudge    = a => a.name.includes('데모') && a.name.includes('심사') && !a.name.includes('QA') && !a.name.includes('LQA');
-  const isDemoLaunch   = a => a.name.includes('데모') && a.name.includes('런칭') && !a.name.includes('QA') && !a.name.includes('LQA') && !a.name.includes('대응');
-  const isFinalJudgeQA = a => a.name.includes('완전판') && a.name.includes('심사') && a.name.includes('QA') && !a.name.includes('LQA');
-  const isFinalJudge   = a => a.name.includes('완전판') && a.name.includes('심사') && !a.name.includes('QA') && !a.name.includes('LQA');
-  const isFinalLaunch  = a => (a.name.includes('완전판') || a.name.includes('스토어')) && a.name.includes('런칭') && !a.name.includes('QA') && !a.name.includes('LQA') && !a.name.includes('대응');
-  const isMobileLaunchQA = a => a.name.includes('완전판') && a.name.includes('런칭') && a.name.includes('QA') && !a.name.includes('LQA') && !a.name.includes('대응');
+  const isDemoJudgeQA  = a => { const u=a.name.toUpperCase(); return a.name.includes('데모') && a.name.includes('심사') && u.includes('QA') && !u.includes('LQA'); };
+  const isDemoJudge    = a => { const u=a.name.toUpperCase(); return a.name.includes('데모') && a.name.includes('심사') && !u.includes('QA') && !u.includes('LQA'); };
+  const isDemoLaunch   = a => { const u=a.name.toUpperCase(); return a.name.includes('데모') && a.name.includes('런칭') && !u.includes('QA') && !u.includes('LQA') && !a.name.includes('대응'); };
+  const isFinalJudgeQA = a => { const u=a.name.toUpperCase(); return a.name.includes('완전판') && a.name.includes('심사') && u.includes('QA') && !u.includes('LQA'); };
+  const isFinalJudge   = a => { const u=a.name.toUpperCase(); return a.name.includes('완전판') && a.name.includes('심사') && !u.includes('QA') && !u.includes('LQA'); };
+  const isFinalLaunch  = a => { const u=a.name.toUpperCase(); return (a.name.includes('완전판') || a.name.includes('스토어')) && a.name.includes('런칭') && !u.includes('QA') && !u.includes('LQA') && !a.name.includes('대응'); };
+  const isMobileLaunchQA = a => { const u=a.name.toUpperCase(); return a.name.includes('완전판') && a.name.includes('런칭') && u.includes('QA') && !u.includes('LQA') && !a.name.includes('대응'); };
   const isDelivery  = a => a.name.includes('납품');
+  const isUiStart   = a => { const u=a.name.toUpperCase(); return u.includes('UI') && a.name.includes('투입'); };
 
-  function deliveryReviewDuration(name){ return (name.includes('1챕터') || name.includes('데모')) ? 2 : 5; }
+  function deliveryReviewDuration(name){ return (name.includes('1챕') || name.includes('데모')) ? 2 : 5; }
   function deliveryReviewName(name){ return `(기획) ${name.replace('납품','검수')}`; }
 
   // ---------------- 자동 템플릿 빌더 ----------------
