@@ -12,6 +12,9 @@
 <!-- Firebase App & Firestore SDK -->
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
+
+<!-- Google Identity Services (구글 시트 OAuth 로그인용) -->
+<script src="https://accounts.google.com/gsi/client" async defer></script>
 <script>
   // 초기 개발자용 설정 정보 탑재
   const firebaseConfig = {
@@ -52,7 +55,6 @@
       
       <div class="row" style="margin-top:0; flex-direction:column; gap:6px; width:100%;">
         <button class="tiny ghost" id="sidebarPasteBtn" style="width:100%; text-align:left;">+ 스프레드시트 연동</button>
-        <button class="tiny ghost" id="sidebarSheetsBtn" style="width:100%; text-align:left;">📊 구글 시트에서 가져오기</button>
         <button class="tiny ghost" id="sidebarAddPlannerBtn" style="width:100%; text-align:left;">+ 기획 팀원 추가</button>
         <button class="tiny ghost" id="sidebarAutoAssignBtn" style="width:100%; text-align:left; color:var(--accent);">⚡ 최적 자원 자율 배정</button>
       </div>
@@ -88,7 +90,10 @@
   })();
 </script>
 
-<!-- 코어 비즈니스 로직 스크립트 바인딩 -->
-<script src="app.js"></script>
+<!-- 코어 비즈니스 로직 스크립트 바인딩 (의존 순서: state → sheets → render → main) -->
+<script src="state.js"></script>
+<script src="sheets.js"></script>
+<script src="render.js"></script>
+<script src="main.js"></script>
 </body>
 </html>
