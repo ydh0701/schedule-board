@@ -486,30 +486,6 @@
     dash.appendChild(dashSheetsBtn);
     main.appendChild(dash);
 
-    // ---------------- 이번 주 마감 요약 ----------------
-    const weekEnd = addDays(TODAY_START, 7);
-    const dueSoon = tasks.filter(t => !t.locked && !t.done && t.end >= TODAY_START && t.end <= weekEnd)
-      .sort((a,b)=>a.end-b.end);
-    const overdue = tasks.filter(t => isDelayed(t)).sort((a,b)=>a.end-b.end);
-    if(dueSoon.length > 0 || overdue.length > 0){
-      const duePanel = document.createElement('div'); duePanel.className = 'panel';
-      duePanel.innerHTML = `<h2>이번 주 마감 요약</h2><p class="sub">아직 완료 처리되지 않은 업무 중, 마감이 지났거나(⏰) 이번 주(7일 내) 마감인 것들이에요.</p>`;
-      const list = document.createElement('div');
-      overdue.forEach(t => {
-        const row = document.createElement('div'); row.className = 'conflict-item';
-        row.innerHTML = `<span>⏰ <b>[${t.project}]</b> ${t.name} — 마감 ${fmt(t.end)} (지연)</span>`;
-        list.appendChild(row);
-      });
-      dueSoon.forEach(t => {
-        const row = document.createElement('div'); row.className = 'conflict-item';
-        row.style.background = 'var(--panel-alt)'; row.style.border = '1px solid var(--border)';
-        row.innerHTML = `<span><b>[${t.project}]</b> ${t.name} — 마감 ${fmt(t.end)}</span>`;
-        list.appendChild(row);
-      });
-      duePanel.appendChild(list);
-      main.appendChild(duePanel);
-    }
-
     if(showPaste){
       const loadPanel = document.createElement('div'); loadPanel.className = 'panel';
       loadPanel.innerHTML = `
