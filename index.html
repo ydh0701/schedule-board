@@ -38,6 +38,8 @@
     <span class="status" id="holidayStatus">공휴일 상태 동기화 대기 중</span>
     <button class="tiny primary" id="refreshHolidaysBtn" title="공개 API 연동을 통해 동적으로 공휴일을 동기화합니다.">공휴일 API 갱신</button>
     <button class="tiny ghost" id="manageHolidaysBtn">수동 편집</button>
+    <!-- 가벼운 구글 로그인 (접근 제어 아님, "누가 했는지" 식별용) -->
+    <div id="loginArea" style="display:flex; align-items:center; gap:8px; margin-left:6px;"></div>
   </header>
 
   <!-- 수동 공휴일 매니저 패널 (기본 숨김) -->
@@ -48,14 +50,14 @@
     <!-- 좌측 상시 고정 내비게이션 바 -->
     <nav class="sidebar">
       <button class="nav-item active" data-view="project">프로젝트별 타겟 일정</button>
-      <button class="nav-item" data-view="planner">팀원별 기획 로드맵</button>
+      <button class="nav-item" data-view="planner">소속 부서 대시보드</button>
       <button class="nav-item" data-view="overview">종합 캘린더 매트릭스</button>
       
       <hr style="width:100%; border:none; border-top:1px solid var(--border); margin:8px 0;">
       
       <div class="row" style="margin-top:0; flex-direction:column; gap:6px; width:100%;">
         <button class="tiny ghost" id="sidebarPasteBtn" style="width:100%; text-align:left;">+ 스프레드시트 연동</button>
-        <button class="tiny ghost" id="sidebarAddPlannerBtn" style="width:100%; text-align:left;">+ 기획 팀원 추가</button>
+        <button class="tiny ghost" id="sidebarAddPlannerBtn" style="width:100%; text-align:left;">+ 팀원 추가</button>
         <button class="tiny ghost" id="sidebarAutoAssignBtn" style="width:100%; text-align:left; color:var(--accent);">⚡ 최적 자원 자율 배정</button>
       </div>
       <div id="sidebarExtra"></div>
@@ -69,6 +71,9 @@
 
 <!-- 모달 컨테이너 루트 포탈 -->
 <div id="modalRoot"></div>
+
+<!-- PM 알림 토스트 루트 (우측 하단, 11-1) -->
+<div id="toastRoot" class="toast-stack"></div>
 
 <!-- 테마 전환 버튼 스위치 -->
 <button id="themeToggleBtn" class="theme-toggle" aria-label="다크 라이트 테마 토글 스위치">🌙</button>

@@ -249,6 +249,21 @@ input[type=text]:focus, input[type=date]:focus, input[type=number]:focus, textar
 @keyframes popoverIn { from { opacity: 0; transform: scale(0.94) translateY(-4px); } to { opacity: 1; transform: scale(1) translateY(0); } }
 @keyframes conflictPulse { 0%, 100% { filter: brightness(1); } 50% { filter: brightness(1.25); } }
 @keyframes loadingPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } }
+@keyframes toastIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+
+/* ---------------- PM 변경 알림 토스트 (11-1) ---------------- */
+.toast-stack { position: fixed; right: 20px; bottom: 20px; z-index: 200; display: flex; flex-direction: column; gap: 8px; align-items: flex-end; }
+.toast { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 10px 14px; box-shadow: 0 12px 28px var(--shadow-color); font-size: 13px; color: var(--text); max-width: 300px; animation: toastIn 0.2s ease; }
+.toast .toast-title { font-weight: 700; margin-bottom: 2px; color: var(--accent); }
+
+/* ---------------- 모달 안 반복 패턴 (선택형 행 / 필드 라벨) ---------------- */
+.pick-row { margin-bottom: 6px; padding: 9px 11px; border: 1px solid var(--border); border-radius: 7px; }
+.pick-row.ok { background: var(--ok-soft); }
+.pick-row.danger { background: var(--danger-soft); opacity: 0.85; }
+.pick-row.split { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.list-row { display: flex; justify-content: space-between; align-items: center; padding: 7px 8px; border-radius: 6px; margin-bottom: 2px; background: transparent; }
+.list-row.selected { background: var(--accent-soft); }
+.field-label { font-size: 12px; color: var(--text-dim); margin: 0 0 4px; }
 
 tr.conflict { animation: conflictPulse 2s ease-in-out infinite; }
 .tag.anchor { background: var(--anchor-soft); color: var(--anchor); border: 1px solid var(--anchor); padding: 2px 6px; border-radius: 4px; font-size: 11px; font-weight: 600; }

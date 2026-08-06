@@ -25,11 +25,7 @@
     rerender();
   };
 
-  document.getElementById('sidebarAddPlannerBtn').onclick = () => {
-    const name = prompt('추가할 기획자의 이름을 입력하세요:'); if(!name) return;
-    const pl = { id: genId(), name, projects: [] }; planners.push(pl);
-    savePlanners(); view = 'planner'; selectedPlanner = pl.id; syncNavActive(); rerender();
-  };
+  document.getElementById('sidebarAddPlannerBtn').onclick = () => showAddTeamMemberModal();
 
   document.getElementById('sidebarAutoAssignBtn').onclick = () => showAutoAssignModal();
 

@@ -40,6 +40,10 @@
   let collapsePC = false;
   let collapseMobile = false;
   let overviewGroupBy = 'project';
+  let selectedDeptTab = 'plan'; // 소속 부서 대시보드 상단 탭 (plan/ui/dev)
+  let currentUser = null; // { name, email, picture } — 가벼운 식별용 구글 로그인 (5번), 접근 제어 아님
+  let boardMeta = { lastEditedBy: null, lastEditedAt: null };
+  let firstSnapshotReceived = false; // 최초 로드 때는 토스트를 띄우지 않기 위한 플래그
 
   function genId(){ return Date.now().toString(36) + Math.random().toString(36).slice(2,8); }
 
@@ -53,8 +57,11 @@
       start: dateToIso(t.start), end: dateToIso(t.end),
       workingDays: t.workingDays||1, progress: t.progress||0,
       locked: !!t.locked, fixed: !!t.fixed, done: !!t.done, memo: t.memo || '',
+      dept: t.dept || 'plan',
       ownerPlanner: t.ownerPlanner || null, rowGroup: t.rowGroup || null,
-      supporters: Array.isArray(t.supporters) ? t.supporters : []
+      supporters: Array.isArray(t.supporters) ? t.supporters : [],
+      dependsOn: t.dependsOn || null, dependsOnBuffer: t.dependsOnBuffer || 0,
+      doneBy: t.doneBy || null, doneAt: t.doneAt || null
     };
   }
   function deserializeTask(o){
@@ -63,10 +70,21 @@
       start: isoToDate(o.start), end: isoToDate(o.end),
       workingDays: o.workingDays||1, progress: o.progress||0,
       locked: !!o.locked, fixed: !!o.fixed, done: !!o.done, memo: o.memo || '',
+      dept: o.dept || 'plan',
       ownerPlanner: o.ownerPlanner || null, rowGroup: o.rowGroup || undefined,
-      supporters: Array.isArray(o.supporters) ? o.supporters : []
+      supporters: Array.isArray(o.supporters) ? o.supporters : [],
+      dependsOn: o.dependsOn || null, dependsOnBuffer: o.dependsOnBuffer || 0,
+      doneBy: o.doneBy || null, doneAt: o.doneAt || null
     };
   }
+
+  // 부서 정의 — 나중에 부서가 늘어나면(예: QA, 사업) 여기 한 줄만 추가하면 됩니다.
+  const DEPARTMENTS = [
+    { id: 'plan', label: '기획', icon: '📋' },
+    { id: 'ui',   label: 'UI',   icon: '🎨' },
+    { id: 'dev',  label: '개발', icon: '💻' }
+  ];
+  function deptLabel(id){ const d = DEPARTMENTS.find(x=>x.id===id); return d ? `${d.icon} ${d.label}` : id; }
 
   let persistTimer = null;
   let persistResolvers = [];
@@ -81,7 +99,10 @@
           planners: planners,
           excludeKeywords: EXCLUDE_KEYWORDS,
           manualCompleted: [...manualCompleted],
-          holidays: [...HOLIDAYS.entries()].map(([d,n]) => ({d,n}))
+          holidays: [...HOLIDAYS.entries()].map(([d,n]) => ({d,n})),
+          // 완료 처리/삭제 같은 동작에 "누가 했는지"가 남도록 (5번, 접근 제어 아님 — 식별용)
+          lastEditedBy: currentUser ? currentUser.name : null,
+          lastEditedAt: new Date().toISOString()
         };
         try{ await boardRef.set(data); }
         catch(e){
@@ -99,15 +120,50 @@
 
   function applyRemoteData(data){
     tasks = (data.tasks||[]).map(deserializeTask);
-    planners = data.planners || [];
+    planners = (data.planners||[]).map(p => ({ ...p, dept: p.dept || 'plan' }));
     if(Array.isArray(data.excludeKeywords) && data.excludeKeywords.length) EXCLUDE_KEYWORDS = data.excludeKeywords;
     manualCompleted = new Set(data.manualCompleted||[]);
     (data.holidays||[]).forEach(h => HOLIDAYS.set(h.d, h.n));
   }
 
+  // 이전 tasks(갱신 전)와 새로 받은 tasks를 비교해서 추가/수정/삭제 건수를 요약합니다.
+  // PM 알림 1단계(11-1) 토스트에 씁니다. 바뀐 게 없으면 null을 반환합니다.
+  function summarizeTaskDiff(oldTasks, newTasks){
+    const oldMap = new Map(oldTasks.map(t => [t.id, t]));
+    const newMap = new Map(newTasks.map(t => [t.id, t]));
+    let added = 0, removed = 0, modified = 0;
+    newMap.forEach((t, id) => {
+      if(!oldMap.has(id)){ added++; return; }
+      const o = oldMap.get(id);
+      const changed = o.name!==t.name || +o.start!==+t.start || +o.end!==+t.end ||
+        o.progress!==t.progress || !!o.done!==!!t.done || o.dependsOn!==t.dependsOn;
+      if(changed) modified++;
+    });
+    oldMap.forEach((t, id) => { if(!newMap.has(id)) removed++; });
+    if(added + removed + modified === 0) return null;
+    const parts = [];
+    if(added) parts.push(`추가 ${added}건`);
+    if(modified) parts.push(`수정 ${modified}건`);
+    if(removed) parts.push(`삭제 ${removed}건`);
+    return parts.join(' · ');
+  }
+
   function subscribeBoard(){
     boardRef.onSnapshot(doc => {
-      if(doc.exists) applyRemoteData(doc.data());
+      if(doc.exists){
+        const data = doc.data();
+        const prevTasks = tasks; // 갱신 전 상태 — 토스트용 비교에만 씁니다
+        applyRemoteData(data);
+        boardMeta = { lastEditedBy: data.lastEditedBy || null, lastEditedAt: data.lastEditedAt || null };
+        if(firstSnapshotReceived){
+          const summary = summarizeTaskDiff(prevTasks, tasks);
+          if(summary){
+            const who = boardMeta.lastEditedBy ? `${boardMeta.lastEditedBy}님이 ` : '';
+            showChangeToast(`${who}${summary}`);
+          }
+        }
+        firstSnapshotReceived = true;
+      }
       firestoreReady = true;
       rerender();
     }, err => {
@@ -351,7 +407,7 @@
       tasks.push({
         id: genId(), project: code, category: item.cat, name: item.name,
         start: item.start, end: item.end, workingDays: item.d, progress: 0,
-        locked: false, fixed: item.fixed, ownerPlanner: pl.id
+        locked: false, fixed: item.fixed, dept: pl.dept||'plan', ownerPlanner: pl.id
       });
     });
   }
@@ -376,7 +432,7 @@
         tasks.push({
           id: genId(), project: code, category: item.cat, name: item.name,
           start: new Date(item.start), end: new Date(item.end), workingDays: item.d,
-          progress: 0, locked: false, fixed: true, ownerPlanner: pl.id
+          progress: 0, locked: false, fixed: true, dept: pl.dept||'plan', ownerPlanner: pl.id
         });
         added++;
       }
@@ -553,6 +609,15 @@
         prevEnd = t.end;
       });
     });
+    // dependsOn 2단계 패스 — 위 체이닝(1단계)은 절대 안 건드리고, 그 결과 위에 얹습니다.
+    applyDependsOnConstraints();
+  }
+
+  // 완료 체크할 때 누가 했는지 남깁니다 (5번 — 접근 제어 아님, 식별용).
+  function markTaskDone(t, checked){
+    t.done = checked;
+    if(checked){ t.doneBy = currentUser ? currentUser.name : null; t.doneAt = new Date().toISOString(); }
+    else { t.doneBy = null; t.doneAt = null; }
   }
 
   function recalcFrom(editedTask){
@@ -569,6 +634,102 @@
       }
       prevEnd = t.end;
     }
+  }
+
+  // ---------------- dependsOn (선행 업무) 엔진 ----------------
+  // 부서·담당자 상관없이 "이 업무는 저 업무보다 늦게 시작해야 한다"는 하한선을 겁니다.
+  // 완료 체크는 안 보고 날짜(종료일)만 기준으로 삼습니다 (기존 체이닝 로직과 동일한 원칙).
+  function getTaskById(id){ return tasks.find(t => t.id === id); }
+
+  // dependsOn 관계만으로 위상 정렬합니다. 순환이 있으면(정상적으로는 저장 시점에
+  // 막히므로 방어적 처리) 남은 항목은 그냥 뒤에 붙여서 무한루프를 막습니다.
+  function topoOrderByDependsOn(depTasks){
+    const idSet = new Set(depTasks.map(t => t.id));
+    const inDegree = new Map(depTasks.map(t => [t.id, 0]));
+    const children = new Map();
+    depTasks.forEach(t => {
+      if(idSet.has(t.dependsOn)){
+        inDegree.set(t.id, inDegree.get(t.id) + 1);
+        if(!children.has(t.dependsOn)) children.set(t.dependsOn, []);
+        children.get(t.dependsOn).push(t.id);
+      }
+    });
+    const byId = new Map(depTasks.map(t => [t.id, t]));
+    const queue = depTasks.filter(t => inDegree.get(t.id) === 0).map(t => t.id);
+    const order = [];
+    while(queue.length){
+      const id = queue.shift();
+      order.push(byId.get(id));
+      (children.get(id) || []).forEach(childId => {
+        inDegree.set(childId, inDegree.get(childId) - 1);
+        if(inDegree.get(childId) === 0) queue.push(childId);
+      });
+    }
+    if(order.length < depTasks.length){
+      const done = new Set(order.map(t => t.id));
+      depTasks.forEach(t => { if(!done.has(t.id)) order.push(t); });
+    }
+    return order;
+  }
+
+  // 이 업무가 선행 업무 때문에 지켜야 하는 시작일 하한선. dependsOn이 없거나
+  // 참조가 끊어졌으면(고아 참조) null을 반환합니다.
+  function dependsOnLowerBound(t){
+    if(!t.dependsOn) return null;
+    const dep = getTaskById(t.dependsOn);
+    if(!dep) return null;
+    return { dep, lowerBound: nextWorkingDay(addDays(dep.end, t.dependsOnBuffer || 0)) };
+  }
+
+  // 표에서 날짜를 직접 입력할 때 하한선을 어기는지 확인합니다 (findFixedAnchorOverlap과 동일한 패턴).
+  function dependsOnViolation(t, newStart){
+    const info = dependsOnLowerBound(t);
+    if(!info) return null;
+    return newStart < info.lowerBound ? info : null;
+  }
+
+  // A가 B를 선행 업무로 삼으려 할 때, B에서부터 dependsOn을 계속 따라가면 A가 다시
+  // 나오는지(순환) 확인합니다. "선행 업무 지정" 모달에서 저장 직전에 호출합니다.
+  function wouldCreateCycle(taskId, candidateDependsOnId){
+    let cur = candidateDependsOnId;
+    const seen = new Set();
+    while(cur){
+      if(cur === taskId) return true;
+      if(seen.has(cur)) return false;
+      seen.add(cur);
+      const t = getTaskById(cur);
+      cur = t ? t.dependsOn : null;
+    }
+    return false;
+  }
+
+  // 선행 업무가 삭제될 때, 그 업무를 참조하던 dependsOn을 전부 풀어줍니다
+  // (지원 기획자 목록 정리와 같은 "고아 참조 방지" 패턴).
+  function releaseDependsOnRefs(removedIds){
+    const idSet = new Set(removedIds);
+    tasks.forEach(t => {
+      if(t.dependsOn && idSet.has(t.dependsOn)){ t.dependsOn = null; t.dependsOnBuffer = 0; }
+    });
+  }
+
+  // dependsOn이 있는 업무들만 위상 정렬 순서대로 하한선을 적용합니다. locked(고정
+  // 앵커)는 하한선 대상에서 제외합니다 — locked 업무는 PM/시트 입력으로 날짜가
+  // 확정되는 것이라 다른 업무를 기다려서 밀리는 개념이 아닙니다.
+  // 밀린 업무가 있으면 recalcFrom을 재사용해서 같은 담당자 체인의 뒷부분도 같이
+  // 밀어줍니다 (캐스케이드) — 1단계 체이닝 로직은 그대로 두고 그 함수를 그대로 씁니다.
+  function applyDependsOnConstraints(){
+    const depTasks = tasks.filter(t => t.dependsOn && !t.locked);
+    if(depTasks.length === 0) return;
+    const order = topoOrderByDependsOn(depTasks);
+    order.forEach(t => {
+      const info = dependsOnLowerBound(t);
+      if(!info) return;
+      if(t.start < info.lowerBound){
+        t.start = info.lowerBound;
+        t.end = endFromWorkingDays(t.start, t.workingDays);
+        recalcFrom(t);
+      }
+    });
   }
 
   function computeConflicts(){

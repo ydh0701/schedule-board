@@ -69,8 +69,12 @@
       // 이미 있던 마스터(고정) 일정은 지우고 새로 받아온 것으로 교체합니다.
       // (그대로 두면 "갱신" 버튼을 누를 때마다 같은 프로젝트가 중복으로 계속 쌓여요.
       //  기획자가 직접 추가한 업무(locked:false)는 건드리지 않습니다.)
+      // 주의: 영상사 촬영일자/납품일자(category:'영상사')는 locked:true이지만 시트가
+      // 아니라 PM이 화면에서 직접 입력한 값이라, 여기서 같이 지우면 안 됩니다.
       const touchedProjects = new Set(newTasks.map(t => t.project));
-      tasks = tasks.filter(t => !(t.locked && touchedProjects.has(t.project)));
+      const removedAnchors = tasks.filter(t => t.locked && touchedProjects.has(t.project) && t.category !== '영상사');
+      releaseDependsOnRefs(removedAnchors.map(t => t.id)); // 이 마일스톤을 선행 업무로 지정해둔 참조가 있으면 정리
+      tasks = tasks.filter(t => !(t.locked && touchedProjects.has(t.project) && t.category !== '영상사'));
       tasks.push(...newTasks);
 
       // 이 프로젝트들을 담당/지원하고 있던 기획자들의 고정 업무도 최신 앵커로 같이 맞춰줍니다.
@@ -113,5 +117,40 @@
   }
 
 
+
+  // ---------------- 구글 로그인 (5번, 식별용 — 접근 제어 아님) ----------------
+  // 시트 연동(OAuth 토큰) 흐름과는 별개입니다. 여기는 "누가 접속해서 뭘
+  // 바꿨는지" 정도만 가볍게 파악하려는 용도라, 이름/이메일/프로필 사진만
+  // 담긴 ID 토큰(Sign In With Google)을 그대로 씁니다.
+  function decodeJwtPayload(token){
+    const base64 = token.split('.')[1].replace(/-/g,'+').replace(/_/g,'/');
+    const jsonStr = decodeURIComponent(
+      atob(base64).split('').map(c => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2)).join('')
+    );
+    return JSON.parse(jsonStr);
+  }
+
+  function initIdentityLogin(){
+    if(!window.google || !google.accounts || !google.accounts.id){ setTimeout(initIdentityLogin, 300); return; }
+    const saved = localStorage.getItem('scheduleBoardUser');
+    if(saved){ try{ currentUser = JSON.parse(saved); }catch(e){ currentUser = null; } }
+
+    google.accounts.id.initialize({
+      client_id: OAUTH_CLIENT_ID,
+      auto_select: true,
+      callback: (resp) => {
+        try{
+          const payload = decodeJwtPayload(resp.credential);
+          currentUser = { name: payload.name, email: payload.email, picture: payload.picture };
+          localStorage.setItem('scheduleBoardUser', JSON.stringify(currentUser));
+        }catch(e){ console.error('로그인 처리 실패:', e); }
+        renderLoginStatus();
+      }
+    });
+
+    renderLoginStatus();
+    if(!currentUser) google.accounts.id.prompt(); // 이미 로그인된 세션이면 팝업 없이 조용히 인식됩니다
+  }
+  initIdentityLogin();
 
   // ---------------- 연쇄 계산 및 충돌 감지 ----------------
