@@ -217,7 +217,9 @@ function renderProjectDetail(main, project){
   main.appendChild(milestoneSection);
   const list = tasksForProject(project.id);
   const section = el('section', 'panel');
-  section.append(el('h2', '', `연결된 업무 · ${list.length}건`));
+  const taskHead = el('div', 'section-title-row'); taskHead.append(el('h2', '', `연결된 업무 · ${list.length}건`));
+  if(isAdmin() || isLead()) taskHead.appendChild(button('+ 업무 추가', 'tiny primary', () => openTaskEditor(null, { projectId: project.id })));
+  section.appendChild(taskHead);
   if(!list.length) section.append(el('p', 'sub', '아직 연결된 업무가 없습니다. 팀장 또는 관리자가 업무를 추가할 수 있습니다.'));
   list.sort((a, b) => String(a.dueDate || '9999').localeCompare(String(b.dueDate || '9999'))).forEach(task => section.appendChild(taskRow(task, false)));
   main.appendChild(section);
@@ -447,7 +449,7 @@ function openProjectCreator(){
   dialog.appendChild(form);
 }
 
-function openTaskEditor(task){
+function openTaskEditor(task, initial = {}){
   const editing = !!task;
   const { dialog, close, onClose } = openDialog(editing ? '업무 수정' : '업무 추가');
   const form = el('form', 'form-grid');
@@ -458,7 +460,7 @@ function openTaskEditor(task){
   const assignee = selectField('담당자', people.map(user => [user.id, user.name || user.email]));
   if(task?.assigneeId && !people.some(user => user.id === task.assigneeId)) assignee.select.add(new Option(userName(task.assigneeId), task.assigneeId));
   assignee.select.value = task?.assigneeId || '';
-  const project = selectField('연결 프로젝트', [['', '프로젝트와 연결하지 않음'], ...projects.map(item => [item.id, item.code || item.name])]); project.select.value = task?.projectId || '';
+  const project = selectField('연결 프로젝트', [['', '프로젝트와 연결하지 않음'], ...projects.map(item => [item.id, item.code || item.name])]); project.select.value = task?.projectId || initial.projectId || '';
   const milestone = selectField('연결 마일스톤', [['', '마일스톤과 연결하지 않음']]);
   const dependsOn = multiSelectField('선행 업무 (복수 선택 가능)');
   const refreshProjectRelations = () => {
