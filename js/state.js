@@ -34,6 +34,7 @@ let projectUpdates = [];
 let timeOffs = [];
 let visibleUsers = [];
 let accessRequests = [];
+let profileLookup = { status: 'idle', uid: '', message: '' };
 
 let profileUnsubscribe = null;
 let dataUnsubscribers = [];
@@ -274,20 +275,29 @@ function startAuth(){
     currentUser = user;
     currentProfile = null;
     if(!user) {
+      profileLookup = { status: 'idle', uid: '', message: '' };
       setAppStatus('로그인이 필요합니다');
       rerenderSafely();
       return;
     }
+    profileLookup = { status: 'checking', uid: user.uid, message: '' };
     setAppStatus('권한을 확인하는 중…');
     profileUnsubscribe = db.collection('users').doc(user.uid).onSnapshot(async doc => {
       if(!doc.exists) {
+        profileLookup = { status: 'missing', uid: user.uid, message: '' };
         try { await createAccessRequest(user); }
         catch(error) { console.error('승인 요청 생성 실패:', error); }
         handleProfile(null);
         return;
       }
-      handleProfile({ id: doc.id, ...doc.data() });
+      const profile = { id: doc.id, ...doc.data() };
+      profileLookup = {
+        status: profile.active === true ? 'approved' : 'inactive', uid: user.uid,
+        message: `role=${profile.role || '없음'}, active=${String(profile.active)}`
+      };
+      handleProfile(profile);
     }, error => {
+      profileLookup = { status: 'error', uid: user.uid, message: error.code || error.message || 'unknown' };
       console.error('권한 정보 확인 실패:', error);
       setAppStatus('권한 정보를 확인할 수 없습니다');
       rerenderSafely();
