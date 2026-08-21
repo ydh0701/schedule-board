@@ -64,10 +64,16 @@ function resetDataSubscriptions(){
 }
 
 function docToObject(doc){ return { id: doc.id, ...doc.data() }; }
-function isAdmin(){ return currentProfile?.role === 'admin'; }
-function isLead(){ return currentProfile?.role === 'lead'; }
-function isMember(){ return currentProfile?.role === 'member'; }
+function workRole(profile = currentProfile){ return profile?.role === 'admin' ? 'pm' : profile?.role || 'member'; }
+function isAdmin(){ return currentProfile?.isAdmin === true || ['admin', 'pm'].includes(currentProfile?.role); }
+function isPM(){ return workRole() === 'pm'; }
+function isLead(){ return workRole() === 'lead'; }
+function isMember(){ return workRole() === 'member'; }
 function isApproved(){ return !!currentProfile?.active; }
+function userRoleLabel(profile){
+  const title = workRole(profile) === 'pm' ? 'PM' : workRole(profile) === 'lead' ? '팀장' : '팀원';
+  return profile?.isAdmin === true || profile?.role === 'admin' ? `관리자 · ${title}` : title;
+}
 function departmentName(id){ return DEPARTMENTS.find(x => x.id === id)?.name || id || '미지정'; }
 function dateOnly(value){ return value ? String(value).slice(0, 10) : ''; }
 
@@ -253,7 +259,7 @@ function handleProfile(profile){
     resetDataSubscriptions();
     setAppStatus('승인 대기 중');
   } else {
-    setAppStatus(`${currentProfile.name || currentUser.displayName || currentUser.email} · ${currentProfile.role === 'admin' ? '관리자' : currentProfile.role === 'lead' ? departmentName(currentProfile.departmentId) + ' 팀장' : '팀원'}`);
+    setAppStatus(`${currentProfile.name || currentUser.displayName || currentUser.email} · ${userRoleLabel(currentProfile)}${isLead() && currentProfile.departmentId ? ' · ' + departmentName(currentProfile.departmentId) : ''}`);
     subscribeApprovedData();
   }
   rerenderSafely();
@@ -499,16 +505,16 @@ async function archiveMilestone(milestoneId){
   });
 }
 
-async function approveAccessRequest(requestId, role, departmentId){
+async function approveAccessRequest(requestId, role, departmentId, adminAccess = false){
   if(!requirePermission(isAdmin(), '사용자 권한은 관리자만 부여할 수 있습니다.')) return;
   const request = accessRequests.find(item => item.id === requestId);
   if(!request) throw new Error('승인 요청을 찾을 수 없습니다.');
-  if(!['admin', 'lead', 'member'].includes(role)) throw new Error('올바른 역할을 선택해주세요.');
-  if(role !== 'admin' && !departmentId) throw new Error('소속 부서를 선택해주세요.');
+  if(!['pm', 'lead', 'member'].includes(role)) throw new Error('올바른 업무 역할을 선택해주세요.');
+  if(role !== 'pm' && !departmentId) throw new Error('소속 부서를 선택해주세요.');
   const batch = db.batch();
   batch.set(db.collection('users').doc(requestId), {
     email: request.email || '', name: request.name || request.email || '이름 미지정',
-    role, departmentId: role === 'admin' ? null : departmentId, active: true,
+    role, departmentId: role === 'pm' ? null : departmentId, isAdmin: Boolean(adminAccess), active: true,
     approvedAt: firebase.firestore.FieldValue.serverTimestamp(),
     updatedAt: firebase.firestore.FieldValue.serverTimestamp(), updatedBy: currentUser.uid
   }, { merge: true });
@@ -516,12 +522,13 @@ async function approveAccessRequest(requestId, role, departmentId){
   await batch.commit();
 }
 
-async function saveUserRole(userId, role, departmentId){
+async function saveUserRole(userId, role, departmentId, adminAccess = false){
   if(!requirePermission(isAdmin(), '사용자 권한은 관리자만 변경할 수 있습니다.')) return;
-  if(!['admin', 'lead', 'member'].includes(role)) throw new Error('올바른 역할을 선택해주세요.');
-  if(role !== 'admin' && !departmentId) throw new Error('소속 부서를 선택해주세요.');
+  if(!['pm', 'lead', 'member'].includes(role)) throw new Error('올바른 업무 역할을 선택해주세요.');
+  if(role !== 'pm' && !departmentId) throw new Error('소속 부서를 선택해주세요.');
+  if(userId === currentUser.uid && isAdmin() && !adminAccess && role !== 'pm') throw new Error('본인의 관리자 권한은 해제할 수 없습니다. 다른 관리자에게 요청해주세요.');
   await db.collection('users').doc(userId).update({
-    role, departmentId: role === 'admin' ? null : departmentId,
+    role, departmentId: role === 'pm' ? null : departmentId, isAdmin: Boolean(adminAccess),
     updatedAt: firebase.firestore.FieldValue.serverTimestamp(), updatedBy: currentUser.uid
   });
 }
