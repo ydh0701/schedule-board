@@ -340,7 +340,7 @@ function adminAccessPanel(){
   visibleUsers.forEach(user => {
     const row = el('div', 'admin-user-row');
     row.append(el('div', '', user.name || user.email));
-    row.append(el('span', 'foot-note', `${user.email || ''} · ${user.role === 'admin' ? '관리자' : user.role === 'lead' ? '팀장' : '팀원'}${user.departmentId ? ' · ' + departmentName(user.departmentId) : ''}`));
+    row.append(el('span', 'foot-note', `${user.email || ''} · ${userRoleLabel(user)}${user.departmentId ? ' · ' + departmentName(user.departmentId) : ''}`));
     row.appendChild(button('권한 수정', 'tiny ghost', () => openUserRoleEditor(user)));
     panel.appendChild(row);
   });
@@ -586,29 +586,32 @@ function openTimeOffEditor(item){
   dialog.appendChild(form);
 }
 
-function roleFields(roleValue, departmentValue){
-  const role = selectField('역할', [['member', '팀원'], ['lead', '팀장'], ['admin', '관리자']]); role.select.value = roleValue || 'member';
+function roleFields(roleValue, departmentValue, adminAccess = false){
+  const role = selectField('업무 역할', [['member', '팀원'], ['lead', '팀장'], ['pm', 'PM']]); role.select.value = roleValue === 'admin' ? 'pm' : roleValue || 'member';
   const department = selectField('소속 부서', DEPARTMENTS.map(item => [item.id, item.name])); department.select.value = departmentValue || DEPARTMENTS[0].id;
-  const sync = () => { department.wrap.hidden = role.select.value === 'admin'; };
+  const admin = el('label', 'permission-toggle');
+  const checkbox = document.createElement('input'); checkbox.type = 'checkbox'; checkbox.checked = adminAccess || roleValue === 'admin';
+  admin.append(checkbox, el('span', '', '관리자 권한'), el('small', '', '시스템 전체 관리 권한'));
+  const sync = () => { department.wrap.hidden = role.select.value === 'pm'; };
   role.select.onchange = sync; sync();
-  return { role, department };
+  return { role, department, admin: { wrap: admin, checkbox } };
 }
 
 function openApprovalEditor(request){
   const { overlay, dialog } = openDialog('사용자 승인 및 배정');
   dialog.append(el('p', 'sub', `${request.name || '이름 미지정'} · ${request.email || '이메일 없음'}`));
   const form = el('form', 'form-grid'); const fields = roleFields('member', '');
-  form.append(fields.role.wrap, fields.department.wrap, button('승인', 'primary'));
-  form.onsubmit = async event => { event.preventDefault(); try { await approveAccessRequest(request.id, fields.role.select.value, fields.department.select.value); overlay.remove(); } catch(error) { alert(error.message); } };
+  form.append(fields.role.wrap, fields.department.wrap, fields.admin.wrap, button('승인', 'primary'));
+  form.onsubmit = async event => { event.preventDefault(); try { await approveAccessRequest(request.id, fields.role.select.value, fields.department.select.value, fields.admin.checkbox.checked); overlay.remove(); } catch(error) { alert(error.message); } };
   dialog.appendChild(form);
 }
 
 function openUserRoleEditor(user){
   const { overlay, dialog } = openDialog('사용자 권한 수정');
   dialog.append(el('p', 'sub', `${user.name || '이름 미지정'} · ${user.email || '이메일 없음'}`));
-  const form = el('form', 'form-grid'); const fields = roleFields(user.role, user.departmentId);
-  form.append(fields.role.wrap, fields.department.wrap, button('저장', 'primary'));
-  form.onsubmit = async event => { event.preventDefault(); try { await saveUserRole(user.id, fields.role.select.value, fields.department.select.value); overlay.remove(); } catch(error) { alert(error.message); } };
+  const form = el('form', 'form-grid'); const fields = roleFields(user.role, user.departmentId, user.isAdmin);
+  form.append(fields.role.wrap, fields.department.wrap, fields.admin.wrap, button('저장', 'primary'));
+  form.onsubmit = async event => { event.preventDefault(); try { await saveUserRole(user.id, fields.role.select.value, fields.department.select.value, fields.admin.checkbox.checked); overlay.remove(); } catch(error) { alert(error.message); } };
   dialog.appendChild(form);
 }
 
