@@ -22,7 +22,7 @@ const TASK_STATUS = {
 let currentUser = null;
 let currentProfile = null;
 let authResolved = false;
-let activeView = 'projects';
+let activeView = 'home';
 let selectedProjectId = null;
 let workViewMode = 'list';
 let workCalendarCursor = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
@@ -281,6 +281,7 @@ function startAuth(){
     currentUser = user;
     currentProfile = null;
     if(!user) {
+      activeView = 'home';
       profileLookup = { status: 'idle', uid: '', message: '' };
       setAppStatus('로그인이 필요합니다');
       rerenderSafely();
