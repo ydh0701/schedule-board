@@ -382,10 +382,13 @@ function openProjectEditor(project){
 
 function openProjectCreator(){
   const { dialog, close } = openDialog('프로젝트 추가');
-  const form = el('form', 'form-grid');
+  dialog.classList.add('project-create-dialog');
+  const form = el('form', 'form-grid project-create-form');
   const name = inputField('프로젝트명', '예: 프로젝트 12');
   const code = inputField('프로젝트 코드', '예: PC12');
-  form.append(name.wrap, code.wrap, button('프로젝트 만들기', 'primary'));
+  const actions = el('div', 'form-actions project-create-actions');
+  actions.appendChild(button('프로젝트 만들기', 'primary'));
+  form.append(name.wrap, code.wrap, actions);
   form.onsubmit = async event => { event.preventDefault(); try { await saveProject({ name: name.input.value, code: code.input.value }); close(); } catch(error) { alert(error.message); } };
   dialog.appendChild(form);
 }
