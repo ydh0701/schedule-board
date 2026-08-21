@@ -13,6 +13,7 @@ const DEPARTMENTS = [
   { id: 'development', name: '개발' },
   { id: 'server', name: '서버' },
   { id: 'qa', name: 'QA' },
+  { id: 'video', name: '영상' },
   { id: 'pm', name: 'PM' }
 ];
 const TASK_STATUS = {
@@ -52,6 +53,7 @@ let currentProfile = null;
 let authResolved = false;
 let activeView = 'home';
 let selectedProjectId = null;
+let projectTimelineFilter = 'all';
 let workViewMode = 'list';
 let workCalendarCursor = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
 let capacityWeekCursor = new Date();
