@@ -18,6 +18,34 @@ const DEPARTMENTS = [
 const TASK_STATUS = {
   todo: '할 일', in_progress: '진행 중', blocked: '차단됨', done: '완료'
 };
+// 프로젝트의 "고정 일정"과 실제 실무 업무를 분리합니다. 고정 일정만 바뀌면
+// scheduleRule을 가진 자동 생성 업무는 같은 규칙으로 다시 계산할 수 있습니다.
+const PLATFORMS = [
+  { id: 'pc', name: 'PC' },
+  { id: 'mobile', name: '모바일' },
+  { id: 'console', name: '콘솔' }
+];
+const DELIVERY_MILESTONES = [
+  { key: 'demo_build', title: '데모 빌드 마감' },
+  { key: 'demo_release', title: '데모 출시' },
+  { key: 'full_build', title: '완전판 빌드 마감' },
+  { key: 'full_release', title: '완전판 출시' }
+];
+const TEMPLATE_DEPARTMENTS = ['planning', 'ui', 'development', 'qa'];
+// 현재 전달받은 기획·UI 마일스톤에서 반복되는 흐름을 기준으로 한 첫 템플릿입니다.
+// 실제 운영 중 평균 작업일은 템플릿 관리 화면에서 계속 조정할 수 있게 확장합니다.
+const PROJECT_WORK_TEMPLATE = [
+  { key: 'demo-plan', departmentId: 'planning', title: '데모 기능·화면 기획 확정', anchorKey: 'demo_build', dueOffset: -18, estimatedDays: 3 },
+  { key: 'demo-ui-design', departmentId: 'ui', title: '데모 UI 디자인', anchorKey: 'demo_build', dueOffset: -15, estimatedDays: 4, dependsOnKey: 'demo-plan' },
+  { key: 'demo-ui-prefab', departmentId: 'ui', title: '데모 UI 프리팹·연출', anchorKey: 'demo_build', dueOffset: -9, estimatedDays: 3, dependsOnKey: 'demo-ui-design' },
+  { key: 'demo-dev', departmentId: 'development', title: '데모 기능 구현·연동', anchorKey: 'demo_build', dueOffset: -10, estimatedDays: 5, dependsOnKey: 'demo-plan' },
+  { key: 'demo-qa', departmentId: 'qa', title: '데모 QA·수정 확인', anchorKey: 'demo_build', dueOffset: -4, estimatedDays: 3, dependsOnKey: 'demo-ui-prefab' },
+  { key: 'full-plan', departmentId: 'planning', title: '완전판 기능·화면 기획 확정', anchorKey: 'full_build', dueOffset: -28, estimatedDays: 4 },
+  { key: 'full-ui-design', departmentId: 'ui', title: '완전판 UI 디자인', anchorKey: 'full_build', dueOffset: -22, estimatedDays: 5, dependsOnKey: 'full-plan' },
+  { key: 'full-ui-prefab', departmentId: 'ui', title: '완전판 UI 프리팹·연출', anchorKey: 'full_build', dueOffset: -14, estimatedDays: 4, dependsOnKey: 'full-ui-design' },
+  { key: 'full-dev', departmentId: 'development', title: '완전판 기능 구현·연동', anchorKey: 'full_build', dueOffset: -15, estimatedDays: 7, dependsOnKey: 'full-plan' },
+  { key: 'full-qa', departmentId: 'qa', title: '완전판 QA·수정 확인', anchorKey: 'full_build', dueOffset: -6, estimatedDays: 4, dependsOnKey: 'full-ui-prefab' }
+];
 
 let currentUser = null;
 let currentProfile = null;
@@ -75,6 +103,7 @@ function userRoleLabel(profile){
   return profile?.isAdmin === true || profile?.role === 'admin' ? `관리자 · ${title}` : title;
 }
 function departmentName(id){ return DEPARTMENTS.find(x => x.id === id)?.name || id || '미지정'; }
+function platformName(id){ return PLATFORMS.find(item => item.id === id)?.name || id || '공통'; }
 function dateOnly(value){ return value ? String(value).slice(0, 10) : ''; }
 
 function normalizeTask(input){
@@ -88,6 +117,8 @@ function normalizeTask(input){
   task.archivedAt = task.archivedAt || null;
   task.dependsOn = Array.isArray(task.dependsOn) ? [...new Set(task.dependsOn.filter(Boolean))] : (task.dependsOn ? [task.dependsOn] : []);
   task.milestoneId = task.milestoneId || null;
+  task.platform = task.platform || null;
+  task.generated = task.generated === true;
   task.estimatedDays = Math.max(0, Number(task.estimatedDays || 0));
   return task;
 }
@@ -115,6 +146,31 @@ function localDate(value){
 }
 function dateKey(date){ return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`; }
 function isWeekday(date){ return date.getDay() !== 0 && date.getDay() !== 6; }
+function addBusinessDays(value, amount){
+  const date = localDate(value);
+  if(!date) return null;
+  const direction = amount < 0 ? -1 : 1;
+  let remaining = Math.abs(Number(amount || 0));
+  while(remaining > 0) {
+    date.setDate(date.getDate() + direction);
+    if(isWeekday(date)) remaining--;
+  }
+  return dateKey(date);
+}
+function scheduledDates(anchorDate, dueOffset, estimatedDays){
+  if(!anchorDate) return { startDate: null, dueDate: null };
+  const dueDate = addBusinessDays(anchorDate, dueOffset);
+  return { dueDate, startDate: addBusinessDays(dueDate, -(Math.max(1, Number(estimatedDays || 1)) - 1)) };
+}
+function projectMilestoneMap(projectId, overrides = {}){
+  const result = { ...overrides };
+  milestonesForProject(projectId).forEach(item => { if(item.anchorKey && !result[item.anchorKey]) result[item.anchorKey] = item.dueDate; });
+  return result;
+}
+function staffingFor(project, platform, departmentId){
+  return (project?.staffing || []).find(item => item.platform === platform && item.departmentId === departmentId) || null;
+}
+function templateTaskKey(platform, templateKey){ return `${platform}:${templateKey}`; }
 function taskCoversDate(task, date){
   const start = localDate(task.startDate || task.dueDate); const end = localDate(task.dueDate || task.startDate);
   if(!start || !end) return false;
@@ -396,11 +452,111 @@ async function saveProject(input){
   const ref = input.id ? db.collection('projects').doc(input.id) : db.collection('projects').doc();
   await ref.set({
     name: input.name.trim(), code: (input.code || '').trim(),
-    versions: input.versions || [], status: input.status || 'active',
+    versions: input.versions || input.platforms || [], platforms: input.platforms || input.versions || [],
+    staffing: Array.isArray(input.staffing) ? input.staffing : (input.staffing || []),
+    schedulingMode: input.schedulingMode || 'manual', status: input.status || 'active',
     updatedAt: firebase.firestore.FieldValue.serverTimestamp(), updatedBy: currentUser.uid,
     createdAt: input.createdAt || firebase.firestore.FieldValue.serverTimestamp(),
     createdBy: input.createdBy || currentUser.uid
   }, { merge: true });
+}
+
+async function createScheduledProject(input){
+  if(!requirePermission(canManageProjects(), '프로젝트는 관리자 또는 PM만 생성할 수 있습니다.')) return;
+  if(!input.name?.trim() || !input.code?.trim()) throw new Error('프로젝트명과 프로젝트 코드를 입력해주세요.');
+  const platforms = [...new Set((input.platforms || []).filter(platform => PLATFORMS.some(item => item.id === platform)))];
+  if(!platforms.length) throw new Error('적용할 플랫폼을 하나 이상 선택해주세요.');
+  const milestoneDates = input.milestoneDates || {};
+  if(!milestoneDates.demo_build || !milestoneDates.demo_release || !milestoneDates.full_build || !milestoneDates.full_release) {
+    throw new Error('데모·완전판의 빌드 마감일과 출시일을 모두 입력해주세요.');
+  }
+  const projectRef = db.collection('projects').doc();
+  const batch = db.batch();
+  const staffing = (input.staffing || []).filter(item => platforms.includes(item.platform) && TEMPLATE_DEPARTMENTS.includes(item.departmentId));
+  batch.set(projectRef, {
+    name: input.name.trim(), code: input.code.trim(), platforms, versions: platforms, staffing,
+    schedulingMode: 'template', status: 'active', health: 'on_track',
+    createdBy: currentUser.uid, createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+    updatedBy: currentUser.uid, updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+  });
+
+  const milestoneRefs = {};
+  DELIVERY_MILESTONES.forEach(definition => {
+    const ref = db.collection('milestones').doc();
+    milestoneRefs[definition.key] = ref.id;
+    batch.set(ref, {
+      projectId: projectRef.id, title: definition.title, anchorKey: definition.key,
+      version: null, dueDate: milestoneDates[definition.key], status: 'todo', generated: true, archivedAt: null,
+      createdBy: currentUser.uid, createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+      updatedBy: currentUser.uid, updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+  });
+
+  const generatedTaskIds = new Map();
+  platforms.forEach(platform => {
+    PROJECT_WORK_TEMPLATE.forEach(template => { generatedTaskIds.set(templateTaskKey(platform, template.key), db.collection('tasks').doc().id); });
+  });
+  platforms.forEach(platform => {
+    PROJECT_WORK_TEMPLATE.forEach(template => {
+      const ref = db.collection('tasks').doc(generatedTaskIds.get(templateTaskKey(platform, template.key)));
+      const staff = staffingFor({ staffing }, platform, template.departmentId);
+      const dates = scheduledDates(milestoneDates[template.anchorKey], template.dueOffset, template.estimatedDays);
+      const predecessorId = template.dependsOnKey ? generatedTaskIds.get(templateTaskKey(platform, template.dependsOnKey)) : null;
+      batch.set(ref, normalizeTask({
+        projectId: projectRef.id, platform, departmentId: template.departmentId,
+        assigneeId: staff?.userId || null, title: template.title, milestoneId: milestoneRefs[template.anchorKey],
+        status: 'todo', progress: 0, estimatedDays: template.estimatedDays,
+        startDate: dates.startDate, dueDate: dates.dueDate, dependsOn: predecessorId ? [predecessorId] : [],
+        generated: true, templateKey: template.key,
+        scheduleRule: { anchorKey: template.anchorKey, dueOffset: template.dueOffset, estimatedDays: template.estimatedDays },
+        archivedAt: null, createdBy: currentUser.uid, createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+        updatedBy: currentUser.uid, updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+      }));
+    });
+  });
+  staffing.filter(item => item.userId).forEach(item => {
+    batch.set(db.collection('projectMembers').doc(`${projectRef.id}_${item.userId}`), {
+      projectId: projectRef.id, userId: item.userId, platforms: firebase.firestore.FieldValue.arrayUnion(item.platform),
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    }, { merge: true });
+  });
+  await batch.commit();
+  return projectRef.id;
+}
+
+async function rescheduleGeneratedTasks(projectId, milestoneOverrides = {}){
+  if(!requirePermission(canManageProjects(), '일정 재계산은 관리자 또는 PM만 실행할 수 있습니다.')) return;
+  const project = projects.find(item => item.id === projectId);
+  if(!project) throw new Error('프로젝트를 찾을 수 없습니다.');
+  const anchors = projectMilestoneMap(projectId, milestoneOverrides);
+  const generated = tasksForProject(projectId).filter(task => task.generated && task.scheduleRule && !task.dateOverride);
+  const batch = db.batch();
+  generated.forEach(task => {
+    const rule = task.scheduleRule;
+    const dates = scheduledDates(anchors[rule.anchorKey], rule.dueOffset, rule.estimatedDays || task.estimatedDays);
+    batch.update(db.collection('tasks').doc(task.id), { startDate: dates.startDate, dueDate: dates.dueDate, updatedAt: firebase.firestore.FieldValue.serverTimestamp(), updatedBy: currentUser.uid });
+  });
+  if(generated.length) await batch.commit();
+}
+
+async function syncProjectStaffing(projectId, staffing){
+  if(!requirePermission(canManageProjects(), '담당자 배정은 관리자 또는 PM만 변경할 수 있습니다.')) return;
+  const project = projects.find(item => item.id === projectId);
+  if(!project) throw new Error('프로젝트를 찾을 수 없습니다.');
+  const cleaned = (staffing || []).filter(item => (project.platforms || []).includes(item.platform) && TEMPLATE_DEPARTMENTS.includes(item.departmentId))
+    .map(item => ({ platform: item.platform, departmentId: item.departmentId, userId: item.userId || null }));
+  const batch = db.batch();
+  batch.update(db.collection('projects').doc(projectId), { staffing: cleaned, updatedAt: firebase.firestore.FieldValue.serverTimestamp(), updatedBy: currentUser.uid });
+  tasksForProject(projectId).filter(task => task.generated).forEach(task => {
+    const staff = staffingFor({ staffing: cleaned }, task.platform, task.departmentId);
+    batch.update(db.collection('tasks').doc(task.id), { assigneeId: staff?.userId || null, updatedAt: firebase.firestore.FieldValue.serverTimestamp(), updatedBy: currentUser.uid });
+  });
+  cleaned.filter(item => item.userId).forEach(item => {
+    batch.set(db.collection('projectMembers').doc(`${projectId}_${item.userId}`), {
+      projectId, userId: item.userId, platforms: firebase.firestore.FieldValue.arrayUnion(item.platform), updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    }, { merge: true });
+  });
+  await batch.commit();
 }
 
 async function saveProjectUpdate(input){
@@ -490,12 +646,13 @@ async function saveMilestone(input){
   const ref = input.id ? db.collection('milestones').doc(input.id) : db.collection('milestones').doc();
   await ref.set({
     projectId: input.projectId, title: input.title.trim(),
-    version: input.version || null, dueDate: input.dueDate || null,
+    version: input.version || null, anchorKey: input.anchorKey || null, dueDate: input.dueDate || null,
     status: input.status || 'todo', archivedAt: input.archivedAt || null,
     updatedAt: firebase.firestore.FieldValue.serverTimestamp(), updatedBy: currentUser.uid,
     createdAt: input.createdAt || firebase.firestore.FieldValue.serverTimestamp(),
     createdBy: input.createdBy || currentUser.uid
   }, { merge: true });
+  if(input.anchorKey) await rescheduleGeneratedTasks(input.projectId, { [input.anchorKey]: input.dueDate });
 }
 
 async function archiveMilestone(milestoneId){
