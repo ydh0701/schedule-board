@@ -157,6 +157,7 @@ function taskRow(task, showProject){
   body.append(el('strong', 'task-title', task.title));
   const meta = [];
   if(showProject && task.projectId) meta.push(projects.find(project => project.id === task.projectId)?.code || projects.find(project => project.id === task.projectId)?.name || '프로젝트');
+  if(task.platform) meta.push(platformName(task.platform));
   meta.push(departmentName(task.departmentId), userName(task.assigneeId));
   if(task.startDate || task.dueDate) meta.push(`${fmtDate(task.startDate)} ~ ${fmtDate(task.dueDate)}`);
   const milestone = milestones.find(item => item.id === task.milestoneId);
@@ -179,6 +180,7 @@ function renderProjectDetail(main, project){
   const detail = el('section', 'panel project-detail');
   detail.append(el('h2', '', project.code || project.name));
   if(project.code) detail.append(el('p', 'sub', project.name));
+  if(project.platforms?.length) detail.append(el('p', 'foot-note', `적용 플랫폼 · ${project.platforms.map(platformName).join(' · ')}`));
   detail.append(progressBlock(projectProgress(project.id)));
   detail.append(el('span', `tag ${healthClass(project.health)}`, `프로젝트 상태 · ${healthLabel(project.health)}`));
   main.appendChild(detail);
@@ -199,6 +201,22 @@ function renderProjectDetail(main, project){
     updateSection.appendChild(row);
   });
   main.appendChild(updateSection);
+  const staffingSection = el('section', 'panel');
+  const staffingHead = el('div', 'section-title-row'); staffingHead.append(el('h2', '', '플랫폼별 담당자'));
+  staffingSection.appendChild(staffingHead);
+  if(!(project.staffing || []).some(item => item.userId)) staffingSection.append(el('p', 'sub', '아직 배정된 담당자가 없습니다. 프로젝트 정보에서 플랫폼별 담당자를 지정해주세요.'));
+  (project.platforms || []).forEach(platform => {
+    const rows = (project.staffing || []).filter(item => item.platform === platform);
+    const row = el('div', 'staffing-summary-row');
+    row.append(el('strong', '', platformName(platform)));
+    row.append(el('span', 'foot-note', rows.map(item => `${departmentName(item.departmentId)} · ${item.userId ? userName(item.userId) : '미배정'}`).join(' / ') || '배정 정보 없음'));
+    staffingSection.appendChild(row);
+  });
+  if(canManageProjects() && project.schedulingMode === 'template') staffingSection.appendChild(button('일정 다시 계산', 'tiny ghost', async () => {
+    try { await rescheduleGeneratedTasks(project.id); showToast('고정 마일스톤 기준으로 자동 업무 일정을 다시 계산했습니다.'); }
+    catch(error) { alert(error.message); }
+  }));
+  main.appendChild(staffingSection);
   const milestoneList = milestonesForProject(project.id);
   const milestoneSection = el('section', 'panel');
   const milestoneHead = el('div', 'section-title-row');
@@ -209,7 +227,7 @@ function renderProjectDetail(main, project){
   milestoneList.sort((a, b) => String(a.dueDate || '9999').localeCompare(String(b.dueDate || '9999'))).forEach(milestone => {
     const row = el('article', 'task-row');
     const body = el('div', 'task-main'); body.append(el('strong', 'task-title', milestone.title));
-    body.append(el('div', 'task-meta', `${milestone.version || '공통'} · ${fmtDate(milestone.dueDate)}`));
+    body.append(el('div', 'task-meta', `${milestone.anchorKey ? '고정 일정' : (milestone.version || '공통')} · ${fmtDate(milestone.dueDate)}`));
     row.append(body, el('span', `tag ${statusClass(milestone.status)}`, TASK_STATUS[milestone.status] || '할 일'), progressBlock(milestoneProgress(milestone.id)));
     if(canManageProjects()) row.appendChild(button('수정', 'tiny ghost', () => openMilestoneEditor(milestone, project.id)));
     milestoneSection.appendChild(row);
@@ -398,19 +416,76 @@ function openProjectEditor(project){
   const form = el('form', 'form-grid');
   const name = inputField('프로젝트명', ''); name.input.value = project.name || '';
   const code = inputField('코드', ''); code.input.value = project.code || '';
-  form.append(name.wrap, code.wrap, button('저장', 'primary'));
-  form.onsubmit = async event => { event.preventDefault(); try { await saveProject({ ...project, name: name.input.value, code: code.input.value }); overlay.remove(); } catch(error) { alert(error.message); } };
+  const staffingTitle = el('h3', 'small-heading', '플랫폼별 직군 담당자');
+  const staffingBox = el('div', 'staffing-grid');
+  const staffingValues = new Map((project.staffing || []).map(item => [`${item.platform}:${item.departmentId}`, item.userId || '']));
+  (project.platforms || []).forEach(platform => {
+    const card = el('section', 'staffing-card'); card.append(el('strong', '', `${platformName(platform)} 담당자`));
+    TEMPLATE_DEPARTMENTS.forEach(departmentId => {
+      const people = visibleUsers.filter(user => user.active && user.departmentId === departmentId);
+      const field = selectField(departmentName(departmentId), [['', '나중에 배정'], ...people.map(user => [user.id, user.name || user.email])]);
+      field.select.value = staffingValues.get(`${platform}:${departmentId}`) || '';
+      field.select.onchange = () => staffingValues.set(`${platform}:${departmentId}`, field.select.value);
+      card.appendChild(field.wrap);
+    });
+    staffingBox.appendChild(card);
+  });
+  const submit = button('저장 및 업무에 반영', 'primary');
+  form.append(name.wrap, code.wrap, staffingTitle, staffingBox, submit);
+  form.onsubmit = async event => {
+    event.preventDefault();
+    try {
+      const staffing = [];
+      (project.platforms || []).forEach(platform => TEMPLATE_DEPARTMENTS.forEach(departmentId => staffing.push({ platform, departmentId, userId: staffingValues.get(`${platform}:${departmentId}`) || null })));
+      await saveProject({ ...project, name: name.input.value, code: code.input.value, staffing });
+      await syncProjectStaffing(project.id, staffing);
+      overlay.remove(); showToast('프로젝트 정보와 자동 업무 담당자를 반영했습니다.');
+    } catch(error) { alert(error.message); }
+  };
   dialog.appendChild(form);
 }
 
 function openProjectCreator(){
-  const { dialog, close } = openDialog('프로젝트 추가');
+  const { dialog, close } = openDialog('자동 일정 프로젝트 만들기');
   dialog.classList.add('project-create-dialog');
   const form = el('form', 'form-grid project-create-form');
   const name = inputField('프로젝트명', '예: 프로젝트 12');
   const code = inputField('프로젝트 코드', '예: PC12');
+  const guide = el('p', 'sub', '고정 마일스톤과 플랫폼별 담당자를 설정하면 직군별 업무와 일정이 자동으로 생성됩니다. 담당자는 나중에 배정할 수 있습니다.');
+  const platformField = el('fieldset', 'platform-picker');
+  platformField.appendChild(el('legend', '', '적용 플랫폼'));
+  const platformChecks = PLATFORMS.map(platform => {
+    const label = el('label', 'check-option'); const input = document.createElement('input'); input.type = 'checkbox'; input.value = platform.id; input.checked = platform.id === 'pc';
+    label.append(input, el('span', '', platform.name)); platformField.appendChild(label); return input;
+  });
+  const milestonesTitle = el('h3', 'small-heading', '고정 마일스톤');
+  const milestoneDates = {};
+  const milestoneFields = DELIVERY_MILESTONES.map(definition => {
+    const field = inputField(definition.title, '', 'date'); milestoneDates[definition.key] = field; return field;
+  });
+  const staffingTitle = el('h3', 'small-heading', '플랫폼별 직군 담당자');
+  const staffingBox = el('div', 'staffing-grid');
+  const staffingValues = new Map();
+  const currentPlatforms = () => platformChecks.filter(input => input.checked).map(input => input.value);
+  const eligiblePeople = departmentId => visibleUsers.filter(user => user.active && user.departmentId === departmentId);
+  const renderStaffing = () => {
+    staffingBox.innerHTML = '';
+    currentPlatforms().forEach(platform => {
+      const card = el('section', 'staffing-card'); card.append(el('strong', '', `${platformName(platform)} 담당자`));
+      TEMPLATE_DEPARTMENTS.forEach(departmentId => {
+        const key = `${platform}:${departmentId}`;
+        const options = [['', '나중에 배정']].concat(eligiblePeople(departmentId).map(user => [user.id, user.name || user.email]));
+        const field = selectField(departmentName(departmentId), options); field.select.value = staffingValues.get(key) || '';
+        field.select.onchange = () => staffingValues.set(key, field.select.value);
+        card.appendChild(field.wrap);
+      });
+      staffingBox.appendChild(card);
+    });
+  };
+  platformChecks.forEach(input => { input.onchange = renderStaffing; });
+  renderStaffing();
   const actions = el('div', 'form-actions project-create-actions');
-  const submit = button('프로젝트 만들기', 'primary');
+  const submit = button('일정 자동 생성', 'primary');
   const error = el('p', 'form-error'); error.hidden = true;
   const showFieldError = (field, message) => {
     field.input.classList.toggle('input-invalid', !!message);
@@ -422,28 +497,38 @@ function openProjectCreator(){
   name.input.oninput = () => clearError(name);
   code.input.oninput = () => clearError(code);
   actions.appendChild(submit);
-  form.append(name.wrap, code.wrap, error, actions);
+  form.append(guide, name.wrap, code.wrap, platformField, milestonesTitle, ...milestoneFields.map(field => field.wrap), staffingTitle, staffingBox, error, actions);
   form.onsubmit = async event => {
     event.preventDefault();
     const missingName = !name.input.value.trim();
     const missingCode = !code.input.value.trim();
+    const selectedPlatforms = currentPlatforms();
+    const missingMilestone = milestoneFields.find(field => !field.input.value);
     showFieldError(name, missingName ? '프로젝트명을 입력해주세요.' : '');
     showFieldError(code, missingCode ? '프로젝트 코드를 입력해주세요.' : '');
-    if(missingName || missingCode) {
-      error.textContent = '프로젝트명과 프로젝트 코드를 모두 입력해주세요.';
+    if(missingName || missingCode || !selectedPlatforms.length || missingMilestone) {
+      error.textContent = missingMilestone ? `${missingMilestone.wrap.querySelector('span')?.textContent || '고정 마일스톤'}을 입력해주세요.` : '프로젝트명, 코드와 적용 플랫폼을 확인해주세요.';
       error.hidden = false;
-      (missingName ? name : code).input.focus();
+      (missingName ? name : missingCode ? code : missingMilestone).input.focus();
       return;
     }
     submit.disabled = true; submit.textContent = '생성 중…';
     try {
-      await saveProject({ name: name.input.value, code: code.input.value });
+      const staffing = [];
+      selectedPlatforms.forEach(platform => TEMPLATE_DEPARTMENTS.forEach(departmentId => {
+        const userId = staffingValues.get(`${platform}:${departmentId}`) || null;
+        staffing.push({ platform, departmentId, userId });
+      }));
+      await createScheduledProject({
+        name: name.input.value, code: code.input.value, platforms: selectedPlatforms, staffing,
+        milestoneDates: Object.fromEntries(DELIVERY_MILESTONES.map(definition => [definition.key, milestoneDates[definition.key].input.value]))
+      });
       close();
     } catch(cause) {
-      error.textContent = `프로젝트를 만들지 못했습니다. ${cause.message || '잠시 후 다시 시도해주세요.'}`;
+      error.textContent = `일정을 생성하지 못했습니다. ${cause.message || '잠시 후 다시 시도해주세요.'}`;
       error.hidden = false;
     } finally {
-      submit.disabled = false; submit.textContent = '프로젝트 만들기';
+      submit.disabled = false; submit.textContent = '일정 자동 생성';
     }
   };
   dialog.appendChild(form);
@@ -461,6 +546,7 @@ function openTaskEditor(task, initial = {}){
   if(task?.assigneeId && !people.some(user => user.id === task.assigneeId)) assignee.select.add(new Option(userName(task.assigneeId), task.assigneeId));
   assignee.select.value = task?.assigneeId || '';
   const project = selectField('연결 프로젝트', [['', '프로젝트와 연결하지 않음'], ...projects.map(item => [item.id, item.code || item.name])]); project.select.value = task?.projectId || initial.projectId || '';
+  const platform = selectField('플랫폼', [['', '공통'], ...PLATFORMS.map(item => [item.id, item.name])]); platform.select.value = task?.platform || initial.platform || '';
   const milestone = selectField('연결 마일스톤', [['', '마일스톤과 연결하지 않음']]);
   const dependsOn = multiSelectField('선행 업무 (복수 선택 가능)');
   const refreshProjectRelations = () => {
@@ -485,14 +571,15 @@ function openTaskEditor(task, initial = {}){
   const estimate = inputField('예상 작업일', '예: 2.5', 'number'); estimate.input.min = '0'; estimate.input.step = '0.5'; estimate.input.value = task?.estimatedDays ?? '';
   const start = inputField('시작일', '', 'date'); start.input.value = dateOnly(task?.startDate);
   const due = inputField('마감일', '', 'date'); due.input.value = dateOnly(task?.dueDate);
-  form.append(title.wrap, department.wrap, assignee.wrap, project.wrap, milestone.wrap, dependsOn.wrap, status.wrap, progress.wrap, estimate.wrap, start.wrap, due.wrap);
+  if(task?.generated) form.append(el('p', 'sub', '자동 생성 업무입니다. 일정 날짜를 직접 바꾸면 이후 자동 재계산 대상에서 제외됩니다.'));
+  form.append(title.wrap, department.wrap, assignee.wrap, project.wrap, platform.wrap, milestone.wrap, dependsOn.wrap, status.wrap, progress.wrap, estimate.wrap, start.wrap, due.wrap);
   const actions = el('div', 'form-actions'); actions.appendChild(button('저장', 'primary'));
   if(editing) actions.appendChild(button('업무 보관', 'danger-button', async () => { if(confirm('이 업무를 보관할까요?')) { await archiveTask(task.id); close(); } }));
   form.appendChild(actions);
   form.onsubmit = async event => {
     event.preventDefault();
     try {
-      await saveTask({ id: task?.id, title: title.input.value, departmentId: department.select.value, assigneeId: assignee.select.value, projectId: project.select.value || null, milestoneId: milestone.select.value || null, dependsOn: [...dependsOn.select.selectedOptions].map(option => option.value), status: status.select.value, progress: Number(progress.input.value), estimatedDays: Number(estimate.input.value), startDate: start.input.value || null, dueDate: due.input.value || null });
+      await saveTask({ id: task?.id, title: title.input.value, departmentId: department.select.value, assigneeId: assignee.select.value, projectId: project.select.value || null, platform: platform.select.value || null, milestoneId: milestone.select.value || null, dependsOn: [...dependsOn.select.selectedOptions].map(option => option.value), status: status.select.value, progress: Number(progress.input.value), estimatedDays: Number(estimate.input.value), startDate: start.input.value || null, dueDate: due.input.value || null, dateOverride: Boolean(task?.generated && (dateOnly(task.startDate) !== start.input.value || dateOnly(task.dueDate) !== due.input.value)) });
       close();
     } catch(error) { alert(error.message); }
   };
