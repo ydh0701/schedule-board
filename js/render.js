@@ -52,14 +52,16 @@ function pendingScreen(main){
   const panel = el('section', 'pending-panel panel');
   panel.append(el('p', 'eyebrow', 'ACCESS PENDING'), el('h2', '', '관리자 승인 대기 중'));
   panel.append(el('p', 'sub', `${currentUser?.email || '현재 계정'}으로 접근을 요청했습니다. 관리자에게 역할과 소속 부서 배정을 요청해주세요.`));
-  const check = profileLookup?.status === 'missing'
-    ? `권한 문서를 찾지 못했습니다 · 확인 코드: ${profileLookup.uid}`
-    : profileLookup?.status === 'inactive'
-      ? `권한 문서를 찾았지만 활성 상태가 아닙니다 · ${profileLookup.message}`
-      : profileLookup?.status === 'error'
-        ? `권한 문서를 읽지 못했습니다 · ${profileLookup.message}`
-        : '';
-  if(check) panel.append(el('p', 'profile-check', check));
+  if(profileLookup?.status === 'missing') {
+    const check = el('div', 'profile-check');
+    check.append(el('span', 'profile-check-label', '권한 문서를 찾지 못했습니다. 아래 확인 코드를 사용해주세요.'), el('code', 'profile-check-code', profileLookup.uid));
+    panel.append(check);
+  } else if(profileLookup?.status === 'inactive' || profileLookup?.status === 'error') {
+    const label = profileLookup.status === 'inactive' ? '권한 문서를 찾았지만 활성 상태가 아닙니다.' : '권한 문서를 읽지 못했습니다.';
+    const check = el('div', 'profile-check');
+    check.append(el('span', 'profile-check-label', label), el('code', 'profile-check-code', profileLookup.message));
+    panel.append(check);
+  }
   panel.appendChild(button('로그아웃', 'ghost', signOut));
   wrap.appendChild(panel);
   main.appendChild(wrap);
@@ -553,3 +555,4 @@ function rerender(){
   appTabs(main);
   if(activeView === 'work') renderWork(main); else renderProjects(main);
 }
+
