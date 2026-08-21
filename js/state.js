@@ -56,6 +56,7 @@ let authResolved = false;
 let activeView = 'home';
 let selectedProjectId = null;
 let projectTimelineFilter = 'all';
+let projectScheduleCursor = null;
 let workViewMode = 'list';
 let workCalendarCursor = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
 let capacityWeekCursor = new Date();
