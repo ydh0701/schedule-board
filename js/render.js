@@ -188,7 +188,12 @@ function renderProjectDetail(main, project){
 
   const hero = el('section', 'panel project-hero');
   const overview = el('div', 'project-hero-overview');
-  overview.append(el('p', 'eyebrow', 'PROJECT OVERVIEW'), el('h2', '', project.code || project.name));
+  const overviewHead = el('div', 'project-hero-overview-head');
+  const overviewTitle = el('div', 'project-hero-title');
+  overviewTitle.append(el('p', 'eyebrow', 'PROJECT OVERVIEW'), el('h2', '', project.code || project.name));
+  overviewHead.appendChild(overviewTitle);
+  if(canManageProjects()) overviewHead.appendChild(button('프로젝트 정보 수정', 'tiny ghost', () => openProjectEditor(project)));
+  overview.appendChild(overviewHead);
   if(project.code) overview.append(el('p', 'sub', project.name));
   if(project.platforms?.length) overview.append(el('p', 'foot-note', `적용 플랫폼 · ${project.platforms.map(platformName).join(' · ')}`));
   overview.append(progressBlock(projectProgress(project.id)));
@@ -207,7 +212,6 @@ function renderProjectDetail(main, project){
     staffing.appendChild(row);
   });
   const staffingActions = el('div', 'project-hero-actions');
-  if(canManageProjects()) staffingActions.appendChild(button('프로젝트 정보 수정', 'tiny ghost', () => openProjectEditor(project)));
   if(canManageProjects() && project.schedulingMode === 'template') staffingActions.appendChild(button('일정 다시 계산', 'tiny ghost', async () => {
     try { await rescheduleGeneratedTasks(project.id); showToast('고정 마일스톤 기준으로 자동 업무 일정을 다시 계산했습니다.'); }
     catch(error) { alert(error.message); }
