@@ -75,14 +75,21 @@ function pendingScreen(main){
   main.appendChild(wrap);
 }
 
-function appTabs(main){
-  const bar = el('nav', 'top-tabs app-nav');
-  [['projects', '프로젝트 일정'], ['work', '실무 일정']].forEach(([key, label]) => {
-    bar.appendChild(button(label, activeView === key ? 'primary' : 'ghost', () => {
-      activeView = key; selectedProjectId = null; rerender();
-    }));
-  });
-  main.appendChild(bar);
+function renderHome(main){
+  const intro = el('section', 'workspace-intro');
+  intro.append(el('p', 'eyebrow', 'STORYTACO WORKSPACE'), el('h2', '', '어떤 일정을 관리할까요?'), el('p', 'sub', '프로젝트 흐름과 팀 실무를 목적에 맞게 나누어 관리합니다.'));
+  const modules = el('div', 'workspace-modules');
+  const open = view => { activeView = view; selectedProjectId = null; rerender(); };
+  const project = button('', 'workspace-card project-workspace', () => open('projects'));
+  project.append(el('span', 'workspace-icon', '◫'), el('span', 'workspace-type', 'PROJECT PORTFOLIO'), el('strong', '', '프로젝트 일정'), el('span', 'workspace-copy', '전체 프로젝트의 진행률, 마감일, 위험 신호를 확인합니다.'), el('span', 'workspace-action', '프로젝트 현황 보기  →'));
+  const work = button('', 'workspace-card work-workspace', () => open('work'));
+  work.append(el('span', 'workspace-icon', '✓'), el('span', 'workspace-type', 'TEAM OPERATIONS'), el('strong', '', '실무 일정'), el('span', 'workspace-copy', '팀 업무, 휴가·부재, 주간 업무량을 관리합니다.'), el('span', 'workspace-action', '실무 일정 보기  →'));
+  modules.append(project, work);
+  main.append(intro, modules);
+}
+
+function renderHomeBack(main){
+  main.appendChild(button('← 메뉴 선택', 'tiny ghost menu-back', () => { activeView = 'home'; selectedProjectId = null; rerender(); }));
 }
 
 function progressBlock(progress){
@@ -622,7 +629,8 @@ function rerender(){
   renderAccountActions();
   if(!currentUser) { loginScreen(main); return; }
   if(!currentProfile || !isApproved()) { pendingScreen(main); return; }
-  appTabs(main);
+  if(activeView === 'home') { renderHome(main); return; }
+  renderHomeBack(main);
   if(activeView === 'work') renderWork(main); else renderProjects(main);
 }
 
