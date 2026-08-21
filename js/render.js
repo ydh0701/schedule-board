@@ -48,11 +48,13 @@ function loginScreen(main){
 }
 
 function pendingScreen(main){
-  const panel = el('section', 'auth-panel panel');
+  const wrap = el('section', 'pending-screen');
+  const panel = el('section', 'pending-panel panel');
   panel.append(el('p', 'eyebrow', 'ACCESS PENDING'), el('h2', '', '관리자 승인 대기 중'));
   panel.append(el('p', 'sub', `${currentUser?.email || '현재 계정'}으로 접근을 요청했습니다. 관리자에게 역할과 소속 부서 배정을 요청해주세요.`));
   panel.appendChild(button('로그아웃', 'ghost', signOut));
-  main.appendChild(panel);
+  wrap.appendChild(panel);
+  main.appendChild(wrap);
 }
 
 function appTabs(main){
