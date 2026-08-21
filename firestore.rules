@@ -39,14 +39,22 @@ service cloud.firestore {
       allow get: if signedIn() && uid == request.auth.uid;
       allow get: if admin() || (lead() && resource.data.departmentId == self().data.departmentId);
       allow list: if admin() || (lead() && resource.data.departmentId == self().data.departmentId);
-      allow create, update, delete: if admin();
+      allow create, delete: if admin();
+      // 팀장은 자기 부서 구성원의 퇴사(비활성화) 처리만 할 수 있고,
+      // 역할·부서·관리자 권한은 바꿀 수 없습니다.
+      allow update: if admin() || (
+        lead() && resource.data.departmentId == self().data.departmentId
+        && request.resource.data.departmentId == resource.data.departmentId
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['active', 'employmentStatus', 'offboardedAt', 'updatedAt', 'updatedBy'])
+      );
     }
 
     match /projects/{projectId} {
       allow get: if approved() && (admin() || lead() || projectMember(projectId));
       allow list: if admin() || lead();
       allow create, delete: if admin();
-      allow update: if admin() || (lead() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['health', 'lastUpdatedAt', 'updatedAt', 'updatedBy']));
+      allow update: if admin() || (lead() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['health', 'lastUpdatedAt', 'staffing', 'updatedAt', 'updatedBy']));
     }
 
     match /milestones/{milestoneId} {
