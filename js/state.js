@@ -284,6 +284,26 @@ function startAuth(){
     setAppStatus('권한을 확인하는 중…');
     profileUnsubscribe = db.collection('users').doc(user.uid).onSnapshot(async doc => {
       if(!doc.exists) {
+        // 최초 구독은 브라우저 캐시의 오래된 "문서 없음" 상태를 받을 수 있습니다.
+        // 서버를 한 번 직접 확인해 실제 관리자 문서가 있으면 즉시 반영합니다.
+        try {
+          const serverDoc = await db.collection('users').doc(user.uid).get({ source: 'server' });
+          if(serverDoc.exists) {
+            const profile = { id: serverDoc.id, ...serverDoc.data() };
+            profileLookup = {
+              status: profile.active === true ? 'approved' : 'inactive', uid: user.uid,
+              message: `role=${profile.role || '없음'}, active=${String(profile.active)}`
+            };
+            handleProfile(profile);
+            return;
+          }
+        } catch(error) {
+          profileLookup = { status: 'error', uid: user.uid, message: error.code || error.message || 'unknown' };
+          console.error('서버 권한 정보 확인 실패:', error);
+          setAppStatus('권한 정보를 확인할 수 없습니다');
+          handleProfile(null);
+          return;
+        }
         profileLookup = { status: 'missing', uid: user.uid, message: '' };
         try { await createAccessRequest(user); }
         catch(error) { console.error('승인 요청 생성 실패:', error); }
@@ -505,3 +525,4 @@ async function saveUserRole(userId, role, departmentId){
     updatedAt: firebase.firestore.FieldValue.serverTimestamp(), updatedBy: currentUser.uid
   });
 }
+
