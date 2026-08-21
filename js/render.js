@@ -264,28 +264,28 @@ function renderProjectSchedule(main, project){
   if(items.some(entry => timelineCategory(entry) === 'other')) tracks.push({ id: 'other', label: '기타' });
   const scroll = el('div', 'project-schedule-scroll');
   const grid = el('div', 'project-schedule-grid');
-  grid.style.gridTemplateColumns = `150px repeat(${dayCount}, minmax(48px, 1fr))`;
-  grid.appendChild(el('div', 'schedule-corner', '직군 / 날짜'));
-  days.forEach(day => {
-    const key = dateKey(day); const headCell = el('div', `schedule-day-head ${day.getDay() === 0 || day.getDay() === 6 ? 'weekend' : ''} ${key === dateKey(new Date()) ? 'today' : ''}`);
-    headCell.append(el('strong', '', String(day.getDate())), el('span', '', ['일', '월', '화', '수', '목', '금', '토'][day.getDay()]));
-    grid.appendChild(headCell);
-  });
+  grid.style.gridTemplateColumns = `118px repeat(${tracks.length}, minmax(142px, 1fr))`;
+  grid.appendChild(el('div', 'schedule-corner', '날짜 / 직군'));
   tracks.forEach(track => {
     const total = items.filter(entry => timelineCategory(entry) === track.id).length;
-    grid.appendChild(el('div', 'schedule-track-label', `${track.label} ${total}`));
-    days.forEach(day => {
+    grid.appendChild(el('div', 'schedule-track-head', `${track.label} ${total}`));
+  });
+  days.forEach(day => {
+    const key = dateKey(day);
+    const dateLabel = el('div', `schedule-date-label ${day.getDay() === 0 || day.getDay() === 6 ? 'weekend' : ''} ${key === dateKey(new Date()) ? 'today' : ''}`);
+    dateLabel.append(el('strong', '', `${day.getMonth() + 1}.${day.getDate()}`), el('span', '', ['일', '월', '화', '수', '목', '금', '토'][day.getDay()]));
+    grid.appendChild(dateLabel);
+    tracks.forEach(track => {
       const key = dateKey(day);
       const cell = el('div', `schedule-cell ${day.getDay() === 0 || day.getDay() === 6 ? 'weekend' : ''} ${key === dateKey(new Date()) ? 'today' : ''}`);
       const entries = track.id === 'milestone'
         ? items.filter(entry => entry.kind === 'milestone' && entry.date === key)
         : items.filter(entry => entry.kind === 'task' && timelineCategory(entry) === track.id && taskCoversDate(entry.item, day));
       entries.slice(0, 3).forEach(entry => {
-        const isStart = entry.kind === 'milestone' || dateKey(localDate(entry.item.startDate || entry.item.dueDate)) === key;
         const canEdit = entry.kind === 'milestone' ? canManageProjects() : canEditTask(entry.item);
-        const item = canEdit ? button('', `schedule-block ${entry.kind} ${isStart ? 'starts' : 'continues'} ${statusClass(entry.item.status)}`, () => entry.kind === 'milestone' ? openMilestoneEditor(entry.item, project.id) : openTaskEditor(entry.item)) : el('div', `schedule-block ${entry.kind} ${isStart ? 'starts' : 'continues'} ${statusClass(entry.item.status)}`);
+        const item = canEdit ? button('', `schedule-block ${entry.kind} ${statusClass(entry.item.status)}`, () => entry.kind === 'milestone' ? openMilestoneEditor(entry.item, project.id) : openTaskEditor(entry.item)) : el('div', `schedule-block ${entry.kind} ${statusClass(entry.item.status)}`);
         item.title = `${entry.item.title}${entry.kind === 'task' ? ` · ${taskAssigneeName(entry.item)} · ${fmtDate(entry.item.startDate)} ~ ${fmtDate(entry.item.dueDate)}` : ` · ${fmtDate(entry.item.dueDate)}`}`;
-        item.textContent = isStart ? entry.item.title : '·';
+        item.textContent = entry.item.title;
         cell.appendChild(item);
       });
       if(entries.length > 3) cell.appendChild(el('span', 'schedule-more', `+${entries.length - 3}`));
