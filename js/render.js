@@ -26,6 +26,7 @@ function userName(uid){
   if(uid === currentUser?.uid) return currentProfile?.name || currentUser?.displayName || '나';
   return visibleUsers.find(user => user.id === uid)?.name || '담당자 미확인';
 }
+function taskAssigneeName(task){ return task?.assigneeName || userName(task?.assigneeId); }
 
 function renderAccountActions(){
   const target = document.getElementById('accountActions');
@@ -34,7 +35,7 @@ function renderAccountActions(){
     const profile = el('span', 'account-chip', (currentProfile?.name || currentUser.displayName || currentUser.email || '?').slice(0, 1).toUpperCase());
     profile.title = currentUser.email || '';
     target.append(profile);
-    if(isAdmin()) target.appendChild(button('사용자 관리', 'tiny ghost', openAdminManager));
+    if(isAdmin() || isLead()) target.appendChild(button(isAdmin() ? '사용자 관리' : '팀원 관리', 'tiny ghost', openAdminManager));
     target.appendChild(button('로그아웃', 'tiny ghost', signOut));
   }
 }
@@ -158,7 +159,7 @@ function taskRow(task, showProject){
   const meta = [];
   if(showProject && task.projectId) meta.push(projects.find(project => project.id === task.projectId)?.code || projects.find(project => project.id === task.projectId)?.name || '프로젝트');
   if(task.platform) meta.push(platformName(task.platform));
-  meta.push(departmentName(task.departmentId), userName(task.assigneeId));
+  meta.push(departmentName(task.departmentId), taskAssigneeName(task));
   if(task.startDate || task.dueDate) meta.push(`${fmtDate(task.startDate)} ~ ${fmtDate(task.dueDate)}`);
   const milestone = milestones.find(item => item.id === task.milestoneId);
   if(milestone) meta.push(`마일스톤: ${milestone.title}`);
@@ -351,9 +352,12 @@ function renderCapacity(main, list){
 function adminAccessPanel(){
   const panel = el('section', 'panel admin-access-panel');
   const title = el('div', 'section-title-row'); title.append(el('h2', '', '사용자 및 권한 관리'));
-  title.appendChild(el('span', 'foot-note', `승인 대기 ${accessRequests.length}명 · 활성 사용자 ${visibleUsers.length}명`));
+  const managedUsers = visibleUsers.filter(user => isAdmin() || user.departmentId === currentProfile.departmentId);
+  const active = managedUsers.filter(user => user.active);
+  const inactive = managedUsers.filter(user => !user.active);
+  title.appendChild(el('span', 'foot-note', `${isAdmin() ? `승인 대기 ${accessRequests.length}명 · ` : ''}현재 사용자 ${active.length}명`));
   panel.appendChild(title);
-  if(accessRequests.length) {
+  if(isAdmin() && accessRequests.length) {
     panel.append(el('h3', 'small-heading', '승인 대기'));
     accessRequests.forEach(request => {
       const row = el('div', 'admin-user-row');
@@ -363,14 +367,19 @@ function adminAccessPanel(){
       panel.appendChild(row);
     });
   }
-  panel.append(el('h3', 'small-heading', '활성 사용자'));
-  visibleUsers.forEach(user => {
+  panel.append(el('h3', 'small-heading', '현재 사용자'));
+  active.forEach(user => {
     const row = el('div', 'admin-user-row');
     row.append(el('div', '', user.name || user.email));
     row.append(el('span', 'foot-note', `${user.email || ''} · ${userRoleLabel(user)}${user.departmentId ? ' · ' + departmentName(user.departmentId) : ''}`));
-    row.appendChild(button('권한 수정', 'tiny ghost', () => openUserRoleEditor(user)));
+    if(isAdmin()) row.appendChild(button('권한 수정', 'tiny ghost', () => openUserRoleEditor(user)));
+    if(canManageOffboarding(user)) row.appendChild(button('퇴사 처리', 'tiny danger-button', () => openOffboardingEditor(user)));
     panel.appendChild(row);
   });
+  if(inactive.length) {
+    panel.append(el('h3', 'small-heading', '비활성 계정'));
+    inactive.forEach(user => panel.append(el('p', 'foot-note', `${user.name || user.email} · 과거 기록 보존`)));
+  }
   return panel;
 }
 
@@ -379,6 +388,47 @@ function openAdminManager(){
   const panel = adminAccessPanel();
   panel.classList.add('admin-manager-panel');
   dialog.appendChild(panel);
+}
+
+function openOffboardingEditor(user){
+  const { overlay, dialog } = openDialog(`${user.name || user.email} 퇴사 처리`);
+  const openTasks = unfinishedTasksForUser(user.id);
+  dialog.append(el('p', 'sub', '완료 업무는 그대로 보존됩니다. 진행 중·예정·차단 업무는 반드시 재배정, 미배정 또는 보관 중 하나로 처리해야 합니다.'));
+  const form = el('form', 'form-grid');
+  const decisions = [];
+  if(!openTasks.length) form.append(el('p', 'sub', '처리할 미완료 업무가 없습니다. 계정 로그인과 새 업무 배정만 중지합니다.'));
+  openTasks.forEach(task => {
+    const card = el('section', 'handover-task');
+    card.append(el('strong', '', task.title));
+    const project = projects.find(item => item.id === task.projectId);
+    card.append(el('p', 'foot-note', `${project?.code || '공통 업무'}${task.platform ? ` · ${platformName(task.platform)}` : ''} · ${TASK_STATUS[task.status] || '할 일'}`));
+    const candidates = activeUsers().filter(candidate => candidate.id !== user.id && (isAdmin() || candidate.departmentId === user.departmentId) && candidate.departmentId === task.departmentId);
+    const action = selectField('처리 방법', [
+      ['reassign', '다른 담당자에게 재배정'], ['unassign', '미배정으로 남기기'], ['archive', '업무 보관']
+    ]);
+    const replacement = selectField('새 담당자', [['', '담당자 선택'], ...candidates.map(candidate => [candidate.id, candidate.name || candidate.email])]);
+    if(!candidates.length) action.select.value = 'unassign';
+    const sync = () => { replacement.wrap.hidden = action.select.value !== 'reassign'; };
+    action.select.onchange = sync; sync();
+    card.append(action.wrap, replacement.wrap); form.appendChild(card);
+    decisions.push({ task, action, replacement });
+  });
+  const error = el('p', 'form-error'); error.hidden = true;
+  const submit = button('업무 처리 후 퇴사 확정', 'danger-button'); submit.type = 'submit';
+  const actions = el('div', 'form-actions'); actions.append(submit); form.append(error, actions);
+  form.onsubmit = async event => {
+    event.preventDefault(); error.hidden = true;
+    const input = decisions.map(item => ({ taskId: item.task.id, action: item.action.select.value, userId: item.replacement.select.value }));
+    const invalid = input.find(item => item.action === 'reassign' && !item.userId);
+    if(invalid) { error.textContent = '재배정 업무의 새 담당자를 선택해주세요.'; error.hidden = false; return; }
+    submit.disabled = true; submit.textContent = '퇴사 처리 중…';
+    try {
+      await offboardUser(user.id, input); overlay.remove(); showToast(`${user.name || user.email}님의 계정을 비활성화하고 업무 인수인계를 반영했습니다.`);
+    } catch(cause) {
+      error.textContent = cause.message || '퇴사 처리에 실패했습니다.'; error.hidden = false;
+    } finally { submit.disabled = false; submit.textContent = '업무 처리 후 퇴사 확정'; }
+  };
+  dialog.appendChild(form);
 }
 
 function inputField(label, placeholder, type = 'text'){
@@ -651,7 +701,7 @@ function openTimeOffEditor(item){
   const editing = !!item;
   const { overlay, dialog } = openDialog(editing ? '휴가·부재 수정' : '휴가·부재 등록');
   const form = el('form', 'form-grid');
-  const eligibleUsers = isAdmin() ? visibleUsers : isLead() ? visibleUsers.filter(user => user.departmentId === currentProfile.departmentId) : [{ id: currentUser.uid, name: currentProfile.name || currentUser.displayName || currentUser.email }];
+  const eligibleUsers = isAdmin() ? activeUsers() : isLead() ? activeUsers().filter(user => user.departmentId === currentProfile.departmentId) : [{ id: currentUser.uid, name: currentProfile.name || currentUser.displayName || currentUser.email }];
   const person = selectField('대상자', eligibleUsers.map(user => [user.id, user.name || user.email])); person.select.value = item?.userId || currentUser.uid;
   const type = selectField('구분', [['leave', '휴가'], ['sick', '병가'], ['external', '외근'], ['other', '기타 부재']]); type.select.value = item?.type || 'leave';
   const start = inputField('시작일', '', 'date'); start.input.value = dateOnly(item?.startDate);
