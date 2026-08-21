@@ -5,7 +5,6 @@
 
 const db = firebase.firestore();
 const auth = firebase.auth();
-const storage = firebase.storage();
 const googleProvider = new firebase.auth.GoogleAuthProvider();
 
 const DEPARTMENTS = [
@@ -396,15 +395,15 @@ async function deleteTimeOff(id){
 }
 
 function watchTaskDiscussion(taskId, onChange){
-  let comments = [], attachments = [];
-  const publish = () => onChange({ comments, attachments });
+  let comments = [], links = [];
+  const publish = () => onChange({ comments, links });
   const unsubComments = db.collection('tasks').doc(taskId).collection('comments').orderBy('createdAt', 'asc').onSnapshot(snapshot => {
     comments = snapshot.docs.map(docToObject); publish();
   }, error => console.error('댓글 구독 실패:', error));
-  const unsubAttachments = db.collection('tasks').doc(taskId).collection('attachments').orderBy('createdAt', 'desc').onSnapshot(snapshot => {
-    attachments = snapshot.docs.map(docToObject); publish();
-  }, error => console.error('첨부파일 구독 실패:', error));
-  return () => { unsubComments(); unsubAttachments(); };
+  const unsubLinks = db.collection('tasks').doc(taskId).collection('links').orderBy('createdAt', 'desc').onSnapshot(snapshot => {
+    links = snapshot.docs.map(docToObject); publish();
+  }, error => console.error('링크 구독 실패:', error));
+  return () => { unsubComments(); unsubLinks(); };
 }
 
 async function addTaskComment(taskId, text){
@@ -419,17 +418,17 @@ async function addTaskComment(taskId, text){
   });
 }
 
-async function uploadTaskAttachment(taskId, file){
-  if(!isApproved() || !file) return;
+async function addTaskLink(taskId, input){
+  if(!isApproved()) return;
   const task = tasks.find(item => item.id === taskId);
-  if(!task || !canEditTask(task)) throw new Error('첨부파일을 추가할 권한이 없습니다.');
-  const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-  const storagePath = `taskAttachments/${taskId}/${currentUser.uid}/${Date.now()}_${safeName}`;
-  const upload = await storage.ref(storagePath).put(file, { contentType: file.type || 'application/octet-stream' });
-  const downloadUrl = await upload.ref.getDownloadURL();
-  await db.collection('tasks').doc(taskId).collection('attachments').add({
-    name: file.name, size: file.size, contentType: file.type || '', storagePath, downloadUrl,
-    uploadedBy: currentUser.uid, uploadedByName: currentProfile.name || currentUser.displayName || currentUser.email || '',
+  if(!task || !canEditTask(task)) throw new Error('링크를 추가할 권한이 없습니다.');
+  let url;
+  try { url = new URL(input.url.trim()); }
+  catch { throw new Error('올바른 링크 주소를 입력해주세요.'); }
+  if(!['https:', 'http:'].includes(url.protocol)) throw new Error('http 또는 https 링크만 추가할 수 있습니다.');
+  await db.collection('tasks').doc(taskId).collection('links').add({
+    url: url.href, label: (input.label || '').trim() || url.hostname,
+    addedBy: currentUser.uid, addedByName: currentProfile.name || currentUser.displayName || currentUser.email || '',
     createdAt: firebase.firestore.FieldValue.serverTimestamp()
   });
 }

@@ -422,24 +422,26 @@ function openTaskEditor(task){
 }
 
 function renderTaskDiscussion(dialog, taskId, onClose){
-  const section = el('section', 'discussion'); section.append(el('h3', 'small-heading', '댓글 및 첨부파일'));
-  const commentsBox = el('div', 'comment-list'); const filesBox = el('div', 'attachment-list');
+  const section = el('section', 'discussion'); section.append(el('h3', 'small-heading', '댓글 및 참고 링크'));
+  const commentsBox = el('div', 'comment-list'); const linksBox = el('div', 'link-list');
   const commentForm = el('form', 'comment-form'); const commentInput = document.createElement('textarea'); commentInput.rows = 2; commentInput.placeholder = '@이름 으로 동료를 언급할 수 있습니다';
   commentForm.append(commentInput, button('댓글 등록', 'tiny primary'));
   commentForm.onsubmit = async event => { event.preventDefault(); try { await addTaskComment(taskId, commentInput.value); commentInput.value = ''; } catch(error) { alert(error.message); } };
-  const fileInput = document.createElement('input'); fileInput.type = 'file'; fileInput.hidden = true;
-  const attachButton = button('파일 첨부 (최대 20MB)', 'tiny ghost', () => fileInput.click());
-  fileInput.onchange = async () => { const file = fileInput.files?.[0]; if(!file) return; try { attachButton.disabled = true; attachButton.textContent = '업로드 중…'; await uploadTaskAttachment(taskId, file); } catch(error) { alert(error.message); } finally { attachButton.disabled = false; attachButton.textContent = '파일 첨부 (최대 20MB)'; fileInput.value = ''; } };
-  section.append(commentsBox, commentForm, el('div', 'attachment-actions'), filesBox); section.querySelector('.attachment-actions').append(attachButton, fileInput);
-  const unsubscribe = watchTaskDiscussion(taskId, ({ comments, attachments }) => {
-    commentsBox.innerHTML = ''; filesBox.innerHTML = '';
+  const linkForm = el('form', 'link-form');
+  const linkLabel = document.createElement('input'); linkLabel.placeholder = '링크 제목 (선택)';
+  const linkUrl = document.createElement('input'); linkUrl.type = 'url'; linkUrl.placeholder = 'https://...';
+  linkForm.append(linkLabel, linkUrl, button('링크 추가', 'tiny ghost'));
+  linkForm.onsubmit = async event => { event.preventDefault(); try { await addTaskLink(taskId, { label: linkLabel.value, url: linkUrl.value }); linkLabel.value = ''; linkUrl.value = ''; } catch(error) { alert(error.message); } };
+  section.append(commentsBox, commentForm, linkForm, linksBox);
+  const unsubscribe = watchTaskDiscussion(taskId, ({ comments, links }) => {
+    commentsBox.innerHTML = ''; linksBox.innerHTML = '';
     if(!comments.length) commentsBox.append(el('p', 'foot-note', '아직 댓글이 없습니다.'));
     comments.forEach(comment => {
       const row = el('article', 'comment-item'); row.append(el('strong', '', comment.authorName || '이름 미지정'), el('span', 'comment-text', comment.text)); commentsBox.appendChild(row);
     });
-    if(attachments.length) filesBox.append(el('h4', 'small-heading', '첨부파일'));
-    attachments.forEach(file => {
-      const link = document.createElement('a'); link.href = file.downloadUrl; link.target = '_blank'; link.rel = 'noopener'; link.className = 'attachment-link'; link.textContent = `📎 ${file.name}`; filesBox.appendChild(link);
+    if(links.length) linksBox.append(el('h4', 'small-heading', '참고 링크'));
+    links.forEach(item => {
+      const link = document.createElement('a'); link.href = item.url; link.target = '_blank'; link.rel = 'noopener noreferrer'; link.className = 'reference-link'; link.textContent = `↗ ${item.label}`; linksBox.appendChild(link);
     });
   });
   onClose(unsubscribe);
