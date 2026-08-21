@@ -108,6 +108,7 @@ function projectCard(project){
   const done = list.filter(task => task.status === 'done').length;
   const overdue = list.filter(taskIsOverdue).length;
   const deadlines = list.filter(task => task.status !== 'done' && task.dueDate).sort((a, b) => String(a.dueDate).localeCompare(String(b.dueDate)));
+  const projectProgressValue = projectProgress(project.id) ?? 0;
   const card = el('article', 'proj-card');
   card.tabIndex = 0;
   const open = () => { selectedProjectId = project.id; rerender(); };
@@ -117,10 +118,16 @@ function projectCard(project){
   const title = el('div', 'proj-card-code', project.code || project.name);
   cardHead.append(title, el('span', `tag ${healthClass(project.health)}`, healthLabel(project.health)));
   card.append(cardHead);
-  if(project.code) card.append(el('div', 'foot-note', project.name));
-  card.append(progressBlock(projectProgress(project.id)));
-  card.append(el('div', 'foot-note', `완료 ${done} / 전체 ${list.length}`));
-  if(deadlines[0]) card.append(el('div', 'project-deadline', `다음 마감 · ${deadlines[0].title} (${fmtDate(deadlines[0].dueDate)})`));
+  if(project.code) card.append(el('div', 'proj-card-name', project.name));
+  const progressHead = el('div', 'proj-progress-head'); progressHead.append(el('span', '', '진행률'), el('strong', '', `${projectProgressValue}%`));
+  const track = el('div', 'proj-progress-track'); const fill = el('div', 'proj-progress-fill'); fill.style.width = `${projectProgressValue}%`; track.appendChild(fill);
+  card.append(progressHead, track);
+  const summary = el('div', 'proj-card-summary'); summary.append(el('strong', '', `${done}`), el('span', '', `완료 / 전체 ${list.length}건`)); card.appendChild(summary);
+  if(deadlines[0]) {
+    const deadline = el('div', `project-deadline ${taskIsOverdue(deadlines[0]) ? 'deadline-overdue' : ''}`);
+    const copy = el('div', 'deadline-copy'); copy.append(el('span', 'deadline-label', '다음 마감'), el('strong', '', deadlines[0].title));
+    deadline.append(copy, el('time', 'deadline-date', fmtDate(deadlines[0].dueDate))); card.appendChild(deadline);
+  } else card.append(el('div', 'project-deadline empty-deadline', '예정된 마감이 없습니다.'));
   if(overdue) card.append(el('div', 'warning-text', `지연 업무 ${overdue}건`));
   return card;
 }
