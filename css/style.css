@@ -8,6 +8,10 @@
   --font-body: 'Pretendard Variable', 'Pretendard', -apple-system, BlinkMacSystemFont, sans-serif;
   --font-mono: 'IBM Plex Mono', monospace;
 }
+.project-create-dialog { width: min(480px, 100%); }
+.project-create-form { grid-template-columns: 1fr; }
+.project-create-actions { justify-content: stretch; margin-top: 2px; }
+.project-create-actions .primary { width: 100%; min-height: 44px; }
 body.light-theme { --bg: #f7f8fc; --surface: #fff; --surface-soft: #f2f4f8; --surface-strong: #e9edf5; --text: #182033; --muted: #687188; --line: #e1e6ef; --shadow: 0 12px 32px rgba(26,36,58,.07); }
 body:not(.light-theme) { --bg: #111521; --surface: #191e2d; --surface-soft: #22293a; --surface-strong: #2b3448; --text: #edf0f8; --muted: #a1aac0; --line: #313a50; --accent: #9999ff; --accent-strong: #aaaaff; --accent-soft: #292a50; --ok: #55c99a; --ok-soft: #183d34; --warn: #e7b75a; --warn-soft: #473817; --danger: #f08488; --danger-soft: #47262c; --shadow: 0 12px 32px rgba(0,0,0,.2); }
 * { box-sizing: border-box; }
