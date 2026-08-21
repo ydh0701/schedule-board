@@ -1,822 +1,484 @@
 /*
- * state.js — 데이터 모델, Firestore 저장/실시간 동기화, 날짜 계산, 스케줄링 핵심 로직
- * (화면을 직접 그리지 않는 파일. tasks/planners 등 전역 상태와 순수 계산 함수들)
+ * state.js — 인증, 권한, Firestore 실시간 상태와 업무 데이터 공용 함수.
+ * 화면은 render.js, 초기 구동은 main.js가 맡습니다.
  */
 
-  let EXCLUDE_KEYWORDS = [
-    "심사 제출","빌드 마감","런칭","체크",
-    "후시 녹음","영상 편집","색보정","CG","캐스팅","오디션","시사","후반작업",
-    "리소스-사진","리소스-영상","리소스-화보","화보 원본"
-  ];
-  const TODAY = new Date();
-  const PALETTE = ["#6a8caf","#6f9273","#b8503a","#a37fc7","#5fa3a8","#c78f5f","#8f9e5f","#e0a83f"];
+const db = firebase.firestore();
+const auth = firebase.auth();
+const storage = firebase.storage();
+const googleProvider = new firebase.auth.GoogleAuthProvider();
 
-  let HOLIDAYS = new Map([
-    ["2025-12-25","크리스마스"],
-    ["2026-01-01","신정"],["2026-02-16","설날연휴"],["2026-02-17","설날"],["2026-02-18","설날연휴"],
-    ["2026-03-01","삼일절"],["2026-03-02","대체공휴일(삼일절)"],["2026-05-05","어린이날"],
-    ["2026-05-24","부처님오신날"],["2026-05-25","대체공휴일(부처님오신날)"],["2026-06-03","임시공휴일(지방선거)"],
-    ["2026-06-06","현충일"],["2026-07-17","제헌절"],["2026-08-15","광복절"],["2026-08-17","대체공휴일(광복절)"],
-    ["2026-09-24","추석연휴"],["2026-09-25","추석"],["2026-09-26","추석연휴"],["2026-10-03","개천절"],
-    ["2026-10-05","대체공휴일(개천절)"],["2026-10-09","한글날"],["2026-12-25","크리스마스"],
-    ["2027-01-01","신정"],["2027-02-06","설날연휴"],["2027-02-07","설날"],["2027-02-08","설날연휴"],
-    ["2027-02-09","대체공휴일(설날)"],["2027-03-01","삼일절"],["2027-05-01","노동절"],["2027-05-03","대체공휴일(노동절)"],
-    ["2027-05-05","어린이날"],["2027-05-13","부처님오신날"],["2027-06-06","현충일"],["2027-07-17","제헌절"],
-    ["2027-08-15","광복절"],["2027-08-16","대체공휴일(광복절)"],["2027-09-14","추석연휴"],["2027-09-15","추석"],
-    ["2027-09-16","추석연휴"],["2027-10-03","개천절"],["2027-10-04","대체공휴일(개천절)"],["2027-10-09","한글날"],
-    ["2027-10-11","대체공휴일(한글날)"],["2027-12-25","크리스마스"],["2027-12-27","대체공휴일(크리스마스)"]
-  ]);
+const DEPARTMENTS = [
+  { id: 'planning', name: '기획' },
+  { id: 'ui', name: 'UI' },
+  { id: 'development', name: '개발' },
+  { id: 'server', name: '서버' },
+  { id: 'qa', name: 'QA' },
+  { id: 'pm', name: 'PM' }
+];
+const TASK_STATUS = {
+  todo: '할 일', in_progress: '진행 중', blocked: '차단됨', done: '완료'
+};
 
-  let tasks = [];      
-  let planners = [];   
-  let manualCompleted = new Set(); 
-  let view = 'project';
-  let selectedProject = null;
-  let selectedPlanner = null;
-  let selectedPlannerProject = null;
-  let showPaste = false;
-  let showDonePC = false;
-  let showDoneMobile = false;
-  let collapsePC = false;
-  let collapseMobile = false;
-  let overviewGroupBy = 'project';
-  let selectedDeptTab = 'plan'; // 소속 부서 대시보드 상단 탭 (plan/ui/dev)
-  let currentUser = null; // { name, email, picture } — 가벼운 식별용 구글 로그인 (5번), 접근 제어 아님
-  let boardMeta = { lastEditedBy: null, lastEditedAt: null };
-  let firstSnapshotReceived = false; // 최초 로드 때는 토스트를 띄우지 않기 위한 플래그
+let currentUser = null;
+let currentProfile = null;
+let authResolved = false;
+let activeView = 'projects';
+let selectedProjectId = null;
+let workViewMode = 'list';
+let workCalendarCursor = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+let capacityWeekCursor = new Date();
+let projects = [];
+let tasks = [];
+let milestones = [];
+let projectUpdates = [];
+let timeOffs = [];
+let visibleUsers = [];
+let accessRequests = [];
 
-  function genId(){ return Date.now().toString(36) + Math.random().toString(36).slice(2,8); }
+let profileUnsubscribe = null;
+let dataUnsubscribers = [];
+let scopedProjectUnsubscribers = [];
 
-  const db = firebase.firestore();
-  const boardRef = db.collection('board').doc('shared');
-  let firestoreReady = false;
+function setAppStatus(message){
+  const el = document.getElementById('appStatus');
+  if(el) el.textContent = message;
+}
 
-  function serializeTask(t){
-    return {
-      id: t.id, project: t.project, category: t.category||'', name: t.name,
-      start: dateToIso(t.start), end: dateToIso(t.end),
-      workingDays: t.workingDays||1, progress: t.progress||0,
-      locked: !!t.locked, fixed: !!t.fixed, done: !!t.done, memo: t.memo || '',
-      dept: t.dept || 'plan',
-      ownerPlanner: t.ownerPlanner || null, rowGroup: t.rowGroup || null,
-      supporters: Array.isArray(t.supporters) ? t.supporters : [],
-      dependsOn: t.dependsOn || null, dependsOnBuffer: t.dependsOnBuffer || 0,
-      doneBy: t.doneBy || null, doneAt: t.doneAt || null
-    };
+function rerenderSafely(){
+  if(typeof rerender === 'function') rerender();
+}
+
+function resetDataSubscriptions(){
+  dataUnsubscribers.forEach(unsub => unsub());
+  scopedProjectUnsubscribers.forEach(unsub => unsub());
+  dataUnsubscribers = [];
+  scopedProjectUnsubscribers = [];
+  projects = [];
+  tasks = [];
+  milestones = [];
+  projectUpdates = [];
+  timeOffs = [];
+  visibleUsers = [];
+  accessRequests = [];
+}
+
+function docToObject(doc){ return { id: doc.id, ...doc.data() }; }
+function isAdmin(){ return currentProfile?.role === 'admin'; }
+function isLead(){ return currentProfile?.role === 'lead'; }
+function isMember(){ return currentProfile?.role === 'member'; }
+function isApproved(){ return !!currentProfile?.active; }
+function departmentName(id){ return DEPARTMENTS.find(x => x.id === id)?.name || id || '미지정'; }
+function dateOnly(value){ return value ? String(value).slice(0, 10) : ''; }
+
+function normalizeTask(input){
+  const task = { ...input };
+  task.status = Object.hasOwn(TASK_STATUS, task.status) ? task.status : 'todo';
+  task.progress = Number(task.progress || 0);
+  if(task.status === 'todo') task.progress = 0;
+  if(task.status === 'done') task.progress = 100;
+  if(task.status === 'in_progress') task.progress = Math.min(99, Math.max(1, task.progress || 1));
+  task.progress = Math.min(100, Math.max(0, task.progress));
+  task.archivedAt = task.archivedAt || null;
+  task.dependsOn = Array.isArray(task.dependsOn) ? [...new Set(task.dependsOn.filter(Boolean))] : (task.dependsOn ? [task.dependsOn] : []);
+  task.milestoneId = task.milestoneId || null;
+  task.estimatedDays = Math.max(0, Number(task.estimatedDays || 0));
+  return task;
+}
+
+function activeTasks(){ return tasks.filter(task => !task.archivedAt); }
+function taskIsOverdue(task){
+  return !task.archivedAt && task.status !== 'done' && !!task.dueDate && dateOnly(task.dueDate) < new Date().toISOString().slice(0, 10);
+}
+function timestampMillis(value){ return value?.toMillis ? value.toMillis() : 0; }
+function updatesForProject(projectId){ return projectUpdates.filter(update => update.projectId === projectId).sort((a, b) => timestampMillis(b.createdAt) - timestampMillis(a.createdAt)); }
+function tasksForProject(projectId){ return activeTasks().filter(task => task.projectId === projectId); }
+function milestonesForProject(projectId){ return milestones.filter(milestone => milestone.projectId === projectId && !milestone.archivedAt); }
+function tasksForMilestone(milestoneId){ return activeTasks().filter(task => task.milestoneId === milestoneId); }
+function milestoneProgress(milestoneId){
+  const list = tasksForMilestone(milestoneId);
+  if(!list.length) return null;
+  return Math.round(list.reduce((sum, task) => sum + task.progress, 0) / list.length);
+}
+function taskDependencies(task){ return (task?.dependsOn || []).map(id => tasks.find(item => item.id === id)).filter(Boolean); }
+function taskHasUnfinishedDependencies(task){ return taskDependencies(task).some(dependency => dependency.status !== 'done'); }
+function localDate(value){
+  if(!value) return null;
+  const [year, month, day] = String(value).slice(0, 10).split('-').map(Number);
+  const result = new Date(year, month - 1, day); return isNaN(result) ? null : result;
+}
+function dateKey(date){ return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`; }
+function isWeekday(date){ return date.getDay() !== 0 && date.getDay() !== 6; }
+function taskCoversDate(task, date){
+  const start = localDate(task.startDate || task.dueDate); const end = localDate(task.dueDate || task.startDate);
+  if(!start || !end) return false;
+  return date >= start && date <= end;
+}
+function taskDailyLoad(task, date){
+  if(task.status === 'done' || !task.estimatedDays || !taskCoversDate(task, date) || !isWeekday(date) || absenceFor(task.assigneeId, date)) return 0;
+  const start = localDate(task.startDate || task.dueDate); const end = localDate(task.dueDate || task.startDate);
+  let workingDays = 0;
+  for(let cursor = new Date(start); cursor <= end; cursor.setDate(cursor.getDate() + 1)) if(isWeekday(cursor)) workingDays++;
+  return workingDays ? task.estimatedDays / workingDays : 0;
+}
+function absenceFor(userId, date){ return timeOffs.find(item => item.userId === userId && date >= localDate(item.startDate) && date <= localDate(item.endDate)); }
+function wouldCreateDependencyCycle(taskId, candidateId){
+  if(!taskId || !candidateId) return false;
+  const visit = (id, visited = new Set()) => {
+    if(id === taskId) return true;
+    if(visited.has(id)) return false;
+    visited.add(id);
+    const task = tasks.find(item => item.id === id);
+    return !!task && (task.dependsOn || []).some(parentId => visit(parentId, visited));
+  };
+  return visit(candidateId);
+}
+function projectProgress(projectId){
+  const list = tasksForProject(projectId);
+  if(!list.length) return null;
+  return Math.round(list.reduce((sum, task) => sum + task.progress, 0) / list.length);
+}
+function canEditTask(task){
+  if(!currentProfile || !task || !isApproved()) return false;
+  if(isAdmin()) return true;
+  if(isLead()) return task.departmentId === currentProfile.departmentId;
+  return task.assigneeId === currentUser?.uid;
+}
+function canCreateTask(departmentId){
+  return isApproved() && (isAdmin() || (isLead() && currentProfile.departmentId === departmentId));
+}
+function canManageProjects(){ return isApproved() && isAdmin(); }
+
+async function requestGoogleLogin(){
+  try {
+    await auth.signInWithPopup(googleProvider);
+  } catch(error) {
+    console.error('로그인 실패:', error);
+    setAppStatus('로그인에 실패했습니다');
+    alert('Google 로그인에 실패했습니다. 팝업 차단 또는 Firebase Authentication 설정을 확인해주세요.');
   }
-  function deserializeTask(o){
-    return {
-      id: o.id, project: o.project, category: o.category||'', name: o.name,
-      start: isoToDate(o.start), end: isoToDate(o.end),
-      workingDays: o.workingDays||1, progress: o.progress||0,
-      locked: !!o.locked, fixed: !!o.fixed, done: !!o.done, memo: o.memo || '',
-      dept: o.dept || 'plan',
-      ownerPlanner: o.ownerPlanner || null, rowGroup: o.rowGroup || undefined,
-      supporters: Array.isArray(o.supporters) ? o.supporters : [],
-      dependsOn: o.dependsOn || null, dependsOnBuffer: o.dependsOnBuffer || 0,
-      doneBy: o.doneBy || null, doneAt: o.doneAt || null
-    };
-  }
+}
 
-  // 부서 정의 — 나중에 부서가 늘어나면(예: QA, 사업) 여기 한 줄만 추가하면 됩니다.
-  const DEPARTMENTS = [
-    { id: 'plan', label: '기획', icon: '📋' },
-    { id: 'ui',   label: 'UI',   icon: '🎨' },
-    { id: 'dev',  label: '개발', icon: '💻' }
-  ];
-  function deptLabel(id){ const d = DEPARTMENTS.find(x=>x.id===id); return d ? `${d.icon} ${d.label}` : id; }
+async function signOut(){ await auth.signOut(); }
 
-  let persistTimer = null;
-  let persistResolvers = [];
-  function persist(){
-    if(!firestoreReady) return Promise.resolve();
-    clearTimeout(persistTimer);
-    return new Promise((resolve) => {
-      persistResolvers.push(resolve);
-      persistTimer = setTimeout(async () => {
-        const data = {
-          tasks: tasks.map(serializeTask),
-          planners: planners,
-          excludeKeywords: EXCLUDE_KEYWORDS,
-          manualCompleted: [...manualCompleted],
-          holidays: [...HOLIDAYS.entries()].map(([d,n]) => ({d,n})),
-          // 완료 처리/삭제 같은 동작에 "누가 했는지"가 남도록 (5번, 접근 제어 아님 — 식별용)
-          lastEditedBy: currentUser ? currentUser.name : null,
-          lastEditedAt: new Date().toISOString()
-        };
-        try{ await boardRef.set(data); }
-        catch(e){
-          console.error('저장 실패:', e);
-          const statusEl = document.getElementById('holidayStatus');
-          if(statusEl){ statusEl.textContent = '⚠ 저장 실패 — 인터넷 연결 상태 확인 필요'; statusEl.style.color = 'var(--danger)'; }
-        }
-        finally {
-          persistResolvers.forEach(res => res());
-          persistResolvers = [];
-        }
-      }, 500);
-    });
-  }
+async function createAccessRequest(user){
+  // 역할·부서 필드는 절대 클라이언트에서 쓰지 않습니다. 보안 규칙도 이 필드만 허용해야 합니다.
+  await db.collection('accessRequests').doc(user.uid).set({
+    email: user.email || '',
+    name: user.displayName || '',
+    requestedAt: firebase.firestore.FieldValue.serverTimestamp()
+  }, { merge: true });
+}
 
-  function applyRemoteData(data){
-    tasks = (data.tasks||[]).map(deserializeTask);
-    planners = (data.planners||[]).map(p => ({ ...p, dept: p.dept || 'plan' }));
-    if(Array.isArray(data.excludeKeywords) && data.excludeKeywords.length) EXCLUDE_KEYWORDS = data.excludeKeywords;
-    manualCompleted = new Set(data.manualCompleted||[]);
-    (data.holidays||[]).forEach(h => HOLIDAYS.set(h.d, h.n));
-  }
+function subscribeCollection(query, apply, label){
+  const unsubscribe = query.onSnapshot(snapshot => {
+    apply(snapshot.docs.map(docToObject));
+    rerenderSafely();
+  }, error => {
+    console.error(`${label} 구독 실패:`, error);
+    setAppStatus('데이터를 불러오지 못했습니다');
+    rerenderSafely();
+  });
+  dataUnsubscribers.push(unsubscribe);
+}
 
-  // 이전 tasks(갱신 전)와 새로 받은 tasks를 비교해서 추가/수정/삭제 건수를 요약합니다.
-  // PM 알림 1단계(11-1) 토스트에 씁니다. 바뀐 게 없으면 null을 반환합니다.
-  function summarizeTaskDiff(oldTasks, newTasks){
-    const oldMap = new Map(oldTasks.map(t => [t.id, t]));
-    const newMap = new Map(newTasks.map(t => [t.id, t]));
-    let added = 0, removed = 0, modified = 0;
-    newMap.forEach((t, id) => {
-      if(!oldMap.has(id)){ added++; return; }
-      const o = oldMap.get(id);
-      const changed = o.name!==t.name || +o.start!==+t.start || +o.end!==+t.end ||
-        o.progress!==t.progress || !!o.done!==!!t.done || o.dependsOn!==t.dependsOn;
-      if(changed) modified++;
-    });
-    oldMap.forEach((t, id) => { if(!newMap.has(id)) removed++; });
-    if(added + removed + modified === 0) return null;
-    const parts = [];
-    if(added) parts.push(`추가 ${added}건`);
-    if(modified) parts.push(`수정 ${modified}건`);
-    if(removed) parts.push(`삭제 ${removed}건`);
-    return parts.join(' · ');
-  }
+function subscribeProjectScopeForMember(ownTasks){
+  scopedProjectUnsubscribers.forEach(unsub => unsub());
+  scopedProjectUnsubscribers = [];
+  const projectIds = [...new Set(ownTasks.map(task => task.projectId).filter(Boolean))];
+  const scopedProjects = new Map();
+  const scopedTasks = new Map();
+  const scopedMilestones = new Map();
+  const scopedUpdates = new Map();
 
-  function subscribeBoard(){
-    boardRef.onSnapshot(doc => {
-      if(doc.exists){
-        const data = doc.data();
-        const prevTasks = tasks; // 갱신 전 상태 — 토스트용 비교에만 씁니다
-        applyRemoteData(data);
-        boardMeta = { lastEditedBy: data.lastEditedBy || null, lastEditedAt: data.lastEditedAt || null };
-        if(firstSnapshotReceived){
-          const summary = summarizeTaskDiff(prevTasks, tasks);
-          if(summary){
-            const who = boardMeta.lastEditedBy ? `${boardMeta.lastEditedBy}님이 ` : '';
-            showChangeToast(`${who}${summary}`);
-          }
-        }
-        firstSnapshotReceived = true;
-      }
-      firestoreReady = true;
-      rerender();
-    }, err => {
-      console.error('실시간 동기화 오류:', err);
-      document.getElementById('holidayStatus').textContent = '⚠ 서버 연결 실패 — 새로고침 필요';
-    });
-  }
+  const publish = () => {
+    projects = [...scopedProjects.values()].sort((a, b) => String(a.code || a.name).localeCompare(String(b.code || b.name)));
+    const own = ownTasks.map(task => [task.id, task]);
+    tasks = [...new Map([...own, ...scopedTasks]).values()];
+    milestones = [...scopedMilestones.values()];
+    projectUpdates = [...scopedUpdates.values()];
+    rerenderSafely();
+  };
 
-  async function savePlanners(){ await persist(); }
-  async function saveManualCompleted(){ await persist(); }
+  projectIds.forEach(projectId => {
+    scopedProjectUnsubscribers.push(db.collection('projects').doc(projectId).onSnapshot(doc => {
+      if(doc.exists) scopedProjects.set(doc.id, docToObject(doc));
+      publish();
+    }, error => console.error('프로젝트 구독 실패:', error)));
+    // Firestore 규칙은 projectMembers/{projectId_uid} 존재 여부를 검사해 이 쿼리를 허용합니다.
+    scopedProjectUnsubscribers.push(db.collection('tasks').where('projectId', '==', projectId).onSnapshot(snapshot => {
+      snapshot.docs.forEach(doc => scopedTasks.set(doc.id, docToObject(doc)));
+      publish();
+    }, error => console.error('프로젝트 업무 구독 실패:', error)));
+    scopedProjectUnsubscribers.push(db.collection('milestones').where('projectId', '==', projectId).onSnapshot(snapshot => {
+      snapshot.docs.forEach(doc => scopedMilestones.set(doc.id, docToObject(doc)));
+      publish();
+    }, error => console.error('프로젝트 마일스톤 구독 실패:', error)));
+    scopedProjectUnsubscribers.push(db.collection('projectUpdates').where('projectId', '==', projectId).onSnapshot(snapshot => {
+      snapshot.docs.forEach(doc => scopedUpdates.set(doc.id, docToObject(doc)));
+      publish();
+    }, error => console.error('프로젝트 업데이트 구독 실패:', error)));
+  });
+  publish();
+}
 
-  // ---------------- Date Helpers ----------------
-  function dateToIso(d){ if(!d || isNaN(d.getTime())) return ''; const p=n=>String(n).padStart(2,'0'); return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`; }
-  function isoToDate(s){ if(!s) return null; const [y,m,d]=s.split('-').map(Number); return new Date(y,m-1,d); }
-  function sameDay(a,b){ return a && b && a.getFullYear()===b.getFullYear() && a.getMonth()===b.getMonth() && a.getDate()===b.getDate(); }
-  const TODAY_START = new Date(TODAY.getFullYear(), TODAY.getMonth(), TODAY.getDate());
-  function isDelayed(t){ return !t.done && !t.locked && t.end < TODAY_START; }
-  function isWeekend(d){ const w=d.getDay(); return w===0||w===6; }
-  function isHoliday(d){ return HOLIDAYS.has(dateToIso(d)); }
-  function isNonWorking(d){ return isWeekend(d) || isHoliday(d); }
-  function addDays(d,n){ const r=new Date(d); r.setDate(r.getDate()+n); return r; }
-  function nextWorkingDay(d){ let r=addDays(d,1); while(isNonWorking(r)) r=addDays(r,1); return r; }
-  function prevWorkingDay(d){ let r=addDays(d,-1); while(isNonWorking(r)) r=addDays(r,-1); return r; }
-  function endFromWorkingDays(start, wd){
-    wd = Math.max(1, wd||1);
-    let d = new Date(start); let count=1;
-    while(count < wd){ d = addDays(d,1); if(!isNonWorking(d)) count++; }
-    return d;
+function subscribeApprovedData(){
+  resetDataSubscriptions();
+  if(isAdmin()) {
+    subscribeCollection(db.collection('projects'), data => { projects = data; }, '프로젝트');
+    subscribeCollection(db.collection('tasks'), data => { tasks = data; }, '업무');
+    subscribeCollection(db.collection('milestones'), data => { milestones = data; }, '마일스톤');
+    subscribeCollection(db.collection('projectUpdates'), data => { projectUpdates = data; }, '프로젝트 업데이트');
+    subscribeCollection(db.collection('timeOffs'), data => { timeOffs = data; }, '부재 일정');
+    subscribeCollection(db.collection('users'), data => { visibleUsers = data.filter(user => user.active); }, '사용자');
+    subscribeCollection(db.collection('accessRequests'), data => { accessRequests = data; }, '승인 요청');
+  } else if(isLead()) {
+    subscribeCollection(db.collection('projects'), data => { projects = data; }, '프로젝트');
+    subscribeCollection(db.collection('tasks').where('departmentId', '==', currentProfile.departmentId), data => { tasks = data; }, '업무');
+    subscribeCollection(db.collection('milestones'), data => { milestones = data; }, '마일스톤');
+    subscribeCollection(db.collection('projectUpdates'), data => { projectUpdates = data; }, '프로젝트 업데이트');
+    subscribeCollection(db.collection('timeOffs').where('departmentId', '==', currentProfile.departmentId), data => { timeOffs = data; }, '팀 부재 일정');
+    subscribeCollection(db.collection('users').where('departmentId', '==', currentProfile.departmentId), data => { visibleUsers = data.filter(user => user.active); }, '팀원');
+  } else {
+    subscribeCollection(db.collection('tasks').where('assigneeId', '==', currentUser.uid), data => {
+      subscribeProjectScopeForMember(data);
+    }, '내 업무');
+    subscribeCollection(db.collection('timeOffs').where('userId', '==', currentUser.uid), data => { timeOffs = data; }, '내 부재 일정');
   }
-  function startFromWorkingDaysBackward(end, wd){
-    wd = Math.max(1, wd||1);
-    let d = new Date(end); let count=1;
-    while(count < wd){ d = addDays(d,-1); if(!isNonWorking(d)) count++; }
-    return d;
-  }
-  function workingDaysBetween(start,end){
-    if(!start || !end || end < start) return 1;
-    let d = new Date(start); let count = isNonWorking(d) ? 0 : 1;
-    while(d < end){ d = addDays(d,1); if(!isNonWorking(d)) count++; }
-    return Math.max(1,count);
-  }
-  function fmt(d) { return d && !isNaN(d.getTime()) ? dateToIso(d) : '?'; }
-  function parseDateLoose(str){
-    if(!str) return null;
-    const m = str.match(/(\d+)\s*\.\s*(\d+)\s*\.\s*(\d+)/);
-    if(!m) return null;
-    let yy=parseInt(m[1],10), mo=parseInt(m[2],10), dd=parseInt(m[3],10);
-    if(yy%100===99 || yy%100===0) return null;
-    const y = yy<100?yy+2000:yy;
-    const dt = new Date(y,mo-1,dd);
-    return isNaN(dt.getTime()) ? null : dt;
-  }
-  function colorFor(name){
-    if(!name) return '#555';
-    let h=0; for(let i=0;i<name.length;i++) h = name.charCodeAt(i) + ((h<<5)-h);
-    return PALETTE[Math.abs(h) % PALETTE.length];
-  }
-  function matchesKeyword(name){ return EXCLUDE_KEYWORDS.some(k => name.includes(k)); }
-  function overlaps(a,b){ return a.start <= b.end && b.start <= a.end; }
-  function projectType(code){
-    const norm = (code||'').replace(/[\s_]/g,'').toUpperCase();
-    return /M$/.test(norm) ? 'mobile' : 'pc';
-  }
+}
 
-  // ---------------- 앵커 매칭 ----------------
-  function findAnchor(anchors, pred) { return anchors.find(pred); }
-  const isKickoff   = a => a.name.includes('킥오프');
-  const isConcept   = a => a.name.includes('컨셉') && a.name.includes('확정');
-  const isDemoJudgeQA  = a => { const u=a.name.toUpperCase(); return a.name.includes('데모') && a.name.includes('심사') && u.includes('QA') && !u.includes('LQA'); };
-  const isDemoJudge    = a => { const u=a.name.toUpperCase(); return a.name.includes('데모') && a.name.includes('심사') && !u.includes('QA') && !u.includes('LQA'); };
-  const isDemoLaunch   = a => { const u=a.name.toUpperCase(); return a.name.includes('데모') && a.name.includes('런칭') && !u.includes('QA') && !u.includes('LQA') && !a.name.includes('대응'); };
-  const isFinalJudgeQA = a => { const u=a.name.toUpperCase(); return a.name.includes('완전판') && a.name.includes('심사') && u.includes('QA') && !u.includes('LQA'); };
-  const isFinalJudge   = a => { const u=a.name.toUpperCase(); return a.name.includes('완전판') && a.name.includes('심사') && !u.includes('QA') && !u.includes('LQA'); };
-  const isFinalLaunch  = a => { const u=a.name.toUpperCase(); return (a.name.includes('완전판') || a.name.includes('스토어')) && a.name.includes('런칭') && !u.includes('QA') && !u.includes('LQA') && !a.name.includes('대응'); };
-  const isMobileLaunchQA = a => { const u=a.name.toUpperCase(); return a.name.includes('완전판') && a.name.includes('런칭') && u.includes('QA') && !u.includes('LQA') && !a.name.includes('대응'); };
-  const isDelivery  = a => a.name.includes('납품');
-  const isUiStart   = a => { const u=a.name.toUpperCase(); return u.includes('UI') && a.name.includes('투입'); };
+function handleProfile(profile){
+  currentProfile = profile?.active ? profile : null;
+  if(!currentProfile) {
+    resetDataSubscriptions();
+    setAppStatus('승인 대기 중');
+  } else {
+    setAppStatus(`${currentProfile.name || currentUser.displayName || currentUser.email} · ${currentProfile.role === 'admin' ? '관리자' : currentProfile.role === 'lead' ? departmentName(currentProfile.departmentId) + ' 팀장' : '팀원'}`);
+    subscribeApprovedData();
+  }
+  rerenderSafely();
+}
 
-  function deliveryReviewDuration(name){ return (name.includes('1챕') || name.includes('데모')) ? 2 : 5; }
-  function deliveryReviewName(name){ return `(기획) ${name.replace('납품','검수')}`; }
-
-  // ---------------- 자동 템플릿 빌더 ----------------
-  function makeBuilder(){
-    const out = [];
-    let cursor = null;
-    function place(cat, name, d, opts){
-      opts = opts || {};
-      let start, end, fixed = false;
-      if(opts.sameAs){
-        start = new Date(opts.sameAs.start); end = new Date(opts.sameAs.end);
-        fixed = true;
-      } else {
-        start = cursor ? nextWorkingDay(cursor) : new Date(TODAY);
-        end = endFromWorkingDays(start, d);
-      }
-      out.push({ cat, name, d, start, end, fixed });
-      cursor = end;
+function startAuth(){
+  auth.onAuthStateChanged(async user => {
+    authResolved = true;
+    if(profileUnsubscribe) { profileUnsubscribe(); profileUnsubscribe = null; }
+    resetDataSubscriptions();
+    currentUser = user;
+    currentProfile = null;
+    if(!user) {
+      setAppStatus('로그인이 필요합니다');
+      rerenderSafely();
+      return;
     }
-    function placeDelivery(cat, anchor){
-      const d = deliveryReviewDuration(anchor.name);
-      const start = new Date(anchor.start);
-      const end = endFromWorkingDays(start, d);
-      out.push({ cat, name: deliveryReviewName(anchor.name), d, start, end, fixed:true });
-      if(!cursor || end > cursor) cursor = end;
-    }
-    function placeBackGroup(items, anchor){
-      if(!anchor){ items.forEach(it => place(it.cat, it.name, it.d)); return; }
-      let endCursor = new Date(anchor.end);
-      const placed = [];
-      for(let i=items.length-1;i>=0;i--){
-        const it = items[i];
-        const end = endCursor;
-        const start = startFromWorkingDaysBackward(end, it.d);
-        placed.unshift({ cat:it.cat, name:it.name, d:it.d, start, end, fixed:true });
-        endCursor = prevWorkingDay(start);
+    setAppStatus('권한을 확인하는 중…');
+    profileUnsubscribe = db.collection('users').doc(user.uid).onSnapshot(async doc => {
+      if(!doc.exists) {
+        try { await createAccessRequest(user); }
+        catch(error) { console.error('승인 요청 생성 실패:', error); }
+        handleProfile(null);
+        return;
       }
-      placed.forEach(p => out.push(p));
-      cursor = placed[placed.length-1].end;
-    }
-    return { out, place, placeDelivery, placeBackGroup, setCursor:(d)=>{ cursor = d; } };
-  }
-
-  function buildPCTasks(anchors){
-    const b = makeBuilder();
-    const kickoff = findAnchor(anchors, isKickoff);
-    const concept = findAnchor(anchors, isConcept);
-    const demoJudgeQA = findAnchor(anchors, isDemoJudgeQA);
-    const demoJudge = findAnchor(anchors, isDemoJudge);
-    const demoLaunch = findAnchor(anchors, isDemoLaunch);
-    const finalJudgeQA = findAnchor(anchors, isFinalJudgeQA);
-    const finalJudge = findAnchor(anchors, isFinalJudge);
-    const finalLaunch = findAnchor(anchors, isFinalLaunch);
-    const deliveries = anchors.filter(a => isDelivery(a) && !matchesKeyword(a.name));
-    const finalDeliveries = deliveries.filter(a => a.name.includes('완전판'));
-    const demoDeliveries = deliveries.filter(a => !a.name.includes('완전판'));
-
-    b.setCursor(kickoff ? kickoff.end : null);
-
-    b.place('아이디어','1) 파트너사와 아이디어 회의',1);
-    b.place('아이디어','2) 파트너사에서 생각하는 FMV 게임 플레이',3);
-    b.place('아이디어','2) 컨셉 및 시스템 제안서 작성',3);
-    b.place('아이디어','3) 파트너사와 컨셉 및 시스템 회의',1,{sameAs:concept});
-
-    b.place('준비','1) 초안 기획서 작성 (타코 PD 방향성 선확인)',10);
-    b.place('준비','2) 프로젝트 변경점 정리 FMV 개발 마일스톤(전체 현황)',1);
-    b.place('준비','2) 파트너사 리소스 요청서 작성 및 전달',1);
-    b.place('준비','2) 파트너사 업적 필수 리스트 정리해서 전달',1);
-
-    b.place('세부 기획서','1) 로비 기획서',3);
-    b.place('세부 기획서','1) 환경설정 기획서',3);
-    b.place('세부 기획서','2) 챕터리스트 기획서',5);
-    b.place('세부 기획서','2) 챕터맵 기획서',5);
-    b.place('세부 기획서','3) 인게임 기획서',5);
-    b.place('세부 기획서','3) 인게임 엔딩 크레딧 기획서',5);
-    b.place('세부 기획서','4) 랭킹 기획서',3);
-    b.place('세부 기획서','4) 업적 기획서',3);
-    b.place('세부 기획서','5) 앨범 기획서',3);
-
-    if(demoDeliveries.length){ demoDeliveries.forEach(a => b.placeDelivery('데모 준비', a)); }
-    else { b.place('데모 준비','1) 데모 분량 영상 검수',3); }
-    b.place('데모 준비','2) 1차 데이터',5);
-    b.place('데모 준비','2) 1차 업적 데이터',5);
-    b.place('데모 준비','2) 1차 밸런스',5);
-    b.place('데모 준비','3) 데모 런칭 기획서',3);
-    b.place('데모 준비','3) 데모 사운드 기획',3);
-    b.place('데모 준비','3) 1차 번역 요청 및 적용',3);
-    b.place('데모 준비','4) 데모 심사 QA 및 대응 (영어랑 기능정도만)',3,{sameAs:demoJudgeQA});
-    b.place('데모 준비','5) 데모 심사 제출',1,{sameAs:demoJudge});
-    b.placeBackGroup([
-      {cat:'데모 준비', name:'6) 데모 런칭 QA', d:5},
-      {cat:'데모 준비', name:'7) 데모 런칭 QA 대응', d:5}
-    ], demoLaunch);
-
-    b.place('데모 런칭','1) 데모 런칭',1,{sameAs:demoLaunch});
-    b.place('데모 런칭','1) 데모 모니터링',5);
-
-    if(finalDeliveries.length){ finalDeliveries.forEach(a => b.placeDelivery('런칭 준비', a)); }
-    else { b.place('런칭 준비','1) 완전판 분량 영상 검수',10); }
-    b.place('런칭 준비','2) 2차 데이터',15);
-    b.place('런칭 준비','2) 2차 업적 데이터',15);
-    b.place('런칭 준비','2) 2차 밸런스',15);
-    b.place('런칭 준비','3) 사운드 기획 마무리',3);
-    b.place('런칭 준비','3) 2차 번역 요청 및 적용',3);
-    b.place('런칭 준비','4) 완전판 심사 QA 및 대응',5,{sameAs:finalJudgeQA});
-    b.place('런칭 준비','5) 완전판 심사 제출',1,{sameAs:finalJudge});
-    b.place('런칭 준비','6) 스팀 업적 세팅',3);
-    b.place('런칭 준비','6) 스팀 커뮤니티 뱃지 기획',3);
-    b.placeBackGroup([
-      {cat:'런칭 준비', name:'7) 완전판 런칭 QA', d:5},
-      {cat:'런칭 준비', name:'8) 완전판 런칭 QA 대응', d:5}
-    ], finalLaunch);
-
-    b.place('완전판 런칭 후','1) 완전판 런칭',1,{sameAs:finalLaunch});
-    b.place('완전판 런칭 후','1) 완전판 모니터링',5);
-
-    return b.out;
-  }
-
-  function buildMobileTasks(anchors){
-    const b = makeBuilder();
-    const planStart = findAnchor(anchors, a => a.name.includes('기획') && a.name.includes('투입'));
-    const launchQA = findAnchor(anchors, isMobileLaunchQA);
-    const finalLaunch = findAnchor(anchors, isFinalLaunch);
-
-    b.setCursor(planStart ? planStart.end : null);
-
-    b.place('준비','모바일 프로젝트 플레이 (BM 확인)',1);
-    b.place('준비','PC01 M, PC04 M 현황 데이터 확인 (애널리틱스)',3);
-    b.place('준비','BM 개선 전/후 기획서 및 데이터 확인',3);
-    b.place('준비','BM 방향성 제안서 작성 (유지보수 필수)',5);
-    b.place('준비','프로젝트 변경점 정리 FMV 개발 마일스톤(전체 현황)',1);
-    b.place('세부 기획서','BM 방향성 제안서를 토대로 세부 기획서 작성',3);
-
-    b.place('사전예약 준비','인앱 상품 등록 요청서 작성 및 글비실에 전달',3);
-    b.place('사전예약 준비','1차 데이터',4);
-    b.place('사전예약 준비','1차 광고 배치',2);
-    b.place('사전예약 준비','사전예약 런칭 기획서',2);
-    b.place('사전예약 준비','1차 번역 요청 및 적용',1);
-    b.place('사전예약 준비','사전예약 심사 QA 및 대응',4);
-    b.place('사전예약 준비','사전예약 심사 제출',1);
-    b.place('사전예약 런칭','사전예약 시작',1);
-    b.place('런칭 준비','완전판 사운드 기획',1);
-    b.place('런칭 준비','앱이벤트 설계 (애널리틱스, 애드저스트, PFtool)',3);
-    b.place('런칭 준비','앱이벤트 연결 확인 (유니티)',3);
-    b.place('런칭 준비','2차 번역 요청 및 적용',1);
-    b.placeBackGroup([
-      {cat:'런칭 준비', name:'완전판 런칭 QA', d:5},
-      {cat:'런칭 준비', name:'완전판 런칭 QA 대응', d:5}
-    ], launchQA || finalLaunch);
-
-    b.place('완전판 런칭 후','완전판 심사 제출',1);
-    b.place('완전판 런칭 후','완전판 런칭',1,{sameAs:finalLaunch});
-    b.place('완전판 런칭 후','개선 뭐 해야하는지 리뷰보고 체크',4);
-
-    return b.out;
-  }
-
-  function autoFillTemplate(pl, code){
-    const built = simulateTemplateTasks(code);
-    built.forEach(item => {
-      tasks.push({
-        id: genId(), project: code, category: item.cat, name: item.name,
-        start: item.start, end: item.end, workingDays: item.d, progress: 0,
-        locked: false, fixed: item.fixed, dept: pl.dept||'plan', ownerPlanner: pl.id
-      });
+      handleProfile({ id: doc.id, ...doc.data() });
+    }, error => {
+      console.error('권한 정보 확인 실패:', error);
+      setAppStatus('권한 정보를 확인할 수 없습니다');
+      rerenderSafely();
     });
+  });
+}
+
+function requirePermission(allowed, message){
+  if(allowed) return true;
+  alert(message || '이 작업을 할 권한이 없습니다.');
+  return false;
+}
+
+async function saveTask(input){
+  const isNew = !input.id;
+  const previous = isNew ? null : tasks.find(task => task.id === input.id);
+  const departmentId = input.departmentId || previous?.departmentId;
+  if(!requirePermission(isNew ? canCreateTask(departmentId) : canEditTask(previous), '이 업무를 수정할 권한이 없습니다.')) return;
+  if(!input.title?.trim()) throw new Error('업무 제목을 입력해주세요.');
+  if(!input.assigneeId) throw new Error('담당자를 지정해주세요.');
+
+  const data = normalizeTask({ ...previous, ...input, title: input.title.trim(), departmentId, updatedBy: currentUser.uid });
+  if(data.milestoneId) {
+    const milestone = milestones.find(item => item.id === data.milestoneId);
+    if(!milestone || milestone.projectId !== data.projectId) throw new Error('선택한 마일스톤은 연결 프로젝트에 속해야 합니다.');
   }
-
-  function simulateTemplateTasks(code){
-    const anchors = tasks.filter(t => t.project===code && t.locked).sort((a,b)=>a.start-b.start);
-    return projectType(code) === 'mobile' ? buildMobileTasks(anchors) : buildPCTasks(anchors);
+  if(data.dependsOn.includes(input.id)) throw new Error('업무는 자기 자신을 선행 업무로 지정할 수 없습니다.');
+  if(data.dependsOn.some(dependencyId => wouldCreateDependencyCycle(input.id, dependencyId))) {
+    throw new Error('순환 선행 관계가 생깁니다. 선행 업무를 다시 선택해주세요.');
   }
-
-  // 마스터 앵커가 나중에 바뀌었을 때, 이미 생성된 기획자의 "고정(fixed)" 업무만
-  // 최신 앵커 날짜로 다시 맞춥니다. 기획자가 직접 수정/추가한(fixed:false) 업무는 건드리지 않습니다.
-  function resyncPlannerProjectAnchors(pl, code){
-    const fresh = simulateTemplateTasks(code).filter(item => item.fixed);
-    const existing = tasks.filter(t => t.project===code && t.ownerPlanner===pl.id && t.fixed);
-    let updated = 0, added = 0;
-    fresh.forEach(item => {
-      const match = existing.find(t => t.name === item.name);
-      if(match){
-        match.start = new Date(item.start); match.end = new Date(item.end); match.workingDays = item.d;
-        updated++;
-      } else {
-        tasks.push({
-          id: genId(), project: code, category: item.cat, name: item.name,
-          start: new Date(item.start), end: new Date(item.end), workingDays: item.d,
-          progress: 0, locked: false, fixed: true, dept: pl.dept||'plan', ownerPlanner: pl.id
-        });
-        added++;
-      }
-    });
-    recalcAll(); persist(); rerender();
-    return { updated, added };
+  const ref = isNew ? db.collection('tasks').doc() : db.collection('tasks').doc(input.id);
+  const batch = db.batch();
+  batch.set(ref, {
+    ...data,
+    id: firebase.firestore.FieldValue.delete(),
+    createdBy: previous?.createdBy || currentUser.uid,
+    createdAt: previous?.createdAt || firebase.firestore.FieldValue.serverTimestamp(),
+    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+  }, { merge: true });
+  // 프로젝트 구성원 문서가 있어야 팀원이 해당 프로젝트의 전체 흐름을 읽을 수 있습니다.
+  if(data.projectId) {
+    batch.set(db.collection('projectMembers').doc(`${data.projectId}_${data.assigneeId}`), {
+      projectId: data.projectId, userId: data.assigneeId,
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    }, { merge: true });
   }
+  await batch.commit();
+}
 
-  function checkPlannerAvailability(code, pl){
-    const candidateTasks = simulateTemplateTasks(code).filter(c => !matchesKeyword(c.name));
-    const existing = tasks.filter(t =>
-      (t.ownerPlanner === pl.id || (Array.isArray(t.supporters) && t.supporters.includes(pl.id))) &&
-      t.project !== code && !matchesKeyword(t.name)
-    );
-    for(const cand of candidateTasks){
-      for(const ex of existing){
-        if(cand.start <= ex.end && ex.start <= cand.end){
-          return { available:false, conflictWith: ex, overlapStart: cand.start>ex.start?cand.start:ex.start, overlapEnd: cand.end<ex.end?cand.end:ex.end };
-        }
-      }
-    }
-    return { available:true };
-  }
+async function archiveTask(taskId){
+  const task = tasks.find(item => item.id === taskId);
+  if(!requirePermission(canEditTask(task), '이 업무를 보관할 권한이 없습니다.')) return;
+  await db.collection('tasks').doc(taskId).update({
+    archivedAt: firebase.firestore.FieldValue.serverTimestamp(),
+    updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+    updatedBy: currentUser.uid
+  });
+}
 
-  function normalizeName(s){ return (s||'').replace(/\s+/g,'').toLowerCase(); }
-  function levenshtein(a,b){
-    const m=a.length,n=b.length;
-    if(m===0) return n; if(n===0) return m;
-    const dp = Array.from({length:m+1},()=>new Array(n+1).fill(0));
-    for(let i=0;i<=m;i++) dp[i][0]=i;
-    for(let j=0;j<=n;j++) dp[0][j]=j;
-    for(let i=1;i<=m;i++) for(let j=1;j<=n;j++){
-      dp[i][j] = a[i-1]===b[j-1] ? dp[i-1][j-1] : 1 + Math.min(dp[i-1][j], dp[i][j-1], dp[i-1][j-1]);
-    }
-    return dp[m][n];
-  }
-  function isSimilarName(a,b){
-    const na=normalizeName(a), nb=normalizeName(b);
-    if(!na || !nb) return false;
-    if(na===nb) return true;
-    const dist = levenshtein(na,nb);
-    const threshold = Math.max(1, Math.floor(Math.min(na.length,nb.length)*0.3));
-    return dist <= threshold;
-  }
+async function saveProject(input){
+  if(!requirePermission(canManageProjects(), '프로젝트는 관리자만 관리할 수 있습니다.')) return;
+  if(!input.name?.trim()) throw new Error('프로젝트 이름을 입력해주세요.');
+  const ref = input.id ? db.collection('projects').doc(input.id) : db.collection('projects').doc();
+  await ref.set({
+    name: input.name.trim(), code: (input.code || '').trim(),
+    versions: input.versions || [], status: input.status || 'active',
+    updatedAt: firebase.firestore.FieldValue.serverTimestamp(), updatedBy: currentUser.uid,
+    createdAt: input.createdAt || firebase.firestore.FieldValue.serverTimestamp(),
+    createdBy: input.createdBy || currentUser.uid
+  }, { merge: true });
+}
 
-  // ---------------- 공휴일 매니저 ----------------
-  async function refreshHolidays(){
-    const btn = document.getElementById('refreshHolidaysBtn');
-    const status = document.getElementById('holidayStatus');
-    if(!btn) return;
-    btn.disabled = true;
-    status.innerHTML = '<span class="loading"><span class="spinner"></span>공휴일 확인 중...</span>';
-    const y1 = TODAY.getFullYear();
-    const years = [y1, y1+1, y1+2];
-    try{
-      let added = 0;
-      for(const y of years){
-        const res = await fetch(`https://date.nager.at/api/v3/PublicHolidays/${y}/KR`);
-        if(!res.ok) throw new Error('서ver 응답 오류');
-        const data = await res.json();
-        data.forEach(h => {
-          if(!h.types || h.types.includes('Public')){
-            if(!HOLIDAYS.has(h.date)){ HOLIDAYS.set(h.date, h.localName || h.name || '공휴일'); added++; }
-          }
-        });
-      }
-      const now = new Date();
-      const stamp = dateToIso(now) + ' ' + String(now.getHours()).padStart(2,'0') + ':' + String(now.getMinutes()).padStart(2,'0');
-      try{ await persist(); }catch(e){}
-      status.textContent = `공휴일 데이터: ${stamp} 자동 갱신 (${added}건 추가)`;
-      recalcAll(); await persist(); rerender();
-    }catch(err){
-      status.textContent = '자동 갱신 실패 — 기존 데이터 유지';
-    }
-    btn.disabled = false;
-  }
-  function parseTSVQuoted(text){
-    const rows = []; let row = []; let field = ''; let inQuotes = false;
-    for(let i=0;i<text.length;i++){
-      const c = text[i];
-      if(inQuotes){
-        if(c === '"'){ if(text[i+1] === '"'){ field += '"'; i++; } else inQuotes = false; }
-        else field += c;
-      } else {
-        if(c === '"') inQuotes = true;
-        else if(c === '\t'){ row.push(field); field=''; }
-        else if(c === '\n'){ row.push(field); rows.push(row); row=[]; field=''; }
-        else if(c === '\r'){ }
-        else field += c;
-      }
-    }
-    if(field.length>0 || row.length>0){ row.push(field); rows.push(row); }
-    return rows;
-  }
+async function saveProjectUpdate(input){
+  if(!requirePermission(isAdmin() || isLead(), '프로젝트 업데이트는 팀장 또는 관리자만 작성할 수 있습니다.')) return;
+  if(!input.projectId) throw new Error('프로젝트를 선택해주세요.');
+  const project = projects.find(item => item.id === input.projectId);
+  if(!project) throw new Error('프로젝트를 찾을 수 없습니다.');
+  const health = ['on_track', 'at_risk', 'off_track'].includes(input.health) ? input.health : 'on_track';
+  const batch = db.batch();
+  batch.set(db.collection('projectUpdates').doc(), {
+    projectId: input.projectId, health,
+    achievements: (input.achievements || '').trim(), blockers: (input.blockers || '').trim(), nextSteps: (input.nextSteps || '').trim(),
+    createdBy: currentUser.uid, createdByName: currentProfile.name || currentUser.displayName || currentUser.email || '',
+    createdAt: firebase.firestore.FieldValue.serverTimestamp()
+  });
+  batch.update(db.collection('projects').doc(project.id), {
+    health, lastUpdatedAt: firebase.firestore.FieldValue.serverTimestamp(), updatedAt: firebase.firestore.FieldValue.serverTimestamp(), updatedBy: currentUser.uid
+  });
+  await batch.commit();
+}
 
-  function parseRows(rows){
-    const S = v => (v===null || v===undefined) ? '' : String(v);
-    rows = rows.filter(r => r.some(c => S(c).trim()));
-    let curProject = null, curCategory = '';
-    const results = [];
-    rows.forEach(r => {
-      const c0 = S(r[0]).trim();
-      if(c0 === '프로젝트' || S(r[2]).trim() === '내용') return;
-      if(c0){
-        const lines = c0.split('\n').map(s=>s.trim()).filter(Boolean);
-        curProject = lines[0] || c0;
-      }
-      if(!curProject) return;
-      const category = S(r[1]).trim();
-      if(category) curCategory = category;
+async function saveTimeOff(input){
+  const targetId = input.userId || currentUser?.uid;
+  const targetUser = targetId === currentUser?.uid ? currentProfile : visibleUsers.find(user => user.id === targetId);
+  const allowed = isAdmin() || (isLead() && targetUser?.departmentId === currentProfile.departmentId) || targetId === currentUser?.uid;
+  if(!requirePermission(allowed && isApproved(), '이 부재 일정을 등록할 권한이 없습니다.')) return;
+  if(!input.startDate || !input.endDate || input.endDate < input.startDate) throw new Error('올바른 부재 기간을 입력해주세요.');
+  const ref = input.id ? db.collection('timeOffs').doc(input.id) : db.collection('timeOffs').doc();
+  await ref.set({
+    userId: targetId, departmentId: targetUser?.departmentId || currentProfile.departmentId || null,
+    type: input.type || 'leave', reason: (input.reason || '').trim(),
+    startDate: input.startDate, endDate: input.endDate,
+    updatedAt: firebase.firestore.FieldValue.serverTimestamp(), updatedBy: currentUser.uid,
+    createdAt: input.createdAt || firebase.firestore.FieldValue.serverTimestamp(), createdBy: input.createdBy || currentUser.uid
+  }, { merge: true });
+}
 
-      const col2 = S(r[2]).trim(), col3 = S(r[3]).trim();
-      const col4 = S(r[4]).trim(), col5 = S(r[5]).trim();
-      const col6 = S(r[6]).trim(), col7 = S(r[7]).trim();
-      const threeTrack = /^(TRUE|FALSE)$/i.test(col7);
-      const isMaster = /^(TRUE|FALSE)$/i.test(col3) || /^(TRUE|FALSE)$/i.test(col5) || threeTrack;
+async function deleteTimeOff(id){
+  const item = timeOffs.find(timeOff => timeOff.id === id);
+  const allowed = item && (isAdmin() || (isLead() && item.departmentId === currentProfile.departmentId) || item.userId === currentUser?.uid);
+  if(!requirePermission(allowed, '이 부재 일정을 삭제할 권한이 없습니다.')) return;
+  await db.collection('timeOffs').doc(id).delete();
+}
 
-      if(isMaster){
-        const dateIdx = threeTrack ? 8 : 6;
-        const startP = parseDateLoose(S(r[dateIdx]).trim());
-        const endP = parseDateLoose(S(r[dateIdx+1]).trim());
-        if(!endP) return;
-        const start = startP || endP;
-        const rowGroup = 'row' + genId();
-        const rawItems = threeTrack ? [{name:col2,status:col3}, {name:col4,status:col5}, {name:col6,status:col7}] : [{name:col2,status:col3}, {name:col4,status:col5}];
-        const candidates = rawItems.filter(it => it.name && it.name !== '-');
-        const items = [];
-        candidates.forEach(it => {
-          const dup = items.find(x => isSimilarName(x.name, it.name));
-          if(dup){ if(it.name.length > dup.name.length) dup.name = it.name; }
-          else items.push({...it});
-        });
-        items.forEach(item => {
-          results.push({
-            id: genId(), project: curProject, category: curCategory, name: item.name,
-            start: new Date(start), end: new Date(endP),
-            workingDays: workingDaysBetween(start, endP),
-            progress: /^TRUE$/i.test(item.status) ? 100 : 0,
-            locked: true, fixed: false, rowGroup
-          });
-        });
-      } else {
-        const name = col3; if(!name) return;
-        const start = parseDateLoose(S(r[4]).trim());
-        let end = parseDateLoose(S(r[5]).trim()); if(!end) end = start;
-        if(!start) return;
-        const wd = parseInt(S(r[6]),10) || workingDaysBetween(start,end);
-        const pct = parseInt(S(r[7]).replace('%',''),10) || 0;
-        results.push({ id: genId(), project: curProject, category: curCategory, name, start, end, workingDays: wd, progress: pct, locked:false, fixed:false });
-      }
-    });
-    return results;
-  }
+function watchTaskDiscussion(taskId, onChange){
+  let comments = [], attachments = [];
+  const publish = () => onChange({ comments, attachments });
+  const unsubComments = db.collection('tasks').doc(taskId).collection('comments').orderBy('createdAt', 'asc').onSnapshot(snapshot => {
+    comments = snapshot.docs.map(docToObject); publish();
+  }, error => console.error('댓글 구독 실패:', error));
+  const unsubAttachments = db.collection('tasks').doc(taskId).collection('attachments').orderBy('createdAt', 'desc').onSnapshot(snapshot => {
+    attachments = snapshot.docs.map(docToObject); publish();
+  }, error => console.error('첨부파일 구독 실패:', error));
+  return () => { unsubComments(); unsubAttachments(); };
+}
 
-  function parseAndAppend(text){
-    tasks.push(...parseRows(parseTSVQuoted(text)));
-  }
+async function addTaskComment(taskId, text){
+  if(!isApproved() || !text?.trim()) throw new Error('댓글 내용을 입력해주세요.');
+  const task = tasks.find(item => item.id === taskId);
+  if(!task) throw new Error('업무를 찾을 수 없습니다.');
+  await db.collection('tasks').doc(taskId).collection('comments').add({
+    text: text.trim(), authorId: currentUser.uid,
+    authorName: currentProfile.name || currentUser.displayName || currentUser.email || '이름 미지정',
+    mentions: (text.match(/@[^\s@]+/g) || []).map(name => name.slice(1)),
+    createdAt: firebase.firestore.FieldValue.serverTimestamp()
+  });
+}
 
-  // ---------------- 구글 시트 연동 (OAuth 로그인 방식 — 시트를 공개하지 않아도 됨) ----------------
-  function recalcAll(){
-    const groups = new Map();
-    tasks.forEach(t => {
-      const key = t.project + '::' + (t.ownerPlanner || 'MASTER');
-      if(!groups.has(key)) groups.set(key, []);
-      groups.get(key).push(t);
-    });
-    groups.forEach(list => {
-      let prevEnd = null;
-      list.forEach(t => {
-        if(!t.fixed && !t.locked && prevEnd){
-          t.start = nextWorkingDay(prevEnd);
-          t.end = endFromWorkingDays(t.start, t.workingDays);
-        }
-        prevEnd = t.end;
-      });
-    });
-    // dependsOn 2단계 패스 — 위 체이닝(1단계)은 절대 안 건드리고, 그 결과 위에 얹습니다.
-    applyDependsOnConstraints();
-  }
+async function uploadTaskAttachment(taskId, file){
+  if(!isApproved() || !file) return;
+  const task = tasks.find(item => item.id === taskId);
+  if(!task || !canEditTask(task)) throw new Error('첨부파일을 추가할 권한이 없습니다.');
+  const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+  const storagePath = `taskAttachments/${taskId}/${currentUser.uid}/${Date.now()}_${safeName}`;
+  const upload = await storage.ref(storagePath).put(file, { contentType: file.type || 'application/octet-stream' });
+  const downloadUrl = await upload.ref.getDownloadURL();
+  await db.collection('tasks').doc(taskId).collection('attachments').add({
+    name: file.name, size: file.size, contentType: file.type || '', storagePath, downloadUrl,
+    uploadedBy: currentUser.uid, uploadedByName: currentProfile.name || currentUser.displayName || currentUser.email || '',
+    createdAt: firebase.firestore.FieldValue.serverTimestamp()
+  });
+}
 
-  // 완료 체크할 때 누가 했는지 남깁니다 (5번 — 접근 제어 아님, 식별용).
-  function markTaskDone(t, checked){
-    t.done = checked;
-    if(checked){ t.doneBy = currentUser ? currentUser.name : null; t.doneAt = new Date().toISOString(); }
-    else { t.doneBy = null; t.doneAt = null; }
-  }
+async function saveMilestone(input){
+  if(!requirePermission(canManageProjects(), '마일스톤은 관리자만 관리할 수 있습니다.')) return;
+  if(!input.projectId || !input.title?.trim()) throw new Error('프로젝트와 마일스톤 제목을 입력해주세요.');
+  const ref = input.id ? db.collection('milestones').doc(input.id) : db.collection('milestones').doc();
+  await ref.set({
+    projectId: input.projectId, title: input.title.trim(),
+    version: input.version || null, dueDate: input.dueDate || null,
+    status: input.status || 'todo', archivedAt: input.archivedAt || null,
+    updatedAt: firebase.firestore.FieldValue.serverTimestamp(), updatedBy: currentUser.uid,
+    createdAt: input.createdAt || firebase.firestore.FieldValue.serverTimestamp(),
+    createdBy: input.createdBy || currentUser.uid
+  }, { merge: true });
+}
 
-  function recalcFrom(editedTask){
-    const key = editedTask.project + '::' + (editedTask.ownerPlanner || 'MASTER');
-    const group = tasks.filter(t => (t.project+'::'+(t.ownerPlanner||'MASTER')) === key);
-    const idx = group.indexOf(editedTask);
-    if(idx === -1) return;
-    let prevEnd = editedTask.end;
-    for(let i=idx+1;i<group.length;i++){
-      const t = group[i];
-      if(!t.fixed && !t.locked){
-        t.start = nextWorkingDay(prevEnd);
-        t.end = endFromWorkingDays(t.start, t.workingDays);
-      }
-      prevEnd = t.end;
-    }
-  }
+async function archiveMilestone(milestoneId){
+  if(!requirePermission(canManageProjects(), '마일스톤은 관리자만 관리할 수 있습니다.')) return;
+  await db.collection('milestones').doc(milestoneId).update({
+    archivedAt: firebase.firestore.FieldValue.serverTimestamp(),
+    updatedAt: firebase.firestore.FieldValue.serverTimestamp(), updatedBy: currentUser.uid
+  });
+}
 
-  // ---------------- dependsOn (선행 업무) 엔진 ----------------
-  // 부서·담당자 상관없이 "이 업무는 저 업무보다 늦게 시작해야 한다"는 하한선을 겁니다.
-  // 완료 체크는 안 보고 날짜(종료일)만 기준으로 삼습니다 (기존 체이닝 로직과 동일한 원칙).
-  function getTaskById(id){ return tasks.find(t => t.id === id); }
+async function approveAccessRequest(requestId, role, departmentId){
+  if(!requirePermission(isAdmin(), '사용자 권한은 관리자만 부여할 수 있습니다.')) return;
+  const request = accessRequests.find(item => item.id === requestId);
+  if(!request) throw new Error('승인 요청을 찾을 수 없습니다.');
+  if(!['admin', 'lead', 'member'].includes(role)) throw new Error('올바른 역할을 선택해주세요.');
+  if(role !== 'admin' && !departmentId) throw new Error('소속 부서를 선택해주세요.');
+  const batch = db.batch();
+  batch.set(db.collection('users').doc(requestId), {
+    email: request.email || '', name: request.name || request.email || '이름 미지정',
+    role, departmentId: role === 'admin' ? null : departmentId, active: true,
+    approvedAt: firebase.firestore.FieldValue.serverTimestamp(),
+    updatedAt: firebase.firestore.FieldValue.serverTimestamp(), updatedBy: currentUser.uid
+  }, { merge: true });
+  batch.delete(db.collection('accessRequests').doc(requestId));
+  await batch.commit();
+}
 
-  // dependsOn 관계만으로 위상 정렬합니다. 순환이 있으면(정상적으로는 저장 시점에
-  // 막히므로 방어적 처리) 남은 항목은 그냥 뒤에 붙여서 무한루프를 막습니다.
-  function topoOrderByDependsOn(depTasks){
-    const idSet = new Set(depTasks.map(t => t.id));
-    const inDegree = new Map(depTasks.map(t => [t.id, 0]));
-    const children = new Map();
-    depTasks.forEach(t => {
-      if(idSet.has(t.dependsOn)){
-        inDegree.set(t.id, inDegree.get(t.id) + 1);
-        if(!children.has(t.dependsOn)) children.set(t.dependsOn, []);
-        children.get(t.dependsOn).push(t.id);
-      }
-    });
-    const byId = new Map(depTasks.map(t => [t.id, t]));
-    const queue = depTasks.filter(t => inDegree.get(t.id) === 0).map(t => t.id);
-    const order = [];
-    while(queue.length){
-      const id = queue.shift();
-      order.push(byId.get(id));
-      (children.get(id) || []).forEach(childId => {
-        inDegree.set(childId, inDegree.get(childId) - 1);
-        if(inDegree.get(childId) === 0) queue.push(childId);
-      });
-    }
-    if(order.length < depTasks.length){
-      const done = new Set(order.map(t => t.id));
-      depTasks.forEach(t => { if(!done.has(t.id)) order.push(t); });
-    }
-    return order;
-  }
-
-  // 이 업무가 선행 업무 때문에 지켜야 하는 시작일 하한선. dependsOn이 없거나
-  // 참조가 끊어졌으면(고아 참조) null을 반환합니다.
-  function dependsOnLowerBound(t){
-    if(!t.dependsOn) return null;
-    const dep = getTaskById(t.dependsOn);
-    if(!dep) return null;
-    return { dep, lowerBound: nextWorkingDay(addDays(dep.end, t.dependsOnBuffer || 0)) };
-  }
-
-  // 표에서 날짜를 직접 입력할 때 하한선을 어기는지 확인합니다 (findFixedAnchorOverlap과 동일한 패턴).
-  function dependsOnViolation(t, newStart){
-    const info = dependsOnLowerBound(t);
-    if(!info) return null;
-    return newStart < info.lowerBound ? info : null;
-  }
-
-  // A가 B를 선행 업무로 삼으려 할 때, B에서부터 dependsOn을 계속 따라가면 A가 다시
-  // 나오는지(순환) 확인합니다. "선행 업무 지정" 모달에서 저장 직전에 호출합니다.
-  function wouldCreateCycle(taskId, candidateDependsOnId){
-    let cur = candidateDependsOnId;
-    const seen = new Set();
-    while(cur){
-      if(cur === taskId) return true;
-      if(seen.has(cur)) return false;
-      seen.add(cur);
-      const t = getTaskById(cur);
-      cur = t ? t.dependsOn : null;
-    }
-    return false;
-  }
-
-  // 선행 업무가 삭제될 때, 그 업무를 참조하던 dependsOn을 전부 풀어줍니다
-  // (지원 기획자 목록 정리와 같은 "고아 참조 방지" 패턴).
-  function releaseDependsOnRefs(removedIds){
-    const idSet = new Set(removedIds);
-    tasks.forEach(t => {
-      if(t.dependsOn && idSet.has(t.dependsOn)){ t.dependsOn = null; t.dependsOnBuffer = 0; }
-    });
-  }
-
-  // dependsOn이 있는 업무들만 위상 정렬 순서대로 하한선을 적용합니다. locked(고정
-  // 앵커)는 하한선 대상에서 제외합니다 — locked 업무는 PM/시트 입력으로 날짜가
-  // 확정되는 것이라 다른 업무를 기다려서 밀리는 개념이 아닙니다.
-  // 밀린 업무가 있으면 recalcFrom을 재사용해서 같은 담당자 체인의 뒷부분도 같이
-  // 밀어줍니다 (캐스케이드) — 1단계 체이닝 로직은 그대로 두고 그 함수를 그대로 씁니다.
-  function applyDependsOnConstraints(){
-    const depTasks = tasks.filter(t => t.dependsOn && !t.locked);
-    if(depTasks.length === 0) return;
-    const order = topoOrderByDependsOn(depTasks);
-    order.forEach(t => {
-      const info = dependsOnLowerBound(t);
-      if(!info) return;
-      if(t.start < info.lowerBound){
-        t.start = info.lowerBound;
-        t.end = endFromWorkingDays(t.start, t.workingDays);
-        recalcFrom(t);
-      }
-    });
-  }
-
-  function computeConflicts(){
-    const conflicts = [];
-    const projects = [...new Set(tasks.map(t=>t.project))];
-    projects.forEach(p => {
-      const list = tasks.filter(t=>t.project===p);
-      for(let i=0;i<list.length;i++) for(let j=i+1;j<list.length;j++){
-        const a=list[i], b=list[j];
-        if(a.rowGroup && a.rowGroup===b.rowGroup) continue;
-        if(overlaps(a,b) && !matchesKeyword(a.name) && !matchesKeyword(b.name)) conflicts.push({project:p,a,b});
-      }
-    });
-    return conflicts;
-  }
-
-  // 특정 기획자의 전체 일정(담당+지원, 모든 프로젝트 통틀어) 안에서 겹치는 업무 쌍을 찾습니다.
-  // 앵커 재동기화 후 "이 사람 일정이 이제 겹치게 됐는지" 확인하는 데 씁니다.
-  function findPlannerConflicts(pl){
-    const list = tasks.filter(t =>
-      (t.ownerPlanner===pl.id || (Array.isArray(t.supporters) && t.supporters.includes(pl.id))) && !matchesKeyword(t.name)
-    );
-    const conflicts = [];
-    for(let i=0;i<list.length;i++) for(let j=i+1;j<list.length;j++){
-      const a=list[i], b=list[j];
-      if(a.rowGroup && a.rowGroup===b.rowGroup) continue;
-      if(overlaps(a,b)) conflicts.push({a,b});
-    }
-    return conflicts;
-  }
-
-  // 이 업무를 새 날짜로 옮겼을 때, 같은 프로젝트의 고정(마스터) 앵커와 겹치는지 확인합니다.
-  // 겹치면 그 앵커를 반환하고, 아니면 null을 반환합니다.
-  function findFixedAnchorOverlap(t, newStart, newEnd){
-    if(matchesKeyword(t.name)) return null;
-    const anchors = tasks.filter(x => x.project===t.project && x.locked && x.id!==t.id && !matchesKeyword(x.name));
-    return anchors.find(a => newStart <= a.end && a.start <= newEnd) || null;
-  }
-
-  // ---------------- 모달 창 ----------------
-  function moveTask(t, dir){
-    const groupIdx = [];
-    tasks.forEach((x,i) => { if(x.project===t.project && x.ownerPlanner===t.ownerPlanner) groupIdx.push(i); });
-    const curGlobal = tasks.indexOf(t);
-    const pos = groupIdx.indexOf(curGlobal);
-    const targetPos = pos + dir;
-    if(pos === -1 || targetPos < 0 || targetPos >= groupIdx.length) return;
-    const i1 = groupIdx[pos], i2 = groupIdx[targetPos];
-    const tmp = tasks[i1]; tasks[i1] = tasks[i2]; tasks[i2] = tmp;
-    recalcAll(); persist(); rerender();
-  }
-
-  function computeAutoAssignPlan(){
-    const allProjects = [...new Set(tasks.map(t=>t.project))];
-    const unassigned = allProjects.filter(code => !planners.some(pl=>pl.projects.includes(code)));
-    const staged = new Map();
-    planners.forEach(pl => {
-      const existing = tasks.filter(t => (t.ownerPlanner===pl.id || (Array.isArray(t.supporters) && t.supporters.includes(pl.id))) && !matchesKeyword(t.name));
-      staged.set(pl.id, existing.map(t => ({start:t.start, end:t.end})));
-    });
-    const results = [];
-    unassigned.forEach(code => {
-      const candidate = simulateTemplateTasks(code).filter(c => !matchesKeyword(c.name));
-      const order = planners.slice().sort((a,b) => staged.get(a.id).length - staged.get(b.id).length);
-      let assigned = null;
-      for(const pl of order){
-        const existing = staged.get(pl.id);
-        const conflict = candidate.some(cand => existing.some(ex => cand.start<=ex.end && ex.start<=cand.end));
-        if(!conflict){ assigned = pl; break; }
-      }
-      if(assigned){
-        candidate.forEach(c => staged.get(assigned.id).push({start:c.start, end:c.end}));
-        results.push({ code, plannerId: assigned.id, plannerName: assigned.name, ok:true });
-      } else {
-        results.push({ code, plannerId:null, plannerName:null, ok:false });
-      }
-    });
-    return results;
-  }
-
-  function projectStats(){
-    const codes = [...new Set(tasks.map(t=>t.project))];
-    return codes.map(code => {
-      const list = tasks.filter(t=>t.project===code);
-      const avgProgress = list.length ? Math.round(list.reduce((s,t)=>s+t.progress,0)/list.length) : 0;
-      const done = manualCompleted.has(code) || (list.length>0 && list.every(t=>t.progress>=100));
-      return { code, count:list.length, avgProgress, done, type: projectType(code) };
-    });
-  }
-
+async function saveUserRole(userId, role, departmentId){
+  if(!requirePermission(isAdmin(), '사용자 권한은 관리자만 변경할 수 있습니다.')) return;
+  if(!['admin', 'lead', 'member'].includes(role)) throw new Error('올바른 역할을 선택해주세요.');
+  if(role !== 'admin' && !departmentId) throw new Error('소속 부서를 선택해주세요.');
+  await db.collection('users').doc(userId).update({
+    role, departmentId: role === 'admin' ? null : departmentId,
+    updatedAt: firebase.firestore.FieldValue.serverTimestamp(), updatedBy: currentUser.uid
+  });
+}
