@@ -11,9 +11,11 @@ const DEPARTMENTS = [
   { id: 'planning', name: '기획' },
   { id: 'ui', name: 'UI' },
   { id: 'development', name: '개발' },
+  { id: 'business', name: '글비' },
   { id: 'server', name: '서버' },
   { id: 'qa', name: 'QA' },
   { id: 'video', name: '영상' },
+  { id: 'studio', name: '제작실' },
   { id: 'pm', name: 'PM' }
 ];
 const TASK_STATUS = {
