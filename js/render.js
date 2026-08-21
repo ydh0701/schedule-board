@@ -11,6 +11,12 @@ function button(label, className, onClick){
   node.type = onClick ? 'button' : 'submit'; node.onclick = onClick;
   return node;
 }
+function showToast(message, tone = 'success'){
+  document.querySelector('.app-toast')?.remove();
+  const toast = el('div', `app-toast ${tone}`, message);
+  document.body.appendChild(toast);
+  window.setTimeout(() => toast.remove(), 3600);
+}
 function fmtDate(value){ return value ? String(value).slice(0, 10) : '일정 미정'; }
 function statusClass(status){ return status === 'done' ? 'ok' : status === 'blocked' ? 'danger' : status === 'in_progress' ? 'accent' : 'neutral'; }
 function healthLabel(health){ return { on_track: '정상', at_risk: '주의', off_track: '위험' }[health] || '미설정'; }
@@ -555,11 +561,28 @@ function openTimeOffEditor(item){
   const start = inputField('시작일', '', 'date'); start.input.value = dateOnly(item?.startDate);
   const end = inputField('종료일', '', 'date'); end.input.value = dateOnly(item?.endDate);
   const reason = inputField('메모 (선택)', '예: 연차'); reason.input.value = item?.reason || '';
-  form.append(person.wrap, type.wrap, start.wrap, end.wrap, reason.wrap);
-  const actions = el('div', 'form-actions'); actions.appendChild(button('저장', 'primary'));
+  const submit = button('저장', 'primary');
+  submit.type = 'submit';
+  const error = el('p', 'form-error'); error.hidden = true;
+  form.append(person.wrap, type.wrap, start.wrap, end.wrap, reason.wrap, error);
+  const actions = el('div', 'form-actions'); actions.appendChild(submit);
   if(editing) actions.appendChild(button('삭제', 'danger-button', async () => { if(confirm('이 부재 일정을 삭제할까요?')) { await deleteTimeOff(item.id); overlay.remove(); } }));
   form.appendChild(actions);
-  form.onsubmit = async event => { event.preventDefault(); try { await saveTimeOff({ ...item, userId: person.select.value, type: type.select.value, startDate: start.input.value, endDate: end.input.value, reason: reason.input.value }); overlay.remove(); } catch(error) { alert(error.message); } };
+  form.onsubmit = async event => {
+    event.preventDefault();
+    error.hidden = true;
+    submit.disabled = true; submit.textContent = '저장 중…';
+    try {
+      await saveTimeOff({ ...item, userId: person.select.value, type: type.select.value, startDate: start.input.value, endDate: end.input.value, reason: reason.input.value });
+      overlay.remove();
+      showToast(editing ? '휴가·부재 일정을 수정했습니다.' : '휴가·부재 일정을 등록했습니다.');
+    } catch(cause) {
+      error.textContent = `저장하지 못했습니다. ${cause.message || '잠시 후 다시 시도해주세요.'}`;
+      error.hidden = false;
+    } finally {
+      submit.disabled = false; submit.textContent = '저장';
+    }
+  };
   dialog.appendChild(form);
 }
 
