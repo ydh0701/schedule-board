@@ -224,11 +224,12 @@ function renderProjectDetail(main, project){
 
 function timelineCategory(entry){
   if(entry.kind === 'milestone') return 'milestone';
-  return ['planning', 'ui', 'development', 'qa', 'video'].includes(entry.item.departmentId) ? entry.item.departmentId : 'other';
+  const category = entry.item.workCategory || entry.item.departmentId;
+  return ['planning', 'ui', 'development', 'business', 'video', 'studio', 'qa'].includes(category) ? category : 'other';
 }
 
 function timelineLabel(category){
-  return { all: '전체', milestone: '마일스톤', planning: '기획', ui: 'UI', development: '개발', qa: 'QA', video: '영상', other: '기타' }[category] || '기타';
+  return { all: '전체', milestone: '마일스톤', planning: '기획', ui: 'UI', development: '개발', business: '글비', video: '영상', studio: '제작실', qa: 'QA', other: '기타' }[category] || '기타';
 }
 
 function renderProjectTimeline(main, project){
@@ -244,9 +245,8 @@ function renderProjectTimeline(main, project){
   head.append(copy, actions); section.appendChild(head);
 
   const filters = el('nav', 'timeline-filters');
-  ['all', 'milestone', 'planning', 'ui', 'development', 'qa', 'video', 'other'].forEach(category => {
+  ['all', 'milestone', 'planning', 'ui', 'development', 'business', 'video', 'studio', 'qa', 'other'].forEach(category => {
     const count = category === 'all' ? items.length : items.filter(item => timelineCategory(item) === category).length;
-    if(category !== 'all' && !count) return;
     filters.appendChild(button(`${timelineLabel(category)} ${count}`, projectTimelineFilter === category ? 'tiny primary' : 'tiny ghost', () => { projectTimelineFilter = category; rerender(); }));
   });
   section.appendChild(filters);
