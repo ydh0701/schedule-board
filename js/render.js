@@ -8,7 +8,7 @@ function el(tag, className, text){
 }
 function button(label, className, onClick){
   const node = el('button', className, label);
-  node.type = 'button'; node.onclick = onClick;
+  node.type = onClick ? 'button' : 'submit'; node.onclick = onClick;
   return node;
 }
 function fmtDate(value){ return value ? String(value).slice(0, 10) : '일정 미정'; }
@@ -387,9 +387,42 @@ function openProjectCreator(){
   const name = inputField('프로젝트명', '예: 프로젝트 12');
   const code = inputField('프로젝트 코드', '예: PC12');
   const actions = el('div', 'form-actions project-create-actions');
-  actions.appendChild(button('프로젝트 만들기', 'primary'));
-  form.append(name.wrap, code.wrap, actions);
-  form.onsubmit = async event => { event.preventDefault(); try { await saveProject({ name: name.input.value, code: code.input.value }); close(); } catch(error) { alert(error.message); } };
+  const submit = button('프로젝트 만들기', 'primary');
+  const error = el('p', 'form-error'); error.hidden = true;
+  const showFieldError = (field, message) => {
+    field.input.classList.toggle('input-invalid', !!message);
+    field.wrap.classList.toggle('field-invalid', !!message);
+    field.wrap.querySelector('.field-error')?.remove();
+    if(message) field.wrap.appendChild(el('span', 'field-error', message));
+  };
+  const clearError = field => { showFieldError(field, ''); error.hidden = true; };
+  name.input.oninput = () => clearError(name);
+  code.input.oninput = () => clearError(code);
+  actions.appendChild(submit);
+  form.append(name.wrap, code.wrap, error, actions);
+  form.onsubmit = async event => {
+    event.preventDefault();
+    const missingName = !name.input.value.trim();
+    const missingCode = !code.input.value.trim();
+    showFieldError(name, missingName ? '프로젝트명을 입력해주세요.' : '');
+    showFieldError(code, missingCode ? '프로젝트 코드를 입력해주세요.' : '');
+    if(missingName || missingCode) {
+      error.textContent = '프로젝트명과 프로젝트 코드를 모두 입력해주세요.';
+      error.hidden = false;
+      (missingName ? name : code).input.focus();
+      return;
+    }
+    submit.disabled = true; submit.textContent = '생성 중…';
+    try {
+      await saveProject({ name: name.input.value, code: code.input.value });
+      close();
+    } catch(cause) {
+      error.textContent = `프로젝트를 만들지 못했습니다. ${cause.message || '잠시 후 다시 시도해주세요.'}`;
+      error.hidden = false;
+    } finally {
+      submit.disabled = false; submit.textContent = '프로젝트 만들기';
+    }
+  };
   dialog.appendChild(form);
 }
 
