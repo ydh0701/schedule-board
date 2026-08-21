@@ -27,7 +27,9 @@ function renderAccountActions(){
   if(currentUser){
     const profile = el('span', 'account-chip', (currentProfile?.name || currentUser.displayName || currentUser.email || '?').slice(0, 1).toUpperCase());
     profile.title = currentUser.email || '';
-    target.append(profile, button('로그아웃', 'tiny ghost', signOut));
+    target.append(profile);
+    if(isAdmin()) target.appendChild(button('사용자 관리', 'tiny ghost', openAdminManager));
+    target.appendChild(button('로그아웃', 'tiny ghost', signOut));
   }
 }
 
@@ -216,7 +218,6 @@ function renderWork(main){
   copy.append(el('p', 'sub', isMember() ? '내 업무의 상태, 진척률, 일정과 내용을 갱신합니다.' : '업무 배정, 일정, 팀의 가용량을 함께 관리합니다.'));
   heading.appendChild(copy);
   main.appendChild(heading);
-  if(isAdmin()) main.appendChild(adminAccessPanel());
   const actions = el('div', 'row');
   if(isAdmin() || isLead()) actions.appendChild(button('+ 업무 추가', 'primary', () => openTaskEditor(null)));
   actions.appendChild(button('+ 휴가·부재 등록', 'tiny ghost', () => openTimeOffEditor(null)));
@@ -338,6 +339,13 @@ function adminAccessPanel(){
     panel.appendChild(row);
   });
   return panel;
+}
+
+function openAdminManager(){
+  const { dialog } = openDialog('사용자 및 권한 관리');
+  const panel = adminAccessPanel();
+  panel.classList.add('admin-manager-panel');
+  dialog.appendChild(panel);
 }
 
 function inputField(label, placeholder, type = 'text'){
