@@ -37,6 +37,7 @@ function loginScreen(main){
   const intro = el('div', 'auth-intro');
   const logoWrap = el('div', 'auth-logo-wrap');
   const logo = document.createElement('img'); logo.src = 'assets/storytaco-logo.png'; logo.alt = 'STORYTACO'; logo.className = 'auth-logo';
+  logo.onerror = () => { logo.remove(); logoWrap.classList.add('logo-missing'); logoWrap.textContent = 'STORYTACO'; };
   logoWrap.appendChild(logo);
   intro.append(logoWrap, el('p', 'eyebrow', 'STORYTACO INTERNAL'), el('h2', '', '사내 일정 관리'));
   intro.append(el('p', 'sub', '프로젝트와 실무 일정을 한곳에서 실시간으로 관리합니다.'));
