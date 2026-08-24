@@ -149,7 +149,7 @@ function projectCard(project){
   card.onkeydown = event => { if(event.key === 'Enter' || event.key === ' ') open(); };
   const cardHead = el('div', 'project-card-head');
   const title = el('div', 'proj-card-code', project.code || project.name);
-  cardHead.append(title, el('span', `tag ${healthClass(project.health)}`, healthLabel(project.health)));
+  cardHead.append(title, project.status === 'completed' ? el('span', 'tag ok', '완료') : el('span', `tag ${healthClass(project.health)}`, healthLabel(project.health)));
   card.append(cardHead);
   if(project.code) card.append(el('div', 'proj-card-name', project.name));
   const progressHead = el('div', 'proj-progress-head'); progressHead.append(el('span', '', '진행률'), el('strong', '', `${projectProgressValue}%`));
@@ -182,10 +182,11 @@ function renderProjects(main){
     renderProjectDetail(main, projects.find(project => project.id === selectedProjectId));
     return;
   }
-  const activeProjects = projects.filter(project => project.status !== 'archived');
+  const activeProjects = projects.filter(project => project.status !== 'archived' && project.status !== 'completed');
+  const completedProjects = projects.filter(project => project.status === 'completed');
   const atRisk = activeProjects.filter(project => ['at_risk', 'off_track'].includes(project.health)).length;
   const overdue = activeTasks().filter(taskIsOverdue).length;
-  const metrics = el('div', 'metric-grid'); metrics.append(metric('진행 중 프로젝트', activeProjects.length), metric('주의·위험 프로젝트', atRisk, atRisk ? 'danger' : ''), metric('지연 업무', overdue, overdue ? 'danger' : ''));
+  const metrics = el('div', 'metric-grid'); metrics.append(metric('진행 중 프로젝트', activeProjects.length), metric('완료 프로젝트', completedProjects.length), metric('지연 업무', overdue, overdue ? 'danger' : ''));
   main.appendChild(metrics);
   if(!projects.length) {
     main.appendChild(el('div', 'empty', '등록된 프로젝트가 없습니다. 관리자가 첫 프로젝트를 만들어주세요.'));
@@ -194,6 +195,14 @@ function renderProjects(main){
   const grid = el('div', 'proj-card-grid');
   activeProjects.forEach(project => grid.appendChild(projectCard(project)));
   main.appendChild(grid);
+  if(completedProjects.length) {
+    const completed = el('details', 'completed-project-group');
+    const summary = el('summary', ''); summary.append(el('strong', '', '완료 프로젝트'), el('span', '', `${completedProjects.length}건`));
+    completed.appendChild(summary);
+    const completedGrid = el('div', 'proj-card-grid completed-project-grid');
+    completedProjects.sort((a, b) => String(b.completedAt?.toDate?.() || b.completedAt || '').localeCompare(String(a.completedAt?.toDate?.() || a.completedAt || ''))).forEach(project => completedGrid.appendChild(projectCard(project)));
+    completed.appendChild(completedGrid); main.appendChild(completed);
+  }
 }
 
 function taskRow(task, showProject, mineCompact = false){
@@ -272,6 +281,17 @@ function renderProjectDetail(main, project){
   if(canManageProjects() || isLead()) {
     const heroActions = el('div', 'project-hero-actions');
     if(canManageProjects()) heroActions.appendChild(button('프로젝트 정보 수정', 'tiny ghost', () => openProjectEditor(project)));
+    if(canManageProjects()) heroActions.appendChild(button(project.status === 'completed' ? '프로젝트 재개' : '프로젝트 완료', project.status === 'completed' ? 'tiny ghost' : 'tiny complete-project-button', async () => {
+      try {
+        if(project.status === 'completed') {
+          if(!confirm('이 프로젝트를 다시 진행 상태로 바꿀까요?')) return;
+          await reopenProject(project.id); showToast('프로젝트를 다시 진행 상태로 전환했습니다.');
+        } else {
+          if(!confirm('모든 업무가 완료되었는지 확인했습니다. 프로젝트를 완료 처리할까요?')) return;
+          await completeProject(project.id); showToast('프로젝트를 완료 처리했습니다.');
+        }
+      } catch(error) { showToast(error.message, 'error'); }
+    }));
     heroActions.appendChild(button('+ 주간 업데이트', 'tiny ghost', () => openProjectUpdateEditor(project)));
     overviewHead.appendChild(heroActions);
   }
@@ -562,7 +582,7 @@ function renderProjectGroupedWork(main, allTasks, options = {}){
       byProject.get(key).push(task);
     });
     const entries = [...byProject.entries()]
-      .filter(([projectId, tasks]) => projectId === '__personal__' || showCompletedProjects || tasks.some(task => task.status !== 'done'))
+      .filter(([projectId, tasks]) => projectId === '__personal__' || showCompletedProjects || projects.find(project => project.id === projectId)?.status !== 'completed')
       .sort(([leftId, leftTasks], [rightId, rightTasks]) => {
       if(leftId === '__personal__') return -1;
       if(rightId === '__personal__') return 1;
@@ -1539,3 +1559,4 @@ function rerender(){
 
 // state.js의 인증·Firestore 콜백에서도 항상 같은 렌더러를 호출할 수 있게 노출합니다.
 window.renderScheduleApp = rerender;
+
