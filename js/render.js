@@ -59,7 +59,7 @@ function renderAccountActions(){
   const target = document.getElementById('accountActions');
   target.innerHTML = '';
   if(currentUser){
-    target.append(el('span', 'account-name', `${currentProfile?.name || currentUser.displayName || ''} · ${userRoleLabel(currentProfile)}`));
+    if(currentProfile) target.append(el('span', 'account-name', `${currentProfile.name || currentUser.displayName || ''} · ${userRoleLabel(currentProfile)}`));
     const profile = el('span', 'account-chip', (currentProfile?.name || currentUser.displayName || currentUser.email || '?').slice(0, 1).toUpperCase());
     profile.title = currentUser.email || '';
     target.append(profile);
