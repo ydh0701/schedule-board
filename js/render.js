@@ -1021,7 +1021,7 @@ function openTaskEditor(task, initial = {}){
   const { dialog, close, onClose } = openDialog(editing ? '업무 수정' : '업무 추가');
   const form = el('form', 'form-grid');
   const title = inputField('업무명', '업무 내용을 입력하세요'); title.input.value = task?.title || '';
-  const departmentOptions = DEPARTMENTS.filter(dept => isAdmin() || dept.id === currentProfile.departmentId).map(dept => [dept.id, dept.name]);
+  const departmentOptions = DEPARTMENTS.filter(dept => isAdmin() || isPM() || dept.id === currentProfile.departmentId).map(dept => [dept.id, dept.name]);
   const department = selectField('담당 부서', departmentOptions); department.select.value = task?.departmentId || currentProfile.departmentId || departmentOptions[0]?.[0] || '';
   const people = [...new Map([
     ...(currentProfile?.active ? [[currentUser.uid, { id: currentUser.uid, ...currentProfile }]] : []),
