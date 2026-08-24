@@ -759,9 +759,9 @@ function userWorkloadSummary(userId){
 
 function renderTeam(main){
   const scopeUsers = activeUsers().filter(user => isPM() || isAdmin() || user.departmentId === currentProfile?.departmentId);
-  const heading = el('section', 'panel page-heading');
+  const heading = el('section', 'panel page-heading compact-page-heading');
   const copy = el('div', 'page-copy');
-  copy.append(el('p', 'eyebrow', 'TEAM OVERVIEW'), el('h2', '', isPM() || isAdmin() ? '팀 현황' : `${departmentName(currentProfile?.departmentId)}팀 현황`), el('p', 'sub', '오늘 막힌 업무와 팀원의 업무량을 확인하고 재배정합니다.'));
+  copy.append(el('h2', '', isPM() || isAdmin() ? '운영 현황' : `${departmentName(currentProfile?.departmentId)}팀 현황`));
   heading.appendChild(copy); main.appendChild(heading);
   const scopedTasks = activeTasks().filter(task => scopeUsers.some(user => taskAssignedToUser(task, user.id)));
   const metrics = el('div', 'metric-grid');
@@ -791,8 +791,8 @@ function renderTeam(main){
 
 function renderPeople(main){
   const scopeUsers = activeUsers().filter(user => isPM() || isAdmin() || user.departmentId === currentProfile?.departmentId);
-  const heading = el('section', 'panel page-heading'); const copy = el('div', 'page-copy');
-  copy.append(el('p', 'eyebrow', 'WORKFORCE'), el('h2', '', '인력 현황'), el('p', 'sub', '등록된 업무를 기준으로 담당 후보의 여유와 다음 가능일을 비교합니다.'));
+  const heading = el('section', 'panel page-heading compact-page-heading'); const copy = el('div', 'page-copy');
+  copy.append(el('h2', '', '인력 현황'));
   heading.appendChild(copy); main.appendChild(heading);
   const groups = { ok: 0, warn: 0, danger: 0 };
   scopeUsers.forEach(user => { const level = userWorkloadSummary(user.id).assessment.level; groups[level] = (groups[level] || 0) + 1; });
