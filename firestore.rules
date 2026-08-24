@@ -4,9 +4,10 @@ service cloud.firestore {
     function signedIn() { return request.auth != null; }
     function self() { return get(/databases/$(database)/documents/users/$(request.auth.uid)); }
     function approved() { return signedIn() && self().data.active == true; }
-    // 관리자 권한과 업무 역할을 분리합니다. PM은 전사 관리 권한을 갖습니다.
-    // 기존 role: 'admin' 문서는 전환 기간 동안 계속 관리자 권한을 유지합니다.
-    function admin() { return approved() && (self().data.get('isAdmin', false) == true || self().data.role in ['admin', 'pm']); }
+    // 관리자 권한과 PM 업무 역할을 분리합니다.
+    function admin() { return approved() && (self().data.get('isAdmin', false) == true || self().data.role == 'admin'); }
+    function pm() { return approved() && self().data.role == 'pm'; }
+    function manager() { return admin() || pm(); }
     function lead() { return approved() && self().data.role == 'lead'; }
     function sameLeadDepartment(departmentId) {
       return lead() && self().data.departmentId == departmentId;
@@ -16,11 +17,11 @@ service cloud.firestore {
     }
     function canReadTask(taskId) {
       let task = get(/databases/$(database)/documents/tasks/$(taskId)).data;
-      return approved() && (admin() || sameLeadDepartment(task.departmentId) || task.assigneeId == request.auth.uid || (task.projectId != null && projectMember(task.projectId)));
+      return approved() && (manager() || sameLeadDepartment(task.departmentId) || task.assigneeId == request.auth.uid || (task.projectId != null && projectMember(task.projectId)));
     }
     function canEditTask(taskId) {
       let task = get(/databases/$(database)/documents/tasks/$(taskId)).data;
-      return approved() && (admin() || sameLeadDepartment(task.departmentId) || task.assigneeId == request.auth.uid);
+      return approved() && (manager() || sameLeadDepartment(task.departmentId) || task.assigneeId == request.auth.uid);
     }
 
     // 신규 사용자는 자신의 승인 요청만 만들 수 있고 권한 정보를 직접 쓰지 못합니다.
@@ -51,86 +52,77 @@ service cloud.firestore {
     }
 
     match /projects/{projectId} {
-      allow get: if approved() && (admin() || lead() || projectMember(projectId));
-      allow list: if admin() || lead();
-      allow create, delete: if admin();
-      allow update: if admin() || (lead() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['health', 'lastUpdatedAt', 'staffing', 'updatedAt', 'updatedBy']));
+      allow get: if approved() && (manager() || lead() || projectMember(projectId));
+      allow list: if manager() || lead();
+      allow create, delete: if manager();
+      allow update: if manager() || (lead() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['health', 'lastUpdatedAt', 'staffing', 'updatedAt', 'updatedBy']));
     }
 
     match /milestones/{milestoneId} {
       allow get, list: if approved() && (
-        admin() || lead() ||
+        manager() || lead() ||
         (resource.data.projectId != null && projectMember(resource.data.projectId))
       );
-      allow create, update, delete: if admin();
+      allow create, update, delete: if manager();
     }
 
     match /projectUpdates/{updateId} {
       allow get, list: if approved() && (
-        admin() || lead() ||
+        manager() || lead() ||
         (resource.data.projectId != null && projectMember(resource.data.projectId))
       );
-      allow create: if approved() && (admin() || lead());
-      allow update, delete: if admin();
+      allow create: if approved() && (manager() || lead());
+      allow update, delete: if manager();
     }
 
-    match /timeOffs/{timeOffId} {
-      allow get, list: if approved() && (
-        admin() || resource.data.userId == request.auth.uid || sameLeadDepartment(resource.data.departmentId)
-      );
-      allow create: if approved() && (
-        admin() ||
-        (request.resource.data.userId == request.auth.uid && request.resource.data.departmentId == self().data.departmentId) ||
-        sameLeadDepartment(request.resource.data.departmentId)
-      );
-      allow update: if approved() && (admin() || sameLeadDepartment(resource.data.departmentId) ||
-        (resource.data.userId == request.auth.uid && request.resource.data.userId == request.auth.uid && request.resource.data.departmentId == resource.data.departmentId));
-      allow delete: if approved() && (admin() || resource.data.userId == request.auth.uid || sameLeadDepartment(resource.data.departmentId));
+    match /holidays/{date} {
+      allow get, list: if approved();
+      allow create, update, delete: if admin();
     }
 
     // 팀원은 참여 프로젝트의 업무를 읽을 수 있지만 자신의 업무만 변경할 수 있습니다.
     match /tasks/{taskId} {
       allow get, list: if approved() && (
-        admin() || sameLeadDepartment(resource.data.departmentId) ||
+        manager() || sameLeadDepartment(resource.data.departmentId) ||
         resource.data.assigneeId == request.auth.uid ||
         (resource.data.projectId != null && projectMember(resource.data.projectId))
       );
       allow create: if approved() && (
-        admin() || sameLeadDepartment(request.resource.data.departmentId)
+        manager() || sameLeadDepartment(request.resource.data.departmentId) || request.resource.data.assigneeId == request.auth.uid
       );
       allow update: if approved() && (
-        admin() ||
+        manager() ||
         (sameLeadDepartment(resource.data.departmentId) && request.resource.data.departmentId == resource.data.departmentId) ||
         (resource.data.assigneeId == request.auth.uid && request.resource.data.assigneeId == request.auth.uid
           && request.resource.data.departmentId == resource.data.departmentId
           && request.resource.data.projectId == resource.data.projectId)
       );
-      allow delete: if admin();
+      allow delete: if manager();
 
       match /comments/{commentId} {
         allow get, list: if canReadTask(taskId);
         allow create: if canReadTask(taskId) && request.resource.data.authorId == request.auth.uid
           && request.resource.data.keys().hasOnly(['text', 'authorId', 'authorName', 'mentions', 'createdAt']);
-        allow update, delete: if admin() || (canReadTask(taskId) && resource.data.authorId == request.auth.uid);
+        allow update, delete: if manager() || (canReadTask(taskId) && resource.data.authorId == request.auth.uid);
       }
       match /links/{linkId} {
         allow get, list: if canReadTask(taskId);
         allow create: if canEditTask(taskId) && request.resource.data.addedBy == request.auth.uid
           && request.resource.data.keys().hasOnly(['url', 'label', 'addedBy', 'addedByName', 'createdAt']);
-        allow update, delete: if admin() || (canEditTask(taskId) && resource.data.addedBy == request.auth.uid);
+        allow update, delete: if manager() || (canEditTask(taskId) && resource.data.addedBy == request.auth.uid);
       }
     }
 
     // 업무 배정 시 저장되는 프로젝트 참여 권한입니다.
     match /projectMembers/{membershipId} {
-      allow get: if signedIn() && (resource.data.userId == request.auth.uid || admin() || lead());
-      allow create, update: if approved() && (admin() || (lead() && get(/databases/$(database)/documents/users/$(request.resource.data.userId)).data.departmentId == self().data.departmentId));
-      allow delete: if admin();
+      allow get: if signedIn() && (resource.data.userId == request.auth.uid || manager() || lead());
+      allow create, update: if approved() && (manager() || (lead() && get(/databases/$(database)/documents/users/$(request.resource.data.userId)).data.departmentId == self().data.departmentId));
+      allow delete: if manager();
     }
 
     // 상세 변경 이력은 후속 서버 측 기능에서만 작성합니다.
     match /activityLogs/{logId} {
-      allow read: if admin() || lead();
+      allow read: if manager() || lead();
       allow write: if false;
     }
   }
