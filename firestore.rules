@@ -23,6 +23,27 @@ service cloud.firestore {
       let task = get(/databases/$(database)/documents/tasks/$(taskId)).data;
       return approved() && (manager() || sameLeadDepartment(task.departmentId) || task.assigneeId == request.auth.uid || task.get('assigneeIds', []).hasAny([request.auth.uid]));
     }
+    // 팀원은 본인 업무의 진행 내용만 바꿀 수 있습니다. 담당자·프로젝트·직군 등
+    // 배정 범위를 바꾸는 필드는 PM/관리자 또는 해당 부서 팀장의 전용 권한입니다.
+    function memberEditableTaskFields() {
+      return ['title', 'status', 'progress', 'estimatedDays', 'startDate', 'dueDate',
+        'dateOverride', 'scheduleMode', 'system', 'taskGroup', 'buildVersion',
+        'completedAt', 'archivedAt', 'updatedAt', 'updatedBy'];
+    }
+    function leadAssignmentIsWithinDepartment() {
+      return (
+        request.resource.data.assigneeId == null
+        && request.resource.data.assigneeIds.size() == 0
+        && request.resource.data.assignees.size() == 0
+      ) || (
+        request.resource.data.assigneeId != null
+        && request.resource.data.assigneeIds.size() == 1
+        && request.resource.data.assigneeIds[0] == request.resource.data.assigneeId
+        && request.resource.data.assignees.size() == 1
+        && request.resource.data.assignees[0].userId == request.resource.data.assigneeId
+        && get(/databases/$(database)/documents/users/$(request.resource.data.assigneeId)).data.departmentId == self().data.departmentId
+      );
+    }
 
     // 신규 사용자는 자신의 승인 요청만 만들 수 있고 권한 정보를 직접 쓰지 못합니다.
     match /accessRequests/{uid} {
@@ -90,14 +111,24 @@ service cloud.firestore {
         (resource.data.projectId != null && projectMember(resource.data.projectId))
       );
       allow create: if approved() && (
-        manager() || sameLeadDepartment(request.resource.data.departmentId) || request.resource.data.assigneeId == request.auth.uid
+        manager() ||
+        (sameLeadDepartment(request.resource.data.departmentId) && leadAssignmentIsWithinDepartment()) ||
+        (request.resource.data.assigneeId == request.auth.uid
+          && request.resource.data.assigneeIds.size() == 1
+          && request.resource.data.assigneeIds[0] == request.auth.uid
+          && request.resource.data.assignees.size() == 1
+          && request.resource.data.assignees[0].userId == request.auth.uid)
       );
       allow update: if approved() && (
         manager() ||
-        (sameLeadDepartment(resource.data.departmentId) && request.resource.data.departmentId == resource.data.departmentId) ||
-        ((resource.data.assigneeId == request.auth.uid || resource.data.get('assigneeIds', []).hasAny([request.auth.uid]))
+        (sameLeadDepartment(resource.data.departmentId)
           && request.resource.data.departmentId == resource.data.departmentId
-          && request.resource.data.projectId == resource.data.projectId)
+          && request.resource.data.projectId == resource.data.projectId
+          && (!request.resource.data.diff(resource.data).affectedKeys()
+                .hasAny(['assigneeId', 'assigneeName', 'assigneeIds', 'assignees', 'needsAssignment'])
+              || leadAssignmentIsWithinDepartment())) ||
+        ((resource.data.assigneeId == request.auth.uid || resource.data.get('assigneeIds', []).hasAny([request.auth.uid]))
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(memberEditableTaskFields()))
       );
       allow delete: if manager();
 
@@ -125,7 +156,7 @@ service cloud.firestore {
     match /assignmentHistory/{historyId} {
       allow get, list: if approved() && (manager() || resource.data.previousAssigneeId == request.auth.uid || resource.data.nextAssigneeId == request.auth.uid);
       allow create: if approved() && (
-        manager() || get(/databases/$(database)/documents/tasks/$(request.resource.data.taskId)).data.assigneeId == request.auth.uid
+        manager() || (lead() && get(/databases/$(database)/documents/tasks/$(request.resource.data.taskId)).data.departmentId == self().data.departmentId)
       );
       allow update, delete: if false;
     }
