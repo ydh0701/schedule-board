@@ -496,14 +496,16 @@ function renderWorkAvailabilityCalendar(panel, allTasks){
       if(isWeekday(date)) openTaskEditor(null, { startDate: key, dueDate: key });
     });
     cell.disabled = !isWeekday(date);
+    if(dayTasks.length) cell.title = dayTasks.map(task => `${task.status === 'done' ? '완료' : '진행'} · ${task.title}`).join('\n');
     const dateHead = el('div', 'availability-date'); dateHead.append(el('strong', '', String(day)), el('span', '', dateKey(todayDate()) === key ? '오늘' : isHoliday(date) ? '휴일' : ''));
     cell.appendChild(dateHead);
     if(!isWeekday(date)) cell.appendChild(el('span', 'availability-label', isHoliday(date) ? '공휴일' : '주말'));
-    else if(load > 100) cell.appendChild(el('span', 'availability-label', `과부하 ${load}%`));
+    else if(load > 100) cell.appendChild(el('span', 'availability-label', '과부하'));
     else if(!dayTasks.length) cell.appendChild(el('span', 'availability-label', '업무 없음'));
     else if(!activeDayTasks.length) cell.appendChild(el('span', 'availability-label', `완료 ${completedDayTasks.length}건`));
     else cell.appendChild(el('span', 'availability-label', `진행 ${activeDayTasks.length}건${completedDayTasks.length ? ` · 완료 ${completedDayTasks.length}` : ''}`));
-    if(isWeekday(date)) cell.appendChild(el('span', 'availability-free', activeDayTasks.length ? (freeHours ? `여유 ${freeHours}시간 · ${load}%` : `여유 없음 · ${load}%`) : `여유 ${Math.round(capacityDays * 8)}시간`));
+    if(isWeekday(date) && activeDayTasks.length) cell.appendChild(el('span', 'availability-free', freeHours ? `여유 ${freeHours}시간` : '여유 없음'));
+    else if(isWeekday(date) && !completedDayTasks.length) cell.appendChild(el('span', 'availability-free', `여유 ${Math.round(capacityDays * 8)}시간`));
     grid.appendChild(cell);
   }
   panel.appendChild(grid);
