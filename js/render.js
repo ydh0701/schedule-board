@@ -530,6 +530,20 @@ function personProjectBadges(userId){
   return wrap;
 }
 
+function userWorkloadSummary(userId){
+  const monday = mondayOf(new Date());
+  const days = Array.from({ length: 5 }, (_, index) => { const date = new Date(monday); date.setDate(monday.getDate() + index); return date; });
+  const tasks = activeTasks().filter(task => taskAssignedToUser(task, userId) && task.status !== 'done');
+  const taskLoads = tasks.map(task => ({ task, load: days.reduce((sum, day) => sum + taskDailyLoad(task, day, userId), 0) })).filter(item => item.load > 0).sort((a, b) => b.load - a.load);
+  const assessment = assignmentAssessment(userId, { assigneeId: userId, startDate: dateKey(days[0]), dueDate: dateKey(days[4]), estimatedDays: 0, assessmentOnly: true });
+  return {
+    assessment, tasks,
+    riskCount: tasks.filter(task => taskIsOverdue(task) || task.status === 'blocked').length,
+    topTasks: taskLoads.slice(0, 2),
+    overflowDays: assessment.overflowDays || 0
+  };
+}
+
 function renderTeam(main){
   const scopeUsers = activeUsers().filter(user => isPM() || isAdmin() || user.departmentId === currentProfile?.departmentId);
   const heading = el('section', 'panel page-heading');
@@ -538,24 +552,25 @@ function renderTeam(main){
   heading.appendChild(copy); main.appendChild(heading);
   const scopedTasks = activeTasks().filter(task => scopeUsers.some(user => taskAssignedToUser(task, user.id)));
   const metrics = el('div', 'metric-grid');
-  metrics.append(metric('오늘 마감', scopedTasks.filter(task => task.status !== 'done' && task.dueDate === dateKey(new Date())).length, 'warn'), metric('지연·차단', scopedTasks.filter(task => taskIsOverdue(task) || task.status === 'blocked').length, 'danger'), metric('과부하 인원', scopeUsers.filter(user => assignmentAssessment(user.id, { assigneeId: user.id, startDate: dateKey(new Date()), dueDate: addBusinessDays(dateKey(new Date()), 4), estimatedDays: 0 }).weeklyLoad > 100).length, 'warn'));
+  metrics.append(metric('오늘 마감', scopedTasks.filter(task => task.status !== 'done' && task.dueDate === dateKey(new Date())).length, 'warn'), metric('지연·차단', scopedTasks.filter(task => taskIsOverdue(task) || task.status === 'blocked').length, 'danger'), metric('과부하 인원', scopeUsers.filter(user => userWorkloadSummary(user.id).assessment.weeklyLoad > 100).length, 'warn'));
   main.appendChild(metrics);
   const tableWrap = el('section', 'table-wrap panel team-table'); const table = document.createElement('table');
   const head = document.createElement('thead'); const headerRow = document.createElement('tr');
-  ['이름 / 직군', '프로젝트', '진행 업무', '이번 주 업무량', '다음 가능일', '위험'].forEach(label => headerRow.appendChild(el('th', '', label))); head.appendChild(headerRow); table.appendChild(head);
+  ['이름 / 직군', '프로젝트', '진행 업무', '이번 주 업무량 / 원인', '다음 가능일', '위험'].forEach(label => headerRow.appendChild(el('th', '', label))); head.appendChild(headerRow); table.appendChild(head);
   const body = document.createElement('tbody');
   scopeUsers.forEach(user => {
     const userTasks = scopedTasks.filter(task => taskAssignedToUser(task, user.id) && task.status !== 'done');
-    const sample = { assigneeId: user.id, startDate: dateKey(new Date()), dueDate: addBusinessDays(dateKey(new Date()), 4), estimatedDays: 0 };
-    const assessment = assignmentAssessment(user.id, sample);
-    const dangerCount = userTasks.filter(task => taskIsOverdue(task) || task.status === 'blocked').length;
+    const summary = userWorkloadSummary(user.id); const assessment = summary.assessment;
+    const dangerCount = summary.riskCount;
     const row = document.createElement('tr');
     const name = el('td', '', user.name || user.email); name.append(el('div', 'foot-note', departmentName(user.departmentId))); row.appendChild(name);
     const projectCell = document.createElement('td'); projectCell.appendChild(personProjectBadges(user.id)); row.appendChild(projectCell);
     row.appendChild(el('td', '', `${userTasks.length}건`));
-    row.appendChild(el('td', assessment.weeklyLoad > 100 ? 'capacity-over' : '', `${assessment.weeklyLoad}% · ${assessment.weeklyLoad > 100 ? '과부하' : assessment.weeklyLoad >= 80 ? '주의' : '여유'}`));
+    const loadCell = el('td', assessment.weeklyLoad > 100 ? 'capacity-over' : '', `${assessment.weeklyLoad}% · ${assessment.weeklyLoad > 100 ? '과부하' : assessment.weeklyLoad >= 80 ? '주의' : '여유'}`);
+    if(summary.topTasks.length) loadCell.append(el('div', 'foot-note', `집중: ${summary.topTasks.map(item => `${item.task.title} ${item.load.toFixed(1)}일`).join(' · ')}`));
+    row.appendChild(loadCell);
     row.appendChild(el('td', '', fmtDate(assessment.nextDate)));
-    row.appendChild(el('td', dangerCount ? 'capacity-over' : '', dangerCount ? `${dangerCount}건` : '–'));
+    row.appendChild(el('td', dangerCount || summary.overflowDays ? 'capacity-over' : '', dangerCount || summary.overflowDays ? `지연·차단 ${dangerCount} · 초과 ${summary.overflowDays}일` : '–'));
     row.onclick = () => setView('people'); body.appendChild(row);
   });
   table.appendChild(body); tableWrap.appendChild(table); main.appendChild(tableWrap);
@@ -567,16 +582,16 @@ function renderPeople(main){
   copy.append(el('p', 'eyebrow', 'WORKFORCE'), el('h2', '', '인력 현황'), el('p', 'sub', '등록된 업무를 기준으로 담당 후보의 여유와 다음 가능일을 비교합니다.'));
   heading.appendChild(copy); main.appendChild(heading);
   const groups = { ok: 0, warn: 0, danger: 0 };
-  scopeUsers.forEach(user => { const level = assignmentAssessment(user.id, { assigneeId: user.id, startDate: dateKey(new Date()), dueDate: addBusinessDays(dateKey(new Date()), 4), estimatedDays: 0 }).level; groups[level] = (groups[level] || 0) + 1; });
+  scopeUsers.forEach(user => { const level = userWorkloadSummary(user.id).assessment.level; groups[level] = (groups[level] || 0) + 1; });
   const metrics = el('div', 'metric-grid'); metrics.append(metric('여유', groups.ok), metric('주의', groups.warn, 'warn'), metric('과부하', groups.danger, 'danger')); main.appendChild(metrics);
   const list = el('section', 'people-list');
   scopeUsers.forEach(user => {
-    const sample = { assigneeId: user.id, startDate: dateKey(new Date()), dueDate: addBusinessDays(dateKey(new Date()), 4), estimatedDays: 0 };
-    const assessment = assignmentAssessment(user.id, sample);
+    const summary = userWorkloadSummary(user.id); const assessment = summary.assessment;
     const card = el('article', `person-row ${assessment.level}`);
     const identity = el('div', 'person-identity'); identity.append(el('strong', '', user.name || user.email), el('span', 'foot-note', `${departmentName(user.departmentId)} · ${userRoleLabel(user)}`));
     const workload = el('div', 'person-workload'); workload.append(el('span', `tag ${assessment.level}`, assessment.weeklyLoad > 100 ? '과부하' : assessment.weeklyLoad >= 80 ? '주의' : '여유'), el('strong', '', `${assessment.weeklyLoad}%`), el('span', 'foot-note', `다음 가능일 ${fmtDate(assessment.nextDate)}`));
-    card.append(identity, personProjectBadges(user.id), workload); list.appendChild(card);
+    const reason = el('p', 'foot-note', summary.topTasks.length ? `이번 주 집중 업무 · ${summary.topTasks.map(item => `${item.task.title} ${item.load.toFixed(1)}일`).join(' · ')}` : '이번 주 예정 업무가 없습니다.');
+    card.append(identity, personProjectBadges(user.id), workload, reason); list.appendChild(card);
   });
   if(!scopeUsers.length) main.appendChild(el('div', 'empty', '표시할 활성 인력이 없습니다.'));
   else main.appendChild(list);
