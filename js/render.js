@@ -490,8 +490,14 @@ function renderProjectGroupedWork(main, allTasks){
     const panelHead = el('div', 'work-project-panel-head');
     const name = project ? `${project.code || project.name}${project.name && project.code ? ` · ${project.name}` : ''}` : '개인 업무';
     const activeCount = projectTasks.filter(task => task.status !== 'done').length;
+    const allProjectTasks = allTasks.filter(task => (task.projectId || '__personal__') === projectId);
+    const completedCount = allProjectTasks.filter(task => task.status === 'done').length;
+    const progress = allProjectTasks.length ? Math.round(allProjectTasks.reduce((sum, task) => sum + Number(task.progress || 0), 0) / allProjectTasks.length) : 0;
     const panelCopy = el('div', '');
-    panelCopy.append(el('strong', '', name), el('span', '', includeDone ? `전체 ${projectTasks.length}건 · 진행 ${activeCount}건` : `진행 ${activeCount}건`));
+    panelCopy.append(el('strong', '', name), el('span', '', `진행 ${activeCount}건 · 완료 ${completedCount}/${allProjectTasks.length} · 진척률 ${progress}%`));
+    const progressLine = el('div', 'work-project-progress');
+    const progressFill = el('span', ''); progressFill.style.width = `${progress}%`; progressLine.appendChild(progressFill);
+    panelCopy.appendChild(progressLine);
     panelHead.appendChild(panelCopy);
     if(project) panelHead.appendChild(button('프로젝트 보기 →', 'tiny ghost', () => { activeView = 'projects'; selectedProjectId = project.id; projectDetailTab = 'tasks'; rerender(); }));
     panel.appendChild(panelHead);
