@@ -17,11 +17,11 @@ service cloud.firestore {
     }
     function canReadTask(taskId) {
       let task = get(/databases/$(database)/documents/tasks/$(taskId)).data;
-      return approved() && (manager() || sameLeadDepartment(task.departmentId) || task.assigneeId == request.auth.uid || (task.projectId != null && projectMember(task.projectId)));
+      return approved() && (manager() || sameLeadDepartment(task.departmentId) || task.assigneeId == request.auth.uid || task.get('assigneeIds', []).hasAny([request.auth.uid]) || (task.projectId != null && projectMember(task.projectId)));
     }
     function canEditTask(taskId) {
       let task = get(/databases/$(database)/documents/tasks/$(taskId)).data;
-      return approved() && (manager() || sameLeadDepartment(task.departmentId) || task.assigneeId == request.auth.uid);
+      return approved() && (manager() || sameLeadDepartment(task.departmentId) || task.assigneeId == request.auth.uid || task.get('assigneeIds', []).hasAny([request.auth.uid]));
     }
 
     // 신규 사용자는 자신의 승인 요청만 만들 수 있고 권한 정보를 직접 쓰지 못합니다.
@@ -86,7 +86,7 @@ service cloud.firestore {
     match /tasks/{taskId} {
       allow get, list: if approved() && (
         manager() || sameLeadDepartment(resource.data.departmentId) ||
-        resource.data.assigneeId == request.auth.uid ||
+        resource.data.assigneeId == request.auth.uid || resource.data.get('assigneeIds', []).hasAny([request.auth.uid]) ||
         (resource.data.projectId != null && projectMember(resource.data.projectId))
       );
       allow create: if approved() && (
@@ -95,7 +95,7 @@ service cloud.firestore {
       allow update: if approved() && (
         manager() ||
         (sameLeadDepartment(resource.data.departmentId) && request.resource.data.departmentId == resource.data.departmentId) ||
-        (resource.data.assigneeId == request.auth.uid
+        ((resource.data.assigneeId == request.auth.uid || resource.data.get('assigneeIds', []).hasAny([request.auth.uid]))
           && request.resource.data.departmentId == resource.data.departmentId
           && request.resource.data.projectId == resource.data.projectId)
       );
