@@ -458,10 +458,13 @@ function renderProjectGroupedWork(main, allTasks){
   copy.append(el('h3', '', '프로젝트별 진행 업무'), el('p', 'foot-note', todayTasks.length ? `오늘 해야 할 일 ${todayTasks.length}건 · 프로젝트 안에서는 마감일이 빠른 업무부터 확인합니다.` : '프로젝트 안에서는 마감일이 빠른 업무부터 확인합니다.'));
   const toggle = button('완료 업무 포함', 'tiny ghost');
   head.append(copy, toggle); section.appendChild(head);
-  const groups = el('div', 'work-project-groups'); section.appendChild(groups); main.appendChild(section);
+  const tabs = el('nav', 'work-project-tabs');
+  const panel = el('section', 'work-project-panel');
+  section.append(tabs, panel); main.appendChild(section);
   let includeDone = false;
+  let selectedProjectKey = null;
   const draw = () => {
-    groups.innerHTML = '';
+    tabs.innerHTML = ''; panel.innerHTML = '';
     const source = allTasks.filter(task => includeDone || task.status !== 'done');
     const byProject = new Map();
     source.forEach(task => {
@@ -469,29 +472,37 @@ function renderProjectGroupedWork(main, allTasks){
       if(!byProject.has(key)) byProject.set(key, []);
       byProject.get(key).push(task);
     });
-    if(!byProject.size) { groups.appendChild(el('div', 'empty', includeDone ? '표시할 업무가 없습니다.' : '진행 중인 업무가 없습니다. 완료 업무 포함을 눌러 지난 업무를 확인할 수 있습니다.')); return; }
-    [...byProject.entries()].sort(([, left], [, right]) => String(left.filter(task => task.status !== 'done').map(task => task.dueDate || '9999').sort()[0] || '9999').localeCompare(String(right.filter(task => task.status !== 'done').map(task => task.dueDate || '9999').sort()[0] || '9999'))).forEach(([projectId, tasks]) => {
+    if(!byProject.size) { panel.appendChild(el('div', 'empty', includeDone ? '표시할 업무가 없습니다.' : '진행 중인 업무가 없습니다. 완료 업무 포함을 눌러 지난 업무를 확인할 수 있습니다.')); return; }
+    const entries = [...byProject.entries()].sort(([, left], [, right]) => String(left.filter(task => task.status !== 'done').map(task => task.dueDate || '9999').sort()[0] || '9999').localeCompare(String(right.filter(task => task.status !== 'done').map(task => task.dueDate || '9999').sort()[0] || '9999')));
+    if(!entries.some(([key]) => key === selectedProjectKey)) selectedProjectKey = (entries.find(([, tasks]) => tasks.some(task => task.status !== 'done' && taskCoversDate(task, today))) || entries[0])[0];
+    entries.forEach(([projectId, tasks]) => {
       const project = projects.find(item => item.id === projectId);
-      const projectTasks = tasks.sort((a, b) => {
-        const leftDone = a.status === 'done' ? 1 : 0; const rightDone = b.status === 'done' ? 1 : 0;
-        return leftDone - rightDone || String(a.dueDate || '9999').localeCompare(String(b.dueDate || '9999'));
-      });
-      const group = el('section', 'work-project-group');
-      const groupHead = button('', 'work-project-heading', () => {
-        if(project) { activeView = 'projects'; selectedProjectId = project.id; projectDetailTab = 'tasks'; rerender(); }
-      });
-      groupHead.type = 'button';
-      const name = project ? `${project.code || project.name}${project.name && project.code ? ` · ${project.name}` : ''}` : '개인 업무';
-      const activeCount = projectTasks.filter(task => task.status !== 'done').length;
-      groupHead.append(el('strong', '', name), el('span', '', includeDone ? `전체 ${projectTasks.length}건 · 진행 ${activeCount}건` : `진행 ${activeCount}건`));
-      const todayCount = projectTasks.filter(task => task.status !== 'done' && taskCoversDate(task, today)).length;
-      if(todayCount) groupHead.appendChild(el('span', 'work-project-today', `오늘 ${todayCount}건`));
-      if(project) groupHead.appendChild(el('span', 'work-project-open', '프로젝트 보기 →'));
-      group.appendChild(groupHead);
-      const list = el('div', 'task-list compact-task-list');
-      projectTasks.forEach(task => list.appendChild(taskRow(task, false)));
-      group.appendChild(list); groups.appendChild(group);
+      const code = project?.code || project?.name || '개인 업무';
+      const activeCount = tasks.filter(task => task.status !== 'done').length;
+      const todayCount = tasks.filter(task => task.status !== 'done' && taskCoversDate(task, today)).length;
+      const tab = button('', projectId === selectedProjectKey ? 'primary tiny' : 'ghost tiny', () => { selectedProjectKey = projectId; draw(); });
+      tab.append(el('strong', '', code), el('span', '', includeDone ? ` ${tasks.length}` : ` ${activeCount}`));
+      if(todayCount) tab.appendChild(el('em', '', `오늘 ${todayCount}`));
+      tabs.appendChild(tab);
     });
+    const selected = entries.find(([key]) => key === selectedProjectKey);
+    const [projectId, tasks] = selected;
+    const project = projects.find(item => item.id === projectId);
+    const projectTasks = [...tasks].sort((a, b) => {
+      const leftDone = a.status === 'done' ? 1 : 0; const rightDone = b.status === 'done' ? 1 : 0;
+      return leftDone - rightDone || String(a.dueDate || '9999').localeCompare(String(b.dueDate || '9999'));
+    });
+    const panelHead = el('div', 'work-project-panel-head');
+    const name = project ? `${project.code || project.name}${project.name && project.code ? ` · ${project.name}` : ''}` : '개인 업무';
+    const activeCount = projectTasks.filter(task => task.status !== 'done').length;
+    const panelCopy = el('div', '');
+    panelCopy.append(el('strong', '', name), el('span', '', includeDone ? `전체 ${projectTasks.length}건 · 진행 ${activeCount}건` : `진행 ${activeCount}건`));
+    panelHead.appendChild(panelCopy);
+    if(project) panelHead.appendChild(button('프로젝트 보기 →', 'tiny ghost', () => { activeView = 'projects'; selectedProjectId = project.id; projectDetailTab = 'tasks'; rerender(); }));
+    panel.appendChild(panelHead);
+    const list = el('div', 'task-list compact-task-list work-project-task-grid');
+    projectTasks.forEach(task => list.appendChild(taskRow(task, false)));
+    panel.appendChild(list);
   };
   toggle.onclick = () => { includeDone = !includeDone; toggle.textContent = includeDone ? '진행 업무만 보기' : '완료 업무 포함'; toggle.className = includeDone ? 'tiny primary' : 'tiny ghost'; draw(); };
   draw();
