@@ -431,23 +431,89 @@ function renderWork(main){
   const toolbar = el('div', 'work-toolbar');
   toolbar.append(el('h2', '', '내 업무'), button('+ 업무 추가', 'primary', () => openTaskEditor(null)));
   main.appendChild(toolbar);
-  const modes = el('nav', 'view-tabs');
-  [['list', '프로젝트별 업무'], ['calendar', '월간 캘린더']].forEach(([key, label]) => modes.appendChild(button(label, workViewMode === key ? 'primary tiny' : 'ghost tiny', () => { workViewMode = key; rerender(); })));
-  main.appendChild(modes);
-  const allMyTasks = workTasks();
-  if(workViewMode === 'calendar') { renderWorkCalendar(main, allMyTasks); return; }
-  renderProjectGroupedWork(main, allMyTasks);
+  renderWorkDashboard(main, workTasks());
 }
 
 function taskAssignedToUser(task, userId){ return task.assigneeId === userId || (task.assignees || []).some(item => item.userId === userId); }
 
 function workTasks(){ return activeTasks().filter(task => taskAssignedToUser(task, currentUser?.uid)); }
 
-function renderProjectGroupedWork(main, allTasks){
+function renderWorkDashboard(main, allTasks){
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const monday = mondayOf(today); const sunday = new Date(monday); sunday.setDate(sunday.getDate() + 6);
+  const todayTasks = allTasks.filter(task => task.status !== 'done' && taskCoversDate(task, today));
+  const workingDates = Array.from({ length: 7 }, (_, index) => { const date = new Date(monday); date.setDate(date.getDate() + index); return date; }).filter(isWeekday);
+  const weeklyLoadDays = workingDates.reduce((sum, date) => sum + taskLoadForUserOnDate(currentUser.uid, date), 0);
+  const weeklyCapacityDays = workingDates.length * userDailyCapacity(currentUser.uid);
+  const weeklyLoad = weeklyCapacityDays ? Math.round((weeklyLoadDays / weeklyCapacityDays) * 100) : 0;
+  const freeHours = Math.max(0, Math.round((weeklyCapacityDays - weeklyLoadDays) * 8));
+  const nextFree = nextAvailableDate(currentUser.uid);
+  const summary = el('section', 'work-summary-bar');
+  const summaryItem = (label, value, tone = '') => {
+    const item = el('div', `work-summary-item ${tone}`);
+    item.append(el('span', '', label), el('strong', '', value));
+    return item;
+  };
+  summary.append(
+    summaryItem('오늘 해야 할 일', `${todayTasks.length}건`),
+    summaryItem('이번 주 업무량', `${weeklyLoad}%`, weeklyLoad > 100 ? 'danger' : weeklyLoad >= 80 ? 'warn' : ''),
+    summaryItem('이번 주 남은 여유', `${freeHours}시간`, freeHours === 0 ? 'warn' : ''),
+    summaryItem('다음 여유', nextFree ? fmtDate(nextFree) : '확인 필요')
+  );
+  main.appendChild(summary);
+  const grid = el('div', 'work-dashboard-grid');
+  const calendarPanel = el('section', 'work-availability-panel');
+  renderWorkAvailabilityCalendar(calendarPanel, allTasks);
+  const projectPanel = el('div', 'work-dashboard-projects');
+  renderProjectGroupedWork(projectPanel, allTasks, { embedded: true });
+  grid.append(calendarPanel, projectPanel); main.appendChild(grid);
+}
+
+function renderWorkAvailabilityCalendar(panel, allTasks){
+  const nav = el('div', 'availability-heading');
+  const copy = el('div', '');
+  copy.append(el('h3', '', '이번 달 가용 시간'), el('p', 'foot-note', '빈 날짜를 누르면 해당 날짜로 업무를 추가합니다.'));
+  const controls = el('div', 'availability-controls');
+  controls.append(button('◀', 'tiny ghost', () => { workCalendarCursor.setMonth(workCalendarCursor.getMonth() - 1); rerender(); }), el('strong', '', `${workCalendarCursor.getFullYear()}년 ${workCalendarCursor.getMonth() + 1}월`), button('▶', 'tiny ghost', () => { workCalendarCursor.setMonth(workCalendarCursor.getMonth() + 1); rerender(); }));
+  nav.append(copy, controls); panel.appendChild(nav);
+  const grid = el('div', 'availability-calendar');
+  ['일', '월', '화', '수', '목', '금', '토'].forEach(label => grid.appendChild(el('div', 'availability-dow', label)));
+  const year = workCalendarCursor.getFullYear(), month = workCalendarCursor.getMonth();
+  const firstDay = new Date(year, month, 1).getDay(), lastDate = new Date(year, month + 1, 0).getDate();
+  for(let index = 0; index < firstDay; index++) grid.appendChild(el('div', 'availability-cell muted-cell'));
+  for(let day = 1; day <= lastDate; day++) {
+    const date = new Date(year, month, day); const key = dateKey(date);
+    const dayTasks = allTasks.filter(task => task.status !== 'done' && taskCoversDate(task, date));
+    const loadDays = taskLoadForUserOnDate(currentUser.uid, date);
+    const capacityDays = userDailyCapacity(currentUser.uid);
+    const load = isWeekday(date) && capacityDays ? Math.round((loadDays / capacityDays) * 100) : 0;
+    const freeHours = Math.max(0, Math.round((capacityDays - loadDays) * 8));
+    const tone = !isWeekday(date) ? 'off' : load > 100 ? 'over' : load >= 80 ? 'busy' : load > 0 ? 'partial' : 'free';
+    const cell = button('', `availability-cell ${tone} ${dateKey(todayDate()) === key ? 'today' : ''}`, () => {
+      if(isWeekday(date)) openTaskEditor(null, { startDate: key, dueDate: key });
+    });
+    cell.disabled = !isWeekday(date);
+    const dateHead = el('div', 'availability-date'); dateHead.append(el('strong', '', String(day)), el('span', '', dateKey(todayDate()) === key ? '오늘' : isHoliday(date) ? '휴일' : ''));
+    cell.appendChild(dateHead);
+    if(!isWeekday(date)) cell.appendChild(el('span', 'availability-label', isHoliday(date) ? '공휴일' : '주말'));
+    else if(load > 100) cell.appendChild(el('span', 'availability-label', `과부하 ${load}%`));
+    else if(!dayTasks.length) cell.appendChild(el('span', 'availability-label', '업무 없음'));
+    else cell.appendChild(el('span', 'availability-label', `업무 ${dayTasks.length}건 · ${load}%`));
+    if(isWeekday(date)) cell.appendChild(el('span', 'availability-free', freeHours ? `여유 ${freeHours}시간` : '여유 없음'));
+    dayTasks.slice(0, 2).forEach(task => cell.appendChild(el('span', 'availability-task', task.title)));
+    if(dayTasks.length > 2) cell.appendChild(el('span', 'availability-more', `+${dayTasks.length - 2}건`));
+    grid.appendChild(cell);
+  }
+  panel.appendChild(grid);
+}
+
+function todayDate(){ const date = new Date(); date.setHours(0, 0, 0, 0); return date; }
+
+function renderProjectGroupedWork(main, allTasks, options = {}){
   const today = new Date(); today.setHours(0, 0, 0, 0);
   const ongoing = allTasks.filter(task => task.status !== 'done');
   const todayTasks = ongoing.filter(task => taskCoversDate(task, today)).sort((a, b) => String(a.dueDate || '9999').localeCompare(String(b.dueDate || '9999')));
-  const section = el('section', 'work-projects-section');
+  const section = el('section', `work-projects-section ${options.embedded ? 'embedded' : ''}`);
   const head = el('div', 'work-section-head');
   const copy = el('div', '');
   copy.append(el('h3', '', '프로젝트별 진행 업무'), el('p', 'foot-note', todayTasks.length ? `오늘 해야 할 일 ${todayTasks.length}건 · 프로젝트 안에서는 마감일이 빠른 업무부터 확인합니다.` : '프로젝트 안에서는 마감일이 빠른 업무부터 확인합니다.'));
@@ -1212,8 +1278,8 @@ function openTaskEditor(task, initial = {}){
   const status = selectField('상태', Object.entries(TASK_STATUS)); status.select.value = task?.status || 'todo';
   const progress = inputField('진척률 (0~100)', '', 'number'); progress.input.min = '0'; progress.input.max = '100'; progress.input.value = task?.progress ?? 0;
   const estimate = inputField('예상 작업일', '예: 2.5', 'number'); estimate.input.min = '0'; estimate.input.step = '0.5'; estimate.input.value = task?.estimatedDays ?? '';
-  const start = inputField('시작일', '', 'date'); start.input.value = dateOnly(task?.startDate);
-  const due = inputField('마감일', '', 'date'); due.input.value = dateOnly(task?.dueDate);
+  const start = inputField('시작일', '', 'date'); start.input.value = dateOnly(task?.startDate || initial.startDate);
+  const due = inputField('마감일', '', 'date'); due.input.value = dateOnly(task?.dueDate || initial.dueDate || initial.startDate);
   const assignmentWarning = el('section', 'assignment-assessment');
   const capacityConfirm = document.createElement('input'); capacityConfirm.type = 'checkbox'; capacityConfirm.id = `capacity-confirm-${task?.id || 'new'}`;
   const capacityConfirmLabel = document.createElement('label'); capacityConfirmLabel.className = 'force-assignment'; capacityConfirmLabel.htmlFor = capacityConfirm.id;
