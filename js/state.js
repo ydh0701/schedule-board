@@ -588,9 +588,30 @@ function importedDepartment(value){
   return 'planning';
 }
 
+function importTaskKey(row){
+  const projectKey = String(row.projectCode || row.projectName || '').trim().toLowerCase();
+  return [projectKey, String(row.title || '').trim().toLowerCase(), row.platform || 'pc', row.departmentId || 'planning', dateOnly(row.startDate), dateOnly(row.dueDate)].join('|');
+}
+function isDuplicateImportedRow(row){
+  const key = importTaskKey(row);
+  return activeTasks().some(task => {
+    const project = projects.find(item => item.id === task.projectId);
+    return importTaskKey({ ...task, projectCode: project?.code || project?.name || '' }) === key;
+  });
+}
+
 async function importTasksFromPreview(rows, sourceName = ''){
   if(!requirePermission(canManageProjects(), '엑셀 이관은 PM 또는 관리자만 실행할 수 있습니다.')) return;
-  const validRows = (rows || []).filter(row => row.valid);
+  const knownKeys = new Set(activeTasks().map(task => {
+    const project = projects.find(item => item.id === task.projectId);
+    return importTaskKey({ ...task, projectCode: project?.code || project?.name || '' });
+  }));
+  let duplicatesSkipped = 0;
+  const validRows = (rows || []).filter(row => row.valid).filter(row => {
+    const key = importTaskKey(row);
+    if(knownKeys.has(key)) { duplicatesSkipped++; return false; }
+    knownKeys.add(key); return true;
+  });
   if(!validRows.length) throw new Error('이관할 수 있는 업무 행이 없습니다.');
   const batchId = `import_${Date.now()}`;
   const knownProjects = new Map(projects.map(project => [String(project.code || project.name).trim().toLowerCase(), project]));
@@ -631,7 +652,7 @@ async function importTasksFromPreview(rows, sourceName = ''){
     writes.slice(index, index + 400).forEach(write => batch.set(write.ref, write.data, write.options));
     await batch.commit();
   }
-  return { batchId, imported: validRows.length, projectsCreated: projectRefs.size, excluded: (rows || []).length - validRows.length };
+  return { batchId, imported: validRows.length, projectsCreated: projectRefs.size, duplicatesSkipped, excluded: (rows || []).length - validRows.length };
 }
 
 async function reassignTask(taskId, assigneeId, force = false){
