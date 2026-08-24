@@ -247,8 +247,7 @@ function nextAvailableDate(userId, extraTask = null){
 function assignmentAssessment(userId, task, keepSharedAssignees = false){
   if(!userId || !task) return { level: 'unknown', label: '담당자를 선택해주세요.', weeklyLoad: 0, nextDate: null, overflowDays: 0 };
   const candidate = normalizeTask({ ...task, assigneeId: keepSharedAssignees ? task.assigneeId : userId, assignees: keepSharedAssignees ? task.assignees : [{ userId, share: 1, role: 'primary' }], status: task.status || 'todo' });
-  const missingDates = !candidate.startDate || !candidate.dueDate || !candidate.estimatedDays;
-  if(missingDates) return { level: 'unknown', label: '기간과 예상 작업일을 입력하면 가용성을 계산할 수 있습니다.', weeklyLoad: 0, nextDate: null, overflowDays: 0 };
+  const missingDates = !candidate.startDate || !candidate.dueDate || (!candidate.assessmentOnly && !candidate.estimatedDays);
   const start = localDate(candidate.startDate || dateKey(new Date()));
   const end = localDate(candidate.dueDate || candidate.startDate || dateKey(new Date()));
   const weeklyLoads = new Map();
@@ -263,6 +262,7 @@ function assignmentAssessment(userId, task, keepSharedAssignees = false){
   const peakWeeklyLoad = Math.max(0, ...weeklyLoads.values());
   const weeklyLoad = Math.round((peakWeeklyLoad / userWeeklyCapacity(userId)) * 100);
   const nextDate = nextAvailableDate(userId, candidate);
+  if(missingDates) return { level: 'unknown', label: '기간과 예상 작업일을 입력하면 가용성을 계산할 수 있습니다.', weeklyLoad, nextDate, overflowDays };
   if(overflowDays > 0 || weeklyLoad > 100) return { level: 'danger', label: `기존 업무와 ${overflowDays || 1}일 겹쳐 과부하가 예상됩니다.`, weeklyLoad, nextDate, overflowDays };
   if(weeklyLoad >= 80) return { level: 'warn', label: '업무량이 높은 편입니다. 마감일까지 완료 가능 여부를 확인해주세요.', weeklyLoad, nextDate, overflowDays };
   return { level: 'ok', label: '마감일 내 완료 가능한 여유가 있습니다.', weeklyLoad, nextDate, overflowDays };
