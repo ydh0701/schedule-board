@@ -224,6 +224,24 @@ function taskRow(task, showProject){
   return row;
 }
 
+function projectCommandCenter(project, projectTasks){
+  const today = dateKey(new Date());
+  const upcomingMilestone = milestonesForProject(project.id).filter(item => item.status !== 'done' && item.dueDate && item.dueDate >= today).sort((a, b) => String(a.dueDate).localeCompare(String(b.dueDate)))[0];
+  const upcomingTask = projectTasks.filter(task => task.status !== 'done' && task.dueDate).sort((a, b) => String(a.dueDate).localeCompare(String(b.dueDate)))[0];
+  const riskTasks = projectTasks.filter(task => taskIsOverdue(task) || task.status === 'blocked' || !task.assigneeId);
+  const staffingGaps = (project.platforms || []).flatMap(platform => TEMPLATE_DEPARTMENTS.filter(departmentId => !staffingFor(project, platform, departmentId)?.userId).map(departmentId => ({ platform, departmentId })));
+  const section = el('section', 'project-command-grid');
+  const addCard = (eyebrow, title, detail, tone, onClick) => {
+    const card = button('', `project-command-card ${tone || ''}`, onClick);
+    card.append(el('span', 'command-label', eyebrow), el('strong', '', title), el('span', 'command-detail', detail)); section.appendChild(card);
+  };
+  addCard('NEXT MILESTONE', upcomingMilestone?.title || '예정 마일스톤 없음', upcomingMilestone ? `${fmtDate(upcomingMilestone.dueDate)} · 연결 업무 ${tasksForMilestone(upcomingMilestone.id).length}건` : '마일스톤 탭에서 고정 일정을 추가하세요.', upcomingMilestone && upcomingMilestone.dueDate <= addBusinessDays(today, 7) ? 'warn' : '', () => { projectDetailTab = 'milestones'; rerender(); });
+  addCard('NEXT DEADLINE', upcomingTask?.title || '예정 마감 없음', upcomingTask ? `${fmtDate(upcomingTask.dueDate)} · ${taskAssigneeName(upcomingTask)}` : '업무의 마감일을 입력하면 표시됩니다.', upcomingTask && taskIsOverdue(upcomingTask) ? 'danger' : '', () => { projectDetailTab = 'tasks'; rerender(); });
+  addCard('RISK WORK', riskTasks.length ? `${riskTasks.length}건 확인 필요` : '위험 업무 없음', riskTasks.length ? `지연 ${projectTasks.filter(taskIsOverdue).length} · 차단 ${projectTasks.filter(task => task.status === 'blocked').length} · 미배정 ${projectTasks.filter(task => !task.assigneeId).length}` : '현재 등록 업무 기준 정상입니다.', riskTasks.length ? 'danger' : 'ok', () => { projectDetailTab = 'tasks'; rerender(); });
+  addCard('STAFFING', staffingGaps.length ? `담당자 공백 ${staffingGaps.length}건` : '담당자 배정 완료', staffingGaps.length ? staffingGaps.slice(0, 2).map(item => `${platformName(item.platform)} ${departmentName(item.departmentId)}`).join(' · ') : '플랫폼별 직군 담당자가 배정됐습니다.', staffingGaps.length ? 'warn' : 'ok', () => openProjectEditor(project));
+  return section;
+}
+
 function renderProjectDetail(main, project){
   if(!project) { selectedProjectId = null; rerender(); return; }
   main.appendChild(button('← 전체 프로젝트', 'tiny ghost', () => { selectedProjectId = null; projectTimelineFilter = 'all'; projectScheduleCursor = null; rerender(); }));
@@ -234,7 +252,12 @@ function renderProjectDetail(main, project){
   const overviewTitle = el('div', 'project-hero-title');
   overviewTitle.append(el('p', 'eyebrow', 'PROJECT OVERVIEW'), el('h2', '', project.code || project.name));
   overviewHead.appendChild(overviewTitle);
-  if(canManageProjects()) overviewHead.appendChild(button('프로젝트 정보 수정', 'tiny ghost', () => openProjectEditor(project)));
+  if(canManageProjects() || isLead()) {
+    const heroActions = el('div', 'project-hero-actions');
+    if(canManageProjects()) heroActions.appendChild(button('프로젝트 정보 수정', 'tiny ghost', () => openProjectEditor(project)));
+    heroActions.appendChild(button('+ 주간 업데이트', 'tiny ghost', () => openProjectUpdateEditor(project)));
+    overviewHead.appendChild(heroActions);
+  }
   overview.appendChild(overviewHead);
   if(project.code) overview.append(el('p', 'sub', project.name));
   if(project.platforms?.length) overview.append(el('p', 'foot-note', `적용 플랫폼 · ${project.platforms.map(platformName).join(' · ')}`));
@@ -262,6 +285,7 @@ function renderProjectDetail(main, project){
   hero.appendChild(staffing);
   main.appendChild(hero);
   const projectTasks = tasksForProject(project.id);
+  main.appendChild(projectCommandCenter(project, projectTasks));
   const riskTasks = projectTasks.filter(task => taskIsOverdue(task) || task.status === 'blocked' || !task.assigneeId);
   if(riskTasks.length) {
     const risks = el('section', 'project-risks');
@@ -388,7 +412,8 @@ function renderProjectSchedule(main, project){
         : items.filter(entry => entry.kind === 'task' && timelineCategory(entry) === track.id && taskCoversDate(entry.item, day));
       entries.slice(0, 3).forEach(entry => {
         const canEdit = entry.kind === 'milestone' ? canManageProjects() : canEditTask(entry.item);
-        const item = canEdit ? button('', `schedule-block ${entry.kind} ${statusClass(entry.item.status)}`, () => entry.kind === 'milestone' ? openMilestoneEditor(entry.item, project.id) : openTaskEditor(entry.item)) : el('div', `schedule-block ${entry.kind} ${statusClass(entry.item.status)}`);
+        const tone = entry.kind === 'task' && taskIsOverdue(entry.item) ? 'danger' : statusClass(entry.item.status);
+        const item = canEdit ? button('', `schedule-block ${entry.kind} ${tone}`, () => entry.kind === 'milestone' ? openMilestoneEditor(entry.item, project.id) : openTaskEditor(entry.item)) : el('div', `schedule-block ${entry.kind} ${tone}`);
         item.title = `${entry.item.title}${entry.kind === 'task' ? ` · ${taskAssigneeName(entry.item)} · ${fmtDate(entry.item.startDate)} ~ ${fmtDate(entry.item.dueDate)}` : ` · ${fmtDate(entry.item.dueDate)}`}`;
         item.textContent = entry.item.title;
         cell.appendChild(item);
