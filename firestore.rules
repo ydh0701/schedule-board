@@ -93,7 +93,7 @@ service cloud.firestore {
       allow update: if approved() && (
         manager() ||
         (sameLeadDepartment(resource.data.departmentId) && request.resource.data.departmentId == resource.data.departmentId) ||
-        (resource.data.assigneeId == request.auth.uid && request.resource.data.assigneeId == request.auth.uid
+        (resource.data.assigneeId == request.auth.uid
           && request.resource.data.departmentId == resource.data.departmentId
           && request.resource.data.projectId == resource.data.projectId)
       );
