@@ -83,7 +83,9 @@ function setAppStatus(message){
 }
 
 function rerenderSafely(){
-  if(typeof rerender === 'function') rerender();
+  // 브라우저가 스크립트 전역을 분리해 해석하는 경우에도 화면 모듈을 확실히 호출합니다.
+  const renderApp = window.renderScheduleApp || (typeof rerender === 'function' ? rerender : null);
+  if(typeof renderApp === 'function') renderApp();
 }
 
 function resetDataSubscriptions(){
