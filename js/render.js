@@ -452,23 +452,10 @@ function renderProjectGroupedWork(main, allTasks){
   const today = new Date(); today.setHours(0, 0, 0, 0);
   const ongoing = allTasks.filter(task => task.status !== 'done');
   const todayTasks = ongoing.filter(task => taskCoversDate(task, today)).sort((a, b) => String(a.dueDate || '9999').localeCompare(String(b.dueDate || '9999')));
-  const todaySection = el('section', 'work-today-section');
-  const todayHead = el('div', 'work-section-head');
-  const todayCopy = el('div', '');
-  todayCopy.append(el('h3', '', '오늘 해야 할 일'), el('p', 'foot-note', todayTasks.length ? `오늘 진행 중인 업무 ${todayTasks.length}건` : '오늘 예정된 업무가 없습니다.'));
-  todayHead.appendChild(todayCopy);
-  todaySection.appendChild(todayHead);
-  if(todayTasks.length) {
-    const list = el('div', 'task-list compact-task-list');
-    todayTasks.forEach(task => list.appendChild(taskRow(task, true)));
-    todaySection.appendChild(list);
-  }
-  main.appendChild(todaySection);
-
   const section = el('section', 'work-projects-section');
   const head = el('div', 'work-section-head');
   const copy = el('div', '');
-  copy.append(el('h3', '', '프로젝트별 진행 업무'), el('p', 'foot-note', '각 프로젝트 안에서는 마감일이 빠른 업무부터 확인합니다.'));
+  copy.append(el('h3', '', '프로젝트별 진행 업무'), el('p', 'foot-note', todayTasks.length ? `오늘 해야 할 일 ${todayTasks.length}건 · 프로젝트 안에서는 마감일이 빠른 업무부터 확인합니다.` : '프로젝트 안에서는 마감일이 빠른 업무부터 확인합니다.'));
   const toggle = button('완료 업무 포함', 'tiny ghost');
   head.append(copy, toggle); section.appendChild(head);
   const groups = el('div', 'work-project-groups'); section.appendChild(groups); main.appendChild(section);
@@ -497,6 +484,8 @@ function renderProjectGroupedWork(main, allTasks){
       const name = project ? `${project.code || project.name}${project.name && project.code ? ` · ${project.name}` : ''}` : '개인 업무';
       const activeCount = projectTasks.filter(task => task.status !== 'done').length;
       groupHead.append(el('strong', '', name), el('span', '', includeDone ? `전체 ${projectTasks.length}건 · 진행 ${activeCount}건` : `진행 ${activeCount}건`));
+      const todayCount = projectTasks.filter(task => task.status !== 'done' && taskCoversDate(task, today)).length;
+      if(todayCount) groupHead.appendChild(el('span', 'work-project-today', `오늘 ${todayCount}건`));
       if(project) groupHead.appendChild(el('span', 'work-project-open', '프로젝트 보기 →'));
       group.appendChild(groupHead);
       const list = el('div', 'task-list compact-task-list');
