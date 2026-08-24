@@ -1037,11 +1037,17 @@ function openImportEditor(){
   const renderPreview = () => {
     error.hidden = true; previewBox.innerHTML = '';
     const preview = previewImportedSheet(workbook.Sheets[sheetPicker.select.value], input.files[0].name, sheetPicker.select.value, mappingOverrides, ownerPicker.select.value);
-    const valid = preview.rows.filter(row => row.valid); const invalid = preview.rows.filter(row => !row.valid);
-    previewBox.append(el('strong', '', `검증 결과 · 이관 가능 ${valid.length}행 / 확인 필요 ${invalid.length}행`));
+    const seenKeys = new Set();
+    preview.rows.forEach(row => {
+      const key = importTaskKey(row);
+      row.duplicate = row.valid && (isDuplicateImportedRow(row) || seenKeys.has(key));
+      if(row.valid) seenKeys.add(key);
+    });
+    const valid = preview.rows.filter(row => row.valid && !row.duplicate); const invalid = preview.rows.filter(row => !row.valid); const duplicates = preview.rows.filter(row => row.duplicate);
+    previewBox.append(el('strong', '', `검증 결과 · 이관 가능 ${valid.length}행 / 확인 필요 ${invalid.length}행 / 중복 제외 ${duplicates.length}행`));
     previewBox.append(el('p', 'foot-note', `자동 인식 열: 프로젝트 ${preview.columns.project >= 0 ? '✓' : '–'} · 업무 ${preview.columns.title >= 0 ? '✓' : '–'} · 시작일 ${preview.columns.start >= 0 ? '✓' : '–'} · 마감일 ${preview.columns.due >= 0 ? '✓' : '–'}`));
     const table = document.createElement('table'); const head = document.createElement('thead'); const hr = document.createElement('tr'); ['원본 행', '프로젝트', '업무', '기간', '담당자', '결과'].forEach(label => hr.appendChild(el('th', '', label))); head.appendChild(hr); table.appendChild(head);
-    const body = document.createElement('tbody'); preview.rows.slice(0, 20).forEach(row => { const tr = document.createElement('tr'); tr.append(el('td', '', String(row.sourceRow)), el('td', '', row.projectCode), el('td', '', row.title), el('td', '', `${fmtDate(row.startDate)} ~ ${fmtDate(row.dueDate)}`), el('td', '', row.assignee || '미배정'), el('td', row.valid ? '' : 'capacity-over', row.valid ? '이관 가능' : row.errors.join(', '))); body.appendChild(tr); }); table.appendChild(body); const wrap = el('div', 'table-wrap'); wrap.appendChild(table); previewBox.appendChild(wrap);
+    const body = document.createElement('tbody'); preview.rows.slice(0, 20).forEach(row => { const tr = document.createElement('tr'); const result = row.duplicate ? '기존 업무와 중복 · 제외' : row.valid ? '이관 가능' : row.errors.join(', '); tr.append(el('td', '', String(row.sourceRow)), el('td', '', row.projectCode), el('td', '', row.title), el('td', '', `${fmtDate(row.startDate)} ~ ${fmtDate(row.dueDate)}`), el('td', '', row.assignee || '미배정'), el('td', row.valid && !row.duplicate ? '' : 'capacity-over', result)); body.appendChild(tr); }); table.appendChild(body); const wrap = el('div', 'table-wrap'); wrap.appendChild(table); previewBox.appendChild(wrap);
     if(preview.rows.length > 20) previewBox.append(el('p', 'foot-note', `처음 20행만 표시했습니다. 총 ${preview.rows.length}행을 검증했습니다.`));
     importButton.hidden = valid.length === 0;
   };
@@ -1060,7 +1066,7 @@ function openImportEditor(){
   importButton.onclick = async () => {
     if(!importPreview) return;
     importButton.disabled = true; importButton.textContent = '이관 중…';
-    try { const result = await importTasksFromPreview(importPreview.rows, importPreview.sourceName); showToast(`${result.imported}개 업무를 이관했습니다. 제외 ${result.excluded}행`); close(); }
+    try { const result = await importTasksFromPreview(importPreview.rows, importPreview.sourceName); showToast(`${result.imported}개 업무를 이관했습니다. 중복 제외 ${result.duplicatesSkipped}행`); close(); }
     catch(cause) { error.textContent = `이관하지 못했습니다. ${cause.message || ''}`; error.hidden = false; }
     finally { importButton.disabled = false; importButton.textContent = '이관 실행'; }
   };
