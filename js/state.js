@@ -59,6 +59,7 @@ let projectDetailTab = 'schedule';
 let projectTimelineFilter = 'all';
 let projectScheduleCursor = null;
 let workViewMode = 'list';
+let workPeriod = 'today';
 let workCalendarCursor = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
 let capacityWeekCursor = new Date();
 let projects = [];
