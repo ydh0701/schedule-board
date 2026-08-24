@@ -215,9 +215,18 @@ function taskRow(task, showProject, mineCompact = false){
   row.appendChild(body);
   const state = el('div', 'task-state');
   const schedule = scheduleStatus(task);
-  state.appendChild(el('span', `tag ${statusClass(task.status)}`, TASK_STATUS[task.status] || '미착수'));
-  if(!['done', 'blocked'].includes(task.status)) state.appendChild(el('span', `tag ${schedule.tone}`, schedule.label));
-  state.appendChild(el('span', 'task-progress', `진척 ${task.progress}%`));
+  if(task.status === 'done') state.appendChild(el('span', 'tag ok', '완료'));
+  if(task.status === 'blocked') state.appendChild(el('span', 'tag danger', '차단됨'));
+  if(task.status !== 'done' && task.status !== 'blocked' && taskIsOverdue(task)) state.appendChild(el('span', 'tag danger', schedule.label));
+  const progress = el('div', 'task-progress-meter');
+  progress.title = `진척 ${task.progress}%`;
+  progress.setAttribute('aria-label', `진척 ${task.progress}%`);
+  const track = el('span', 'task-progress-track');
+  const fill = el('span', `task-progress-fill ${task.progress >= 100 ? 'done' : task.progress > 0 ? 'active' : ''}`);
+  fill.style.width = `${Math.max(0, Math.min(100, Number(task.progress) || 0))}%`;
+  track.appendChild(fill);
+  progress.append(track, el('span', 'task-progress-value', `${task.progress}%`));
+  state.appendChild(progress);
   if(taskHasUnfinishedDependencies(task)) state.appendChild(el('span', 'tag warn', '선행 대기'));
   row.appendChild(state);
   if(canEditTask(task)) {
