@@ -1,5 +1,5 @@
-Warning: truncated output (original token count: 22369)
-Total output lines: 1223
+Warning: truncated output (original token count: 22405)
+Total output lines: 1225
 
 /* render.js — 로그인, 프로젝트 일정, 실무 일정 화면 */
 
@@ -63,6 +63,8 @@ function renderPrimaryNavigation(){
 
 function renderAccountActions(){
   const target = document.getElementById('accountActions');
+  // GitHub Pages에 남아 있는 이전 index.html을 열었더라도 본문 렌더링까지 멈추지 않게 합니다.
+  if(!target) return;
   target.innerHTML = '';
   if(currentUser){
     if(currentProfile) target.append(el('span', 'account-name', `${currentProfile.name || currentUser.displayName || ''} · ${userRoleLabel(currentProfile)}`));
@@ -560,8 +562,7 @@ function renderTeam(main){
 
 function renderPeople(main){
   const scopeUsers = activeUsers().filter(user => isPM() || isAdmin() || user.departmentId === currentProfile?.departmentId);
-  const heading = el('section', 'panel page-heading'); const copy = el('div', 'page-copy');
-  copy.append(el('p', 'eyebrow', 'WORKFORCE'), el('h2', '', '인력 현황'), el('p', 'sub', '등록된 업무를 …2369 tokens truncated…Id || '']));
+  const heading = el('section', 'panel page-heading'); const co…2405 tokens truncated…Id || '']));
   (project.platforms || []).forEach(platform => {
     const card = el('section', 'staffing-card'); card.append(el('strong', '', `${platformName(platform)} 담당자`));
     TEMPLATE_DEPARTMENTS.forEach(departmentId => {
