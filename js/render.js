@@ -216,6 +216,10 @@ function taskRow(task, showProject){
   state.append(el('span', `tag ${statusClass(task.status)}`, TASK_STATUS[task.status] || '할 일'), el('span', `tag ${schedule.tone}`, schedule.label), el('span', 'task-progress', `${task.progress}%`));
   if(taskHasUnfinishedDependencies(task)) state.appendChild(el('span', 'tag warn', '선행 대기'));
   row.appendChild(state);
+  if(canEditTask(task) && task.status !== 'done') row.appendChild(button('완료', 'tiny ghost', async () => {
+    try { await completeTask(task.id); showToast('업무를 완료 처리했습니다.'); }
+    catch(error) { showToast(error.message, 'error'); }
+  }));
   if(canEditTask(task)) row.appendChild(button('수정', 'tiny ghost', () => openTaskEditor(task)));
   return row;
 }
@@ -405,7 +409,7 @@ function renderWork(main){
   heading.appendChild(copy);
   main.appendChild(heading);
   const actions = el('div', 'row');
-  actions.appendChild(button('+ 업무 추가', 'primary', () => openTaskEditor(null)));
+  actions.append(button('+ 빠른 추가', 'primary', openQuickTaskEditor), button('상세 업무 추가', 'ghost', () => openTaskEditor(null)));
   main.appendChild(actions);
   const modes = el('nav', 'view-tabs');
   [['list', '목록'], ['calendar', '월간 캘린더']].forEach(([key, label]) => modes.appendChild(button(label, workViewMode === key ? 'primary tiny' : 'ghost tiny', () => { workViewMode = key; rerender(); })));
@@ -695,6 +699,48 @@ function openDialog(title){
   overlay.onclick = event => { if(event.target === overlay) close(); };
   document.body.appendChild(overlay);
   return { overlay, dialog, close, onClose: fn => cleanup.push(fn) };
+}
+
+function openQuickTaskEditor(){
+  const { dialog, close } = openDialog('빠른 개인 업무 추가');
+  dialog.append(el('p', 'sub', '프로젝트와 연결하지 않는 개인 실무를 바로 등록합니다. 프로젝트·마일스톤·지원 담당자가 필요하면 상세 업무 추가를 사용하세요.'));
+  const form = el('form', 'form-grid');
+  const title = inputField('업무명', '예: 회의 자료 정리');
+  const due = inputField('완료 예정일', '', 'date'); due.input.value = dateKey(new Date());
+  const estimate = selectField('예상 작업일', [['0.5', '반나절 (0.5일)'], ['1', '하루 (1일)'], ['2', '이틀 (2일)'], ['3', '사흘 (3일)']]);
+  const assessmentBox = el('section', 'assignment-assessment');
+  const confirmInput = document.createElement('input'); confirmInput.type = 'checkbox'; confirmInput.id = 'quick-capacity-confirm';
+  const confirmLabel = document.createElement('label'); confirmLabel.className = 'force-assignment'; confirmLabel.htmlFor = confirmInput.id;
+  confirmLabel.append(confirmInput, document.createTextNode('과부하 경고를 확인했고, 그래도 등록합니다.'));
+  let assessment = null;
+  const refreshAssessment = () => {
+    const candidate = { assigneeId: currentUser?.uid, startDate: due.input.value || null, dueDate: due.input.value || null, estimatedDays: Number(estimate.select.value || 0), status: 'todo' };
+    assessment = assignmentAssessment(currentUser?.uid, candidate);
+    assessmentBox.className = `assignment-assessment ${assessment.level}`;
+    assessmentBox.innerHTML = '';
+    assessmentBox.append(el('strong', '', assessment.level === 'danger' ? '오늘 과부하 예상' : assessment.level === 'warn' ? '업무량 주의' : assessment.level === 'ok' ? '등록 가능' : '계산 필요'));
+    assessmentBox.append(el('span', '', assessment.level === 'unknown' ? '예정일과 예상 작업일을 입력하면 계산합니다.' : `최대 주간 ${assessment.weeklyLoad}% · 다음 가능일 ${fmtDate(assessment.nextDate)}`));
+    assessmentBox.append(el('p', '', assessment.label));
+    confirmInput.checked = false; confirmLabel.hidden = assessment.level !== 'danger';
+  };
+  due.input.onchange = refreshAssessment; estimate.select.onchange = refreshAssessment; refreshAssessment();
+  const actions = el('div', 'form-actions'); actions.append(button('취소', 'ghost', close), button('개인 업무 등록', 'primary'));
+  form.append(title.wrap, due.wrap, estimate.wrap, assessmentBox, confirmLabel, actions);
+  form.onsubmit = async event => {
+    event.preventDefault();
+    try {
+      if(!title.input.value.trim()) throw new Error('업무명을 입력해주세요.');
+      if(assessment?.level === 'danger' && !confirmInput.checked) throw new Error('과부하 경고를 확인해주세요.');
+      await saveTask({
+        title: title.input.value, departmentId: currentProfile?.departmentId, assigneeId: currentUser?.uid,
+        projectId: null, platform: null, milestoneId: null, dependsOn: [], status: 'todo', progress: 0,
+        estimatedDays: Number(estimate.select.value), startDate: due.input.value, dueDate: due.input.value,
+        capacityConfirmed: confirmInput.checked
+      });
+      showToast('개인 업무를 등록했습니다.'); close();
+    } catch(error) { alert(error.message); }
+  };
+  dialog.appendChild(form);
 }
 
 function openProjectEditor(project){
