@@ -30,6 +30,22 @@ service cloud.firestore {
         'dateOverride', 'scheduleMode', 'system', 'taskGroup', 'buildVersion',
         'completedAt', 'archivedAt', 'updatedAt', 'updatedBy'];
     }
+    // 팀원은 본인이 주 담당자인 업무를 한 명의 활성 구성원에게 이관할 수 있습니다.
+    // 업무 내용·기간·프로젝트는 함께 바꿀 수 없으며, 이관 이력에 필요한 필드만 허용합니다.
+    function memberCanHandover() {
+      return resource.data.assigneeId == request.auth.uid
+        && request.resource.data.assigneeId != null
+        && request.resource.data.assigneeId != request.auth.uid
+        && request.resource.data.assigneeIds.size() == 1
+        && request.resource.data.assigneeIds[0] == request.resource.data.assigneeId
+        && request.resource.data.assignees.size() == 1
+        && request.resource.data.assignees[0].userId == request.resource.data.assigneeId
+        && get(/databases/$(database)/documents/users/$(request.resource.data.assigneeId)).data.active == true
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'assigneeId', 'assigneeName', 'assigneeIds', 'assignees', 'needsAssignment',
+          'previousAssigneeId', 'previousAssigneeName', 'assignmentWarning', 'updatedAt', 'updatedBy'
+        ]);
+    }
     function leadAssignmentIsWithinDepartment() {
       return (
         request.resource.data.assigneeId == null
@@ -128,7 +144,8 @@ service cloud.firestore {
                 .hasAny(['assigneeId', 'assigneeName', 'assigneeIds', 'assignees', 'needsAssignment'])
               || leadAssignmentIsWithinDepartment())) ||
         ((resource.data.assigneeId == request.auth.uid || resource.data.get('assigneeIds', []).hasAny([request.auth.uid]))
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(memberEditableTaskFields()))
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(memberEditableTaskFields())) ||
+        memberCanHandover()
       );
       allow delete: if manager();
 
@@ -156,7 +173,11 @@ service cloud.firestore {
     match /assignmentHistory/{historyId} {
       allow get, list: if approved() && (manager() || resource.data.previousAssigneeId == request.auth.uid || resource.data.nextAssigneeId == request.auth.uid);
       allow create: if approved() && (
-        manager() || (lead() && get(/databases/$(database)/documents/tasks/$(request.resource.data.taskId)).data.departmentId == self().data.departmentId)
+        manager() ||
+        (lead() && get(/databases/$(database)/documents/tasks/$(request.resource.data.taskId)).data.departmentId == self().data.departmentId) ||
+        (request.resource.data.previousAssigneeId == request.auth.uid
+          && request.resource.data.nextAssigneeId != request.auth.uid
+          && request.resource.data.keys().hasOnly(['taskId', 'projectId', 'previousAssigneeId', 'previousAssigneeName', 'nextAssigneeId', 'nextAssigneeName', 'warningLevel', 'warningMessage', 'changedBy', 'changedByName', 'changedAt']))
       );
       allow update, delete: if false;
     }
