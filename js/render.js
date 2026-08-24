@@ -28,7 +28,10 @@ function userName(uid){
 function taskAssigneeName(task){ return task?.assigneeName || userName(task?.assigneeId); }
 
 function scheduleStatus(task){
-  if(task.status === 'done') return { label: '완료', tone: 'ok' };
+  if(task.status === 'done') {
+    const completed = dateOnly(task.completedAt);
+    return { label: completed && task.dueDate && completed > dateOnly(task.dueDate) ? '완료 · 지연' : '완료', tone: 'ok' };
+  }
   if(task.status === 'blocked') return { label: '차단', tone: 'danger' };
   if(taskIsOverdue(task)) return { label: '지연', tone: 'danger' };
   const today = dateKey(new Date());
@@ -167,7 +170,11 @@ function renderProjects(main){
   copy.append(el('p', 'eyebrow', selectedProjectId ? 'PROJECT DETAIL' : 'PORTFOLIO'), el('h2', '', selectedProjectId ? '프로젝트 상세' : '전체 프로젝트 현황'));
   copy.append(el('p', 'sub', selectedProjectId ? '프로젝트 기준으로 모든 부서의 업무 흐름을 확인합니다.' : '진행률, 위험 신호, 마감 일정을 한눈에 확인하세요.'));
   head.appendChild(copy);
-  if(!selectedProjectId && canManageProjects()) head.appendChild(button('+ 프로젝트 추가', 'primary', () => openProjectCreator()));
+  if(!selectedProjectId && canManageProjects()) {
+    const actions = el('div', 'page-actions');
+    actions.append(button('엑셀 이관', 'tiny ghost', openImportEditor), button('+ 프로젝트 추가', 'primary', () => openProjectCreator()));
+    head.appendChild(actions);
+  }
   main.appendChild(head);
   if(selectedProjectId) {
     renderProjectDetail(main, projects.find(project => project.id === selectedProjectId));
@@ -203,7 +210,8 @@ function taskRow(task, showProject){
   body.append(el('div', 'task-meta', meta.join(' · ')));
   row.appendChild(body);
   const state = el('div', 'task-state');
-  state.append(el('span', `tag ${statusClass(task.status)}`, TASK_STATUS[task.status] || '할 일'), el('span', 'task-progress', `${task.progress}%`));
+  const schedule = scheduleStatus(task);
+  state.append(el('span', `tag ${statusClass(task.status)}`, TASK_STATUS[task.status] || '할 일'), el('span', `tag ${schedule.tone}`, schedule.label), el('span', 'task-progress', `${task.progress}%`));
   if(taskHasUnfinishedDependencies(task)) state.appendChild(el('span', 'tag warn', '선행 대기'));
   row.appendChild(state);
   if(canEditTask(task)) row.appendChild(button('수정', 'tiny ghost', () => openTaskEditor(task)));
@@ -416,7 +424,7 @@ function renderCapacity(main, list){
   assignees.forEach(assigneeId => {
     const row = document.createElement('tr'); row.appendChild(el('td', '', userName(assigneeId)));
     let total = 0;
-    days.forEach(day => { const load = list.filter(task => task.assigneeId === assigneeId).reduce((sum, task) => sum + taskDailyLoad(task, day), 0); total += load; const cell = el('td', load > 1 ? 'capacity-over' : '', `${load.toFixed(1)}일`); row.appendChild(cell); });
+    days.forEach(day => { const load = list.filter(task => task.assigneeId === assigneeId).reduce((sum, task) => sum + taskDailyLoad(task, day, assigneeId), 0); total += load; const cell = el('td', load > 1 ? 'capacity-over' : '', `${load.toFixed(1)}일`); row.appendChild(cell); });
     row.appendChild(el('td', total > 5 ? 'capacity-over' : '', `${total.toFixed(1)}일`)); tbody.appendChild(row);
   });
   table.appendChild(tbody); tableWrap.appendChild(table); main.appendChild(tableWrap);
@@ -725,6 +733,100 @@ function openProjectCreator(){
     }
   };
   dialog.appendChild(form);
+}
+
+function importHeaderKey(value){ return String(value || '').replace(/\s|\n|\r|\(|\)|\[|\]|_|\-/g, '').toLowerCase(); }
+function importColumn(headers, aliases){
+  const normalized = headers.map(importHeaderKey);
+  for(const alias of aliases) { const index = normalized.indexOf(importHeaderKey(alias)); if(index >= 0) return index; }
+  return -1;
+}
+function importDate(value){
+  if(!value) return '';
+  if(value instanceof Date && !Number.isNaN(value.getTime())) return dateKey(value);
+  if(typeof value === 'number' && window.XLSX?.SSF) {
+    const parsed = XLSX.SSF.parse_date_code(value); if(parsed) return `${parsed.y}-${String(parsed.m).padStart(2, '0')}-${String(parsed.d).padStart(2, '0')}`;
+  }
+  const text = String(value).trim().replace(/\./g, '-').replace(/\//g, '-');
+  const match = text.match(/(\d{2,4})-(\d{1,2})-(\d{1,2})/);
+  if(!match) return '';
+  const year = match[1].length === 2 ? 2000 + Number(match[1]) : Number(match[1]);
+  return `${year}-${String(match[2]).padStart(2, '0')}-${String(match[3]).padStart(2, '0')}`;
+}
+function previewImportedSheet(sheet, sourceName, sheetName){
+  const matrix = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '', raw: true });
+  const headerIndex = matrix.findIndex(row => row.filter(Boolean).length >= 3 && row.some(cell => /프로젝트|업무|내용|작업|시작일|마감일|작업자|담당자/.test(String(cell))));
+  if(headerIndex < 0) throw new Error('업무 헤더 행을 찾지 못했습니다. 프로젝트·업무·시작일 등의 열이 있는 시트를 선택해주세요.');
+  const headers = matrix[headerIndex];
+  const columns = {
+    project: importColumn(headers, ['프로젝트 코드', '프로젝트', '프로젝트명']), title: importColumn(headers, ['업무명', '업무', '내용', '작업 내용', '세부 업무']),
+    start: importColumn(headers, ['시작일', '시작']), due: importColumn(headers, ['마감일', '종료일', '종료']), estimate: importColumn(headers, ['워킹데이', '작업일', '예상 작업일', 'workday']),
+    assignee: importColumn(headers, ['담당자', '작업자', '담당']), platform: importColumn(headers, ['플랫폼']), department: importColumn(headers, ['직군', '부서', '분류']),
+    status: importColumn(headers, ['상태', '진행 상태', '완료']), system: importColumn(headers, ['시스템', '화면', '영역']), buildVersion: importColumn(headers, ['빌드 버전', '버전']), taskGroup: importColumn(headers, ['업무 묶음', '분류', '단계'])
+  };
+  const rows = matrix.slice(headerIndex + 1).map((cells, index) => {
+    const value = key => columns[key] >= 0 ? cells[columns[key]] : '';
+    const project = String(value('project') || '').trim(); const title = String(value('title') || '').trim();
+    const startDate = importDate(value('start')); const dueDate = importDate(value('due'));
+    const estimateRaw = String(value('estimate') || '').replace(/[^0-9.]/g, '');
+    const estimatedDays = Number(estimateRaw || 0);
+    const errors = [];
+    if(!project) errors.push('프로젝트 없음');
+    if(!title) errors.push('업무명 없음');
+    if(startDate && dueDate && dueDate < startDate) errors.push('마감일이 시작일보다 빠름');
+    return {
+      sourceRow: headerIndex + index + 2, projectCode: project.match(/PC\s*\d+/i)?.[0]?.replace(/\s/g, '').toUpperCase() || project, projectName: project,
+      title, startDate, dueDate, estimatedDays: estimatedDays || 1, assignee: String(value('assignee') || '').trim(),
+      platform: importedPlatform(value('platform')), departmentId: importedDepartment(value('department')), status: importedTaskStatus(value('status')),
+      system: String(value('system') || '').trim(), buildVersion: String(value('buildVersion') || '').trim(), taskGroup: String(value('taskGroup') || '').trim(), valid: !errors.length, errors
+    };
+  }).filter(row => row.projectCode || row.title);
+  importPreview = { sourceName, sheetName, headers, columns, rows };
+  return importPreview;
+}
+
+function openImportEditor(){
+  const { dialog, close } = openDialog('엑셀 업무 이관');
+  dialog.classList.add('import-dialog');
+  dialog.append(el('p', 'sub', '파일을 분석한 뒤 오류 행을 먼저 확인합니다. 실제 저장은 미리보기를 확인한 뒤에만 실행됩니다.'));
+  const input = document.createElement('input'); input.type = 'file'; input.accept = '.xlsx,.xls,.csv';
+  const fileField = el('label', 'file-field'); fileField.append(el('span', '', '엑셀 또는 CSV 파일'), input);
+  const sheetPicker = selectField('시트 선택', []); sheetPicker.wrap.hidden = true;
+  const previewBox = el('div', 'import-preview');
+  const analyze = button('파일 분석', 'primary'); analyze.type = 'button'; analyze.disabled = true;
+  const importButton = button('이관 실행', 'primary'); importButton.type = 'button'; importButton.hidden = true;
+  const error = el('p', 'form-error'); error.hidden = true;
+  let workbook = null;
+  const renderPreview = () => {
+    error.hidden = true; previewBox.innerHTML = '';
+    const preview = previewImportedSheet(workbook.Sheets[sheetPicker.select.value], input.files[0].name, sheetPicker.select.value);
+    const valid = preview.rows.filter(row => row.valid); const invalid = preview.rows.filter(row => !row.valid);
+    previewBox.append(el('strong', '', `검증 결과 · 이관 가능 ${valid.length}행 / 확인 필요 ${invalid.length}행`));
+    previewBox.append(el('p', 'foot-note', `자동 인식 열: 프로젝트 ${preview.columns.project >= 0 ? '✓' : '–'} · 업무 ${preview.columns.title >= 0 ? '✓' : '–'} · 시작일 ${preview.columns.start >= 0 ? '✓' : '–'} · 마감일 ${preview.columns.due >= 0 ? '✓' : '–'}`));
+    const table = document.createElement('table'); const head = document.createElement('thead'); const hr = document.createElement('tr'); ['원본 행', '프로젝트', '업무', '기간', '담당자', '결과'].forEach(label => hr.appendChild(el('th', '', label))); head.appendChild(hr); table.appendChild(head);
+    const body = document.createElement('tbody'); preview.rows.slice(0, 20).forEach(row => { const tr = document.createElement('tr'); tr.append(el('td', '', String(row.sourceRow)), el('td', '', row.projectCode), el('td', '', row.title), el('td', '', `${fmtDate(row.startDate)} ~ ${fmtDate(row.dueDate)}`), el('td', '', row.assignee || '미배정'), el('td', row.valid ? '' : 'capacity-over', row.valid ? '이관 가능' : row.errors.join(', '))); body.appendChild(tr); }); table.appendChild(body); const wrap = el('div', 'table-wrap'); wrap.appendChild(table); previewBox.appendChild(wrap);
+    if(preview.rows.length > 20) previewBox.append(el('p', 'foot-note', `처음 20행만 표시했습니다. 총 ${preview.rows.length}행을 검증했습니다.`));
+    importButton.hidden = valid.length === 0;
+  };
+  input.onchange = async () => {
+    analyze.disabled = true; sheetPicker.wrap.hidden = true; previewBox.innerHTML = ''; importButton.hidden = true;
+    try {
+      if(!input.files?.[0]) return;
+      const data = await input.files[0].arrayBuffer(); workbook = XLSX.read(data, { type: 'array', cellDates: true });
+      sheetPicker.select.innerHTML = ''; workbook.SheetNames.forEach(name => sheetPicker.select.add(new Option(name, name)));
+      sheetPicker.wrap.hidden = false; analyze.disabled = false;
+    } catch(cause) { error.textContent = `파일을 읽지 못했습니다. ${cause.message || ''}`; error.hidden = false; }
+  };
+  analyze.onclick = () => { try { renderPreview(); } catch(cause) { error.textContent = cause.message; error.hidden = false; } };
+  sheetPicker.select.onchange = () => { previewBox.innerHTML = ''; importButton.hidden = true; };
+  importButton.onclick = async () => {
+    if(!importPreview) return;
+    importButton.disabled = true; importButton.textContent = '이관 중…';
+    try { const result = await importTasksFromPreview(importPreview.rows, importPreview.sourceName); showToast(`${result.imported}개 업무를 이관했습니다. 제외 ${result.excluded}행`); close(); }
+    catch(cause) { error.textContent = `이관하지 못했습니다. ${cause.message || ''}`; error.hidden = false; }
+    finally { importButton.disabled = false; importButton.textContent = '이관 실행'; }
+  };
+  dialog.append(fileField, sheetPicker.wrap, analyze, error, previewBox, importButton);
 }
 
 function openAssignmentEditor(task){
