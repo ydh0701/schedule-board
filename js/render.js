@@ -1,3 +1,6 @@
+Warning: truncated output (original token count: 20886)
+Total output lines: 1143
+
 /* render.js — 로그인, 프로젝트 일정, 실무 일정 화면 */
 
 function el(tag, className, text){
@@ -549,68 +552,7 @@ function renderPeople(main){
     const assessment = assignmentAssessment(user.id, sample);
     const card = el('article', `person-row ${assessment.level}`);
     const identity = el('div', 'person-identity'); identity.append(el('strong', '', user.name || user.email), el('span', 'foot-note', `${departmentName(user.departmentId)} · ${userRoleLabel(user)}`));
-    const workload = el('div', 'person-workload'); workload.append(el('span', `tag ${assessment.level}`, assessment.weeklyLoad > 100 ? '과부하' : assessment.weeklyLoad >= 80 ? '주의' : '여유'), el('strong', '', `${assessment.weeklyLoad}%`), el('span', 'foot-note', `다음 가능일 ${fmtDate(assessment.nextDate)}`));
-    card.append(identity, personProjectBadges(user.id), workload); list.appendChild(card);
-  });
-  if(!scopeUsers.length) main.appendChild(el('div', 'empty', '표시할 활성 인력이 없습니다.'));
-  else main.appendChild(list);
-}
-
-function adminAccessPanel(){
-  const panel = el('section', 'panel admin-access-panel');
-  const title = el('div', 'section-title-row'); title.append(el('h2', '', '사용자 및 권한 관리'));
-  const managedUsers = visibleUsers.filter(user => isAdmin() || user.departmentId === currentProfile.departmentId);
-  const active = managedUsers.filter(user => user.active);
-  const inactive = managedUsers.filter(user => !user.active);
-  title.appendChild(el('span', 'foot-note', `${isAdmin() ? `승인 대기 ${accessRequests.length}명 · ` : ''}현재 사용자 ${active.length}명`));
-  panel.appendChild(title);
-  if(isAdmin() && accessRequests.length) {
-    panel.append(el('h3', 'small-heading', '승인 대기'));
-    accessRequests.forEach(request => {
-      const row = el('div', 'admin-user-row');
-      row.append(el('div', '', request.name || request.email || '이름 미지정'));
-      row.append(el('span', 'foot-note', request.email || '이메일 없음'));
-      row.appendChild(button('승인 및 배정', 'tiny primary', () => openApprovalEditor(request)));
-      panel.appendChild(row);
-    });
-  }
-  panel.append(el('h3', 'small-heading', '현재 사용자'));
-  active.forEach(user => {
-    const row = el('div', 'admin-user-row');
-    row.append(el('div', '', user.name || user.email));
-    row.append(el('span', 'foot-note', `${user.email || ''} · ${userRoleLabel(user)}${user.departmentId ? ' · ' + departmentName(user.departmentId) : ''}`));
-    if(isAdmin()) row.appendChild(button('권한 수정', 'tiny ghost', () => openUserRoleEditor(user)));
-    if(canManageOffboarding(user)) row.appendChild(button('퇴사 처리', 'tiny danger-button', () => openOffboardingEditor(user)));
-    panel.appendChild(row);
-  });
-  if(inactive.length) {
-    panel.append(el('h3', 'small-heading', '비활성 계정'));
-    inactive.forEach(user => panel.append(el('p', 'foot-note', `${user.name || user.email} · 과거 기록 보존`)));
-  }
-  return panel;
-}
-
-function openAdminManager(){
-  const { dialog } = openDialog('사용자 및 권한 관리');
-  const panel = adminAccessPanel();
-  panel.classList.add('admin-manager-panel');
-  dialog.appendChild(panel);
-}
-
-function renderAdmin(main){
-  const heading = el('section', 'panel page-heading'); const copy = el('div', 'page-copy');
-  copy.append(el('p', 'eyebrow', 'SYSTEM ADMINISTRATION'), el('h2', '', '사용자 관리'), el('p', 'sub', '계정 승인, 업무 역할, 팀과 직군, 퇴사 업무 재배정을 관리합니다.'));
-  heading.appendChild(copy); main.appendChild(heading);
-  main.appendChild(adminAccessPanel());
-}
-
-function openOffboardingEditor(user){
-  const { overlay, dialog } = openDialog(`${user.name || user.email} 퇴사 처리`);
-  const openTasks = unfinishedTasksForUser(user.id);
-  dialog.append(el('p', 'sub', '완료 업무는 그대로 보존됩니다. 진행 중·예정·차단 업무는 반드시 재배정, 미배정 또는 보관 중 하나로 처리해야 합니다.'));
-  const form = el('form', 'form-grid');
-  const decisions = [];
-  if(!openTasks.length) form.append(el('p', 'sub', '처리할 미완료 업무가 없습니다. 계정 로그인과 새 업무 배정만 중지합니다.'));
+    const workload = el('div', 'person-workload'); workload.append(el('span', `tag ${assessment.level}`, assessment.weeklyLoad > 100 ? '과부하' : assessm…886 tokens truncated…다. 계정 로그인과 새 업무 배정만 중지합니다.'));
   openTasks.forEach(task => {
     const card = el('section', 'handover-task');
     card.append(el('strong', '', task.title));
@@ -816,17 +758,21 @@ function importDate(value){
   const year = match[1].length === 2 ? 2000 + Number(match[1]) : Number(match[1]);
   return `${year}-${String(match[2]).padStart(2, '0')}-${String(match[3]).padStart(2, '0')}`;
 }
-function previewImportedSheet(sheet, sourceName, sheetName){
+function importSheetHeader(sheet){
   const matrix = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '', raw: true });
   const headerIndex = matrix.findIndex(row => row.filter(Boolean).length >= 3 && row.some(cell => /프로젝트|업무|내용|작업|시작일|마감일|작업자|담당자/.test(String(cell))));
   if(headerIndex < 0) throw new Error('업무 헤더 행을 찾지 못했습니다. 프로젝트·업무·시작일 등의 열이 있는 시트를 선택해주세요.');
-  const headers = matrix[headerIndex];
-  const columns = {
+  return { matrix, headerIndex, headers: matrix[headerIndex] };
+}
+function previewImportedSheet(sheet, sourceName, sheetName, overrides = {}){
+  const { matrix, headerIndex, headers } = importSheetHeader(sheet);
+  const detectedColumns = {
     project: importColumn(headers, ['프로젝트 코드', '프로젝트', '프로젝트명']), title: importColumn(headers, ['업무명', '업무', '내용', '작업 내용', '세부 업무']),
     start: importColumn(headers, ['시작일', '시작']), due: importColumn(headers, ['마감일', '종료일', '종료']), estimate: importColumn(headers, ['워킹데이', '작업일', '예상 작업일', 'workday']),
     assignee: importColumn(headers, ['담당자', '작업자', '담당']), platform: importColumn(headers, ['플랫폼']), department: importColumn(headers, ['직군', '부서', '분류']),
     status: importColumn(headers, ['상태', '진행 상태', '완료']), system: importColumn(headers, ['시스템', '화면', '영역']), buildVersion: importColumn(headers, ['빌드 버전', '버전']), taskGroup: importColumn(headers, ['업무 묶음', '분류', '단계'])
   };
+  const columns = { ...detectedColumns, ...Object.fromEntries(Object.entries(overrides).filter(([, value]) => Number.isInteger(value) && value >= 0)) };
   const rows = matrix.slice(headerIndex + 1).map((cells, index) => {
     const value = key => columns[key] >= 0 ? cells[columns[key]] : '';
     const project = String(value('project') || '').trim(); const title = String(value('title') || '').trim();
@@ -855,14 +801,35 @@ function openImportEditor(){
   const input = document.createElement('input'); input.type = 'file'; input.accept = '.xlsx,.xls,.csv';
   const fileField = el('label', 'file-field'); fileField.append(el('span', '', '엑셀 또는 CSV 파일'), input);
   const sheetPicker = selectField('시트 선택', []); sheetPicker.wrap.hidden = true;
+  const mappingBox = el('section', 'import-mapping'); mappingBox.hidden = true;
   const previewBox = el('div', 'import-preview');
   const analyze = button('파일 분석', 'primary'); analyze.type = 'button'; analyze.disabled = true;
   const importButton = button('이관 실행', 'primary'); importButton.type = 'button'; importButton.hidden = true;
   const error = el('p', 'form-error'); error.hidden = true;
   let workbook = null;
+  let mappingOverrides = {};
+  const renderMapping = () => {
+    mappingBox.innerHTML = ''; mappingOverrides = {};
+    const { headers } = importSheetHeader(workbook.Sheets[sheetPicker.select.value]);
+    const fields = [
+      ['project', '프로젝트', ['프로젝트 코드', '프로젝트', '프로젝트명']], ['title', '업무명', ['업무명', '업무', '내용', '작업 내용', '세부 업무']],
+      ['start', '시작일', ['시작일', '시작']], ['due', '마감일', ['마감일', '종료일', '종료']], ['estimate', '예상 워킹데이', ['워킹데이', '작업일', '예상 작업일']],
+      ['assignee', '담당자', ['담당자', '작업자', '담당']], ['platform', '플랫폼', ['플랫폼']], ['department', '직군', ['직군', '부서', '분류']], ['status', '상태', ['상태', '진행 상태', '완료']],
+      ['system', '시스템/화면', ['시스템', '화면', '영역']], ['buildVersion', '빌드 버전', ['빌드 버전', '버전']], ['taskGroup', '업무 묶음', ['업무 묶음', '분류', '단계']]
+    ];
+    mappingBox.append(el('strong', '', '열 매핑'), el('p', 'foot-note', '자동 인식 결과가 맞지 않으면 원본 열을 직접 바꾸세요. 프로젝트와 업무명은 필수입니다.'));
+    const grid = el('div', 'mapping-grid');
+    fields.forEach(([key, label, aliases]) => {
+      const detected = importColumn(headers, aliases); const field = selectField(label, [['-1', '연결하지 않음'], ...headers.map((header, index) => [String(index), `${String(header || '(빈 열)')} (${index + 1}열)`])]);
+      field.select.value = String(detected); field.select.onchange = () => { const value = Number(field.select.value); if(value >= 0) mappingOverrides[key] = value; else delete mappingOverrides[key]; previewBox.innerHTML = ''; importButton.hidden = true; };
+      if(detected >= 0) mappingOverrides[key] = detected;
+      grid.appendChild(field.wrap);
+    });
+    mappingBox.appendChild(grid); mappingBox.hidden = false;
+  };
   const renderPreview = () => {
     error.hidden = true; previewBox.innerHTML = '';
-    const preview = previewImportedSheet(workbook.Sheets[sheetPicker.select.value], input.files[0].name, sheetPicker.select.value);
+    const preview = previewImportedSheet(workbook.Sheets[sheetPicker.select.value], input.files[0].name, sheetPicker.select.value, mappingOverrides);
     const valid = preview.rows.filter(row => row.valid); const invalid = preview.rows.filter(row => !row.valid);
     previewBox.append(el('strong', '', `검증 결과 · 이관 가능 ${valid.length}행 / 확인 필요 ${invalid.length}행`));
     previewBox.append(el('p', 'foot-note', `자동 인식 열: 프로젝트 ${preview.columns.project >= 0 ? '✓' : '–'} · 업무 ${preview.columns.title >= 0 ? '✓' : '–'} · 시작일 ${preview.columns.start >= 0 ? '✓' : '–'} · 마감일 ${preview.columns.due >= 0 ? '✓' : '–'}`));
@@ -872,16 +839,16 @@ function openImportEditor(){
     importButton.hidden = valid.length === 0;
   };
   input.onchange = async () => {
-    analyze.disabled = true; sheetPicker.wrap.hidden = true; previewBox.innerHTML = ''; importButton.hidden = true;
+    analyze.disabled = true; sheetPicker.wrap.hidden = true; mappingBox.hidden = true; previewBox.innerHTML = ''; importButton.hidden = true;
     try {
       if(!input.files?.[0]) return;
       const data = await input.files[0].arrayBuffer(); workbook = XLSX.read(data, { type: 'array', cellDates: true });
       sheetPicker.select.innerHTML = ''; workbook.SheetNames.forEach(name => sheetPicker.select.add(new Option(name, name)));
-      sheetPicker.wrap.hidden = false; analyze.disabled = false;
+      sheetPicker.wrap.hidden = false; renderMapping(); analyze.disabled = false;
     } catch(cause) { error.textContent = `파일을 읽지 못했습니다. ${cause.message || ''}`; error.hidden = false; }
   };
   analyze.onclick = () => { try { renderPreview(); } catch(cause) { error.textContent = cause.message; error.hidden = false; } };
-  sheetPicker.select.onchange = () => { previewBox.innerHTML = ''; importButton.hidden = true; };
+  sheetPicker.select.onchange = () => { previewBox.innerHTML = ''; importButton.hidden = true; try { renderMapping(); } catch(cause) { error.textContent = cause.message; error.hidden = false; } };
   importButton.onclick = async () => {
     if(!importPreview) return;
     importButton.disabled = true; importButton.textContent = '이관 중…';
@@ -889,7 +856,7 @@ function openImportEditor(){
     catch(cause) { error.textContent = `이관하지 못했습니다. ${cause.message || ''}`; error.hidden = false; }
     finally { importButton.disabled = false; importButton.textContent = '이관 실행'; }
   };
-  dialog.append(fileField, sheetPicker.wrap, analyze, error, previewBox, importButton);
+  dialog.append(fileField, sheetPicker.wrap, mappingBox, analyze, error, previewBox, importButton);
 }
 
 function openAssignmentEditor(task){
@@ -1025,6 +992,27 @@ function openMilestoneEditor(milestone, projectId){
   const due = inputField('목표일', '', 'date'); due.input.value = dateOnly(milestone?.dueDate);
   const status = selectField('상태', Object.entries(TASK_STATUS)); status.select.value = milestone?.status || 'todo';
   form.append(title.wrap, version.wrap, due.wrap, status.wrap);
+  const impact = el('section', 'milestone-impact'); impact.hidden = true;
+  const renderImpact = () => {
+    const nextDate = due.input.value;
+    const currentDate = dateOnly(milestone?.dueDate);
+    const anchorKey = milestone?.anchorKey;
+    if(!editing || !anchorKey || !nextDate || nextDate === currentDate) { impact.hidden = true; impact.innerHTML = ''; return; }
+    const linked = tasksForProject(projectId).filter(task => task.generated && task.scheduleRule?.anchorKey === anchorKey && !task.dateOverride);
+    const manual = tasksForProject(projectId).filter(task => task.scheduleRule?.anchorKey === anchorKey && task.dateOverride);
+    impact.hidden = false; impact.innerHTML = '';
+    impact.append(el('strong', '', `연결된 업무 ${linked.length}건의 일정이 다시 계산됩니다.`));
+    impact.append(el('p', '', manual.length ? `수동으로 날짜를 고정한 업무 ${manual.length}건은 변경하지 않습니다.` : '수동으로 날짜를 고정한 업무는 없습니다.'));
+    const list = el('div', 'milestone-impact-list');
+    linked.slice(0, 5).forEach(task => {
+      const next = scheduledDates(nextDate, task.scheduleRule.dueOffset, task.scheduleRule.estimatedDays || task.estimatedDays);
+      list.append(el('p', '', `${task.title}  ·  ${dateOnly(task.startDate)}~${dateOnly(task.dueDate)} → ${next.startDate}~${next.dueDate}`));
+    });
+    if(linked.length > 5) list.append(el('p', '', `외 ${linked.length - 5}건`));
+    impact.append(list);
+  };
+  due.input.onchange = renderImpact;
+  form.appendChild(impact);
   const actions = el('div', 'form-actions'); actions.appendChild(button('저장', 'primary'));
   if(editing) actions.appendChild(button('보관', 'danger-button', async () => { if(confirm('이 마일스톤을 보관할까요?')) { await archiveMilestone(milestone.id); overlay.remove(); } }));
   form.appendChild(actions);
