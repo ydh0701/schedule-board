@@ -219,15 +219,22 @@ function userWeeklyCapacity(userId){
   const user = userId === currentUser?.uid ? currentProfile : visibleUsers.find(item => item.id === userId);
   return Math.max(1, Number(user?.weeklyCapacity || 5));
 }
+function userDailyCapacity(userId){ return userWeeklyCapacity(userId) / 5; }
+function scheduleWeekKey(date){
+  const monday = new Date(date);
+  monday.setHours(0, 0, 0, 0);
+  monday.setDate(monday.getDate() - ((monday.getDay() + 6) % 7));
+  return dateKey(monday);
+}
 function taskLoadForUserOnDate(userId, date, extraTask = null){
-  const list = activeTasks().filter(task => task.assigneeId === userId && task.status !== 'done' && task.id !== extraTask?.id);
+  const list = activeTasks().filter(task => assignmentShareFor(task, userId) > 0 && task.status !== 'done' && task.id !== extraTask?.id);
   if(extraTask) list.push(extraTask);
   return list.reduce((sum, task) => sum + taskDailyLoad(task, date, userId), 0);
 }
 function nextAvailableDate(userId, extraTask = null){
   const cursor = new Date(); cursor.setHours(0, 0, 0, 0);
   for(let index = 0; index < 90; index++) {
-    if(isWeekday(cursor) && taskLoadForUserOnDate(userId, cursor, extraTask) < 0.8) return dateKey(cursor);
+    if(isWeekday(cursor) && taskLoadForUserOnDate(userId, cursor, extraTask) < userDailyCapacity(userId) * .8) return dateKey(cursor);
     cursor.setDate(cursor.getDate() + 1);
   }
   return null;
@@ -235,20 +242,22 @@ function nextAvailableDate(userId, extraTask = null){
 function assignmentAssessment(userId, task){
   if(!userId || !task) return { level: 'unknown', label: '담당자를 선택해주세요.', weeklyLoad: 0, nextDate: null, overflowDays: 0 };
   const candidate = { ...task, assigneeId: userId, assignees: [{ userId, share: 1, role: 'primary' }], status: task.status || 'todo' };
+  const missingDates = !candidate.startDate || !candidate.dueDate || !candidate.estimatedDays;
+  if(missingDates) return { level: 'unknown', label: '기간과 예상 작업일을 입력하면 가용성을 계산할 수 있습니다.', weeklyLoad: 0, nextDate: null, overflowDays: 0 };
   const start = localDate(candidate.startDate || dateKey(new Date()));
   const end = localDate(candidate.dueDate || candidate.startDate || dateKey(new Date()));
-  let overflowDays = 0, workingDays = 0, totalLoad = 0;
+  const weeklyLoads = new Map();
+  let overflowDays = 0;
   for(let cursor = new Date(start); cursor <= end; cursor.setDate(cursor.getDate() + 1)) {
     if(!isWeekday(cursor)) continue;
-    workingDays++;
     const load = taskLoadForUserOnDate(userId, cursor, candidate);
-    totalLoad += load;
-    if(load > 1) overflowDays++;
+    const week = scheduleWeekKey(cursor);
+    weeklyLoads.set(week, (weeklyLoads.get(week) || 0) + load);
+    if(load > userDailyCapacity(userId)) overflowDays++;
   }
-  const weeklyLoad = Math.round((totalLoad / Math.max(1, userWeeklyCapacity(userId))) * 100);
+  const peakWeeklyLoad = Math.max(0, ...weeklyLoads.values());
+  const weeklyLoad = Math.round((peakWeeklyLoad / userWeeklyCapacity(userId)) * 100);
   const nextDate = nextAvailableDate(userId, candidate);
-  const missingDates = !candidate.startDate || !candidate.dueDate || !candidate.estimatedDays;
-  if(missingDates) return { level: 'unknown', label: '기간과 예상 작업일을 입력하면 가용성을 계산할 수 있습니다.', weeklyLoad, nextDate, overflowDays };
   if(overflowDays > 0 || weeklyLoad > 100) return { level: 'danger', label: `기존 업무와 ${overflowDays || 1}일 겹쳐 과부하가 예상됩니다.`, weeklyLoad, nextDate, overflowDays };
   if(weeklyLoad >= 80) return { level: 'warn', label: '업무량이 높은 편입니다. 마감일까지 완료 가능 여부를 확인해주세요.', weeklyLoad, nextDate, overflowDays };
   return { level: 'ok', label: '마감일 내 완료 가능한 여유가 있습니다.', weeklyLoad, nextDate, overflowDays };
@@ -483,6 +492,13 @@ async function saveTask(input){
   if(isNew && !canCreateTask(departmentId, input.assigneeId)) throw new Error('다른 사람의 업무는 팀장, PM 또는 관리자만 등록할 수 있습니다.');
 
   const data = normalizeTask({ ...previous, ...input, title: input.title.trim(), departmentId, assigneeName: personName(input.assigneeId), updatedBy: currentUser.uid });
+  if(isNew) {
+    const assessment = assignmentAssessment(data.assigneeId, data);
+    if(assessment.level === 'danger' && !input.capacityConfirmed) {
+      const error = new Error('선택한 담당자는 과부하 상태입니다. 경고를 확인한 뒤 다시 저장해주세요.');
+      error.code = 'OVER_CAPACITY'; error.assessment = assessment; throw error;
+    }
+  }
   if(data.status === 'done' && previous?.status !== 'done') data.completedAt = firebase.firestore.FieldValue.serverTimestamp();
   if(data.status !== 'done') data.completedAt = null;
   if(data.milestoneId) {
