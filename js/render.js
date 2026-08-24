@@ -442,6 +442,7 @@ function workTasks(){ return activeTasks().filter(task => taskAssignedToUser(tas
 
 function renderWorkDashboard(main, allTasks){
   const today = new Date(); today.setHours(0, 0, 0, 0);
+  const capacityReady = isWorkDataReady();
   const monday = mondayOf(today); const sunday = new Date(monday); sunday.setDate(sunday.getDate() + 6);
   const todayTasks = allTasks.filter(task => task.status !== 'done' && taskCoversDate(task, today));
   const workingDates = Array.from({ length: 7 }, (_, index) => { const date = new Date(monday); date.setDate(date.getDate() + index); return date; }).filter(isWeekday);
@@ -449,7 +450,7 @@ function renderWorkDashboard(main, allTasks){
   const weeklyCapacityDays = workingDates.length * userDailyCapacity(currentUser.uid);
   const weeklyLoad = weeklyCapacityDays ? Math.round((weeklyLoadDays / weeklyCapacityDays) * 100) : 0;
   const freeHours = Math.max(0, Math.round((weeklyCapacityDays - weeklyLoadDays) * 8));
-  const nextFree = nextAvailableDate(currentUser.uid);
+  const nextFree = capacityReady ? nextAvailableDate(currentUser.uid) : null;
   const summary = el('section', 'work-summary-bar');
   const summaryItem = (label, value, tone = '') => {
     const item = el('div', `work-summary-item ${tone}`);
@@ -458,9 +459,9 @@ function renderWorkDashboard(main, allTasks){
   };
   summary.append(
     summaryItem('오늘 해야 할 일', `${todayTasks.length}건`),
-    summaryItem('이번 주 업무량', `${weeklyLoad}%`, weeklyLoad > 100 ? 'danger' : weeklyLoad >= 80 ? 'warn' : ''),
-    summaryItem('이번 주 남은 여유', `${freeHours}시간`, freeHours === 0 ? 'warn' : ''),
-    summaryItem('다음 여유', nextFree ? fmtDate(nextFree) : '확인 필요')
+    summaryItem('이번 주 업무량', capacityReady ? `${weeklyLoad}%` : '계산 중', capacityReady && (weeklyLoad > 100 ? 'danger' : weeklyLoad >= 80 ? 'warn' : '')),
+    summaryItem('이번 주 남은 여유', capacityReady ? `${freeHours}시간` : '계산 중', capacityReady && freeHours === 0 ? 'warn' : ''),
+    summaryItem('다음 여유', capacityReady ? (nextFree ? fmtDate(nextFree) : '확인 필요') : '계산 중')
   );
   main.appendChild(summary);
   const grid = el('div', 'work-dashboard-grid');
