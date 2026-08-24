@@ -1,5 +1,5 @@
-Warning: truncated output (original token count: 21221)
-Total output lines: 1163
+Warning: truncated output (original token count: 21636)
+Total output lines: 1181
 
 /* render.js — 로그인, 프로젝트 일정, 실무 일정 화면 */
 
@@ -561,29 +561,7 @@ function renderTeam(main){
 function renderPeople(main){
   const scopeUsers = activeUsers().filter(user => isPM() || isAdmin() || user.departmentId === currentProfile?.departmentId);
   const heading = el('section', 'panel page-heading'); const copy = el('div', 'page-copy');
-  copy.append(el('p', 'eyebrow', 'WORKFORCE'), el('h2', '', '인력 현황'), el('p', 'sub', '등록된 업무를 …1221 tokens truncated…다. 계정 로그인과 새 업무 배정만 중지합니다.'));
-  openTasks.forEach(task => {
-    const card = el('section', 'handover-task');
-    card.append(el('strong', '', task.title));
-    const project = projects.find(item => item.id === task.projectId);
-    card.append(el('p', 'foot-note', `${project?.code || '공통 업무'}${task.platform ? ` · ${platformName(task.platform)}` : ''} · ${TASK_STATUS[task.status] || '할 일'}`));
-    const candidates = activeUsers().filter(candidate => candidate.id !== user.id && (isAdmin() || candidate.departmentId === user.departmentId) && candidate.departmentId === task.departmentId);
-    const action = selectField('처리 방법', [
-      ['reassign', '다른 담당자에게 재배정'], ['unassign', '미배정으로 남기기'], ['archive', '업무 보관']
-    ]);
-    const replacement = selectField('새 담당자', [['', '담당자 선택'], ...candidates.map(candidate => [candidate.id, candidate.name || candidate.email])]);
-    if(!candidates.length) action.select.value = 'unassign';
-    const sync = () => { replacement.wrap.hidden = action.select.value !== 'reassign'; };
-    action.select.onchange = sync; sync();
-    card.append(action.wrap, replacement.wrap); form.appendChild(card);
-    decisions.push({ task, action, replacement });
-  });
-  const error = el('p', 'form-error'); error.hidden = true;
-  const submit = button('업무 처리 후 퇴사 확정', 'danger-button'); submit.type = 'submit';
-  const actions = el('div', 'form-actions'); actions.append(submit); form.append(error, actions);
-  form.onsubmit = async event => {
-    event.preventDefault(); error.hidden = true;
-    const input = decisions.map(item => ({ taskId: item.task.id, action: item.action.select.value, userId: item.replacement.select.value }));
+  copy.append(el('p', 'eyebrow', 'WORKFORCE'), el('h2', '', '인력 현황'), el('p', 'sub', '등록된 업무를 …1636 tokens truncated…   const input = decisions.map(item => ({ taskId: item.task.id, action: item.action.select.value, userId: item.replacement.select.value }));
     const invalid = input.find(item => item.action === 'reassign' && !item.userId);
     if(invalid) { error.textContent = '재배정 업무의 새 담당자를 선택해주세요.'; error.hidden = false; return; }
     submit.disabled = true; submit.textContent = '퇴사 처리 중…';
@@ -936,16 +914,33 @@ function openTaskEditor(task, initial = {}){
       dependsOn.select.add(option);
     });
   };
-  project.select.onchange = refreshProjectRelations;
-  department.select.onchange = refreshProjectRelations;
+  project.select.onchange = () => { refreshProjectRelations(); refreshDependencyWarning?.(); };
+  department.select.onchange = () => { refreshProjectRelations(); refreshDependencyWarning?.(); };
   refreshProjectRelations();
   const status = selectField('상태', Object.entries(TASK_STATUS)); status.select.value = task?.status || 'todo';
   const progress = inputField('진척률 (0~100)', '', 'number'); progress.input.min = '0'; progress.input.max = '100'; progress.input.value = task?.progress ?? 0;
   const estimate = inputField('예상 작업일', '예: 2.5', 'number'); estimate.input.min = '0'; estimate.input.step = '0.5'; estimate.input.value = task?.estimatedDays ?? '';
   const start = inputField('시작일', '', 'date'); start.input.value = dateOnly(task?.startDate);
   const due = inputField('마감일', '', 'date'); due.input.value = dateOnly(task?.dueDate);
+  const dependencyWarning = el('section', 'dependency-warning'); dependencyWarning.hidden = true;
+  const dependencyConfirm = document.createElement('input'); dependencyConfirm.type = 'checkbox'; dependencyConfirm.id = `dependency-confirm-${task?.id || 'new'}`;
+  const refreshDependencyWarning = () => {
+    const selected = [...dependsOn.select.selectedOptions].map(option => tasks.find(item => item.id === option.value)).filter(Boolean);
+    const conflicted = selected.filter(item => item.dueDate && start.input.value && item.dueDate >= start.input.value && item.status !== 'done');
+    dependencyWarning.innerHTML = ''; dependencyConfirm.checked = false;
+    if(!conflicted.length) { dependencyWarning.hidden = true; return; }
+    dependencyWarning.hidden = false;
+    dependencyWarning.append(el('strong', '', '선행 업무와 일정이 겹칩니다.'));
+    dependencyWarning.append(el('p', '', conflicted.map(item => `${item.title} (${fmtDate(item.dueDate)}까지)`).join(' · ')));
+    const label = el('label', 'dependency-confirm'); label.htmlFor = dependencyConfirm.id; label.append(dependencyConfirm, document.createTextNode('일정 겹침을 확인했고, 수동 일정으로 저장합니다.'));
+    dependencyWarning.append(label);
+  };
+  dependsOn.select.onchange = refreshDependencyWarning;
+  start.input.onchange = refreshDependencyWarning;
   if(task?.generated) form.append(el('p', 'sub', '자동 생성 업무입니다. 일정 날짜를 직접 바꾸면 이후 자동 재계산 대상에서 제외됩니다.'));
   form.append(title.wrap, department.wrap, assignee.wrap, project.wrap, platform.wrap, milestone.wrap, dependsOn.wrap, status.wrap, progress.wrap, estimate.wrap, start.wrap, due.wrap);
+  form.appendChild(dependencyWarning);
+  refreshDependencyWarning();
   if(editing) {
     const assignRow = el('div', 'assignment-editor-row');
     assignRow.append(el('span', 'foot-note', `현재 담당자 · ${taskAssigneeName(task)}`), button('담당자 변경', 'tiny ghost', () => openAssignmentEditor(task)));
@@ -958,6 +953,7 @@ function openTaskEditor(task, initial = {}){
     event.preventDefault();
     try {
       if(!title.input.value.trim() || !project.select.value || !start.input.value || !estimate.input.value) throw new Error('프로젝트, 업무명, 시작일, 예상 작업일을 입력해주세요.');
+      if(!dependencyWarning.hidden && !dependencyConfirm.checked) throw new Error('선행 업무와 겹치는 일정을 확인해주세요.');
       await saveTask({ id: task?.id, title: title.input.value, departmentId: department.select.value, assigneeId: assignee.select.value, projectId: project.select.value || null, platform: platform.select.value || null, milestoneId: milestone.select.value || null, dependsOn: [...dependsOn.select.selectedOptions].map(option => option.value), status: status.select.value, progress: Number(progress.input.value), estimatedDays: Number(estimate.input.value), startDate: start.input.value || null, dueDate: due.input.value || null, dateOverride: Boolean(task?.generated && (dateOnly(task.startDate) !== start.input.value || dateOnly(task.dueDate) !== due.input.value)) });
       close();
     } catch(error) { alert(error.message); }
