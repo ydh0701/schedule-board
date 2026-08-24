@@ -430,50 +430,83 @@ function renderProjectSchedule(main, project){
 function renderWork(main){
   const heading = el('section', 'panel page-heading'); const copy = el('div', 'page-copy');
   copy.append(el('p', 'eyebrow', 'MY WORK'), el('h2', '', '내 업무'));
-  copy.append(el('p', 'sub', '프로젝트 업무와 개인 실무를 함께 확인하고, 한 줄 단위로 업무를 관리합니다.'));
+  copy.append(el('p', 'sub', '오늘 할 일부터 프로젝트별 진행 업무까지, 실제 일하는 흐름에 맞춰 확인합니다.'));
   heading.appendChild(copy);
   main.appendChild(heading);
   const actions = el('div', 'row');
   actions.append(button('+ 빠른 추가', 'primary', openQuickTaskEditor), button('상세 업무 추가', 'ghost', () => openTaskEditor(null)));
   main.appendChild(actions);
   const modes = el('nav', 'view-tabs');
-  [['list', '목록'], ['calendar', '월간 캘린더']].forEach(([key, label]) => modes.appendChild(button(label, workViewMode === key ? 'primary tiny' : 'ghost tiny', () => { workViewMode = key; rerender(); })));
+  [['list', '프로젝트별 업무'], ['calendar', '월간 캘린더']].forEach(([key, label]) => modes.appendChild(button(label, workViewMode === key ? 'primary tiny' : 'ghost tiny', () => { workViewMode = key; rerender(); })));
   main.appendChild(modes);
-  const periodTabs = el('nav', 'timeline-filters work-period-tabs');
-  [['today', '오늘'], ['week', '이번 주'], ['month', '이번 달'], ['all', '전체']].forEach(([key, label]) => periodTabs.appendChild(button(label, workPeriod === key ? 'primary tiny' : 'ghost tiny', () => { workPeriod = key; rerender(); })));
-  if(workViewMode === 'list') main.appendChild(periodTabs);
   const allMyTasks = workTasks();
-  const list = filterWorkTasksByPeriod(allMyTasks, workPeriod);
   if(workViewMode === 'calendar') { renderWorkCalendar(main, allMyTasks); return; }
-  const nearDueCount = allMyTasks.filter(task => task.dueDate && Math.round((localDate(task.dueDate) - new Date(new Date().setHours(0,0,0,0))) / 86400000) <= 3 && task.status !== 'done').length;
-  const blockedCount = allMyTasks.filter(task => task.status === 'blocked').length;
-  // 오늘은 확인·처리가 목적이므로, 큰 통계 카드보다 업무 행을 먼저 보여줍니다.
-  if(workPeriod === 'today') {
-    if(list.length) {
-      const section = el('section', 'task-list today-task-list');
-      list.sort((a, b) => String(a.dueDate || '9999').localeCompare(String(b.dueDate || '9999'))).forEach(task => section.appendChild(taskRow(task, true)));
-      main.appendChild(section);
-    } else {
-      main.appendChild(el('div', 'empty today-empty', '오늘 예정된 업무가 없습니다.'));
-    }
-    const summary = el('div', 'work-summary-inline');
-    summary.append(el('strong', '', `오늘 ${list.length}건`), el('span', '', `3일 내 마감 ${nearDueCount}건`), el('span', blockedCount ? 'danger-text' : '', blockedCount ? `차단 ${blockedCount}건` : '차단 없음'));
-    main.appendChild(summary);
-    return;
-  }
-  const workMetrics = el('div', 'metric-grid compact-metrics');
-  workMetrics.append(metric('활성 업무', list.length), metric('오늘·3일 내 마감', nearDueCount, 'warn'), metric('차단됨', blockedCount, 'danger'));
-  main.appendChild(workMetrics);
-  renderDueAlerts(main, allMyTasks);
-  if(!list.length) { main.appendChild(el('div', 'empty', '이 기간에 표시할 업무가 없습니다.')); return; }
-  const section = el('section', 'task-list');
-  list.sort((a, b) => String(a.dueDate || '9999').localeCompare(String(b.dueDate || '9999'))).forEach(task => section.appendChild(taskRow(task, true)));
-  main.appendChild(section);
+  renderProjectGroupedWork(main, allMyTasks);
 }
 
 function taskAssignedToUser(task, userId){ return task.assigneeId === userId || (task.assignees || []).some(item => item.userId === userId); }
 
 function workTasks(){ return activeTasks().filter(task => taskAssignedToUser(task, currentUser?.uid)); }
+
+function renderProjectGroupedWork(main, allTasks){
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const ongoing = allTasks.filter(task => task.status !== 'done');
+  const todayTasks = ongoing.filter(task => taskCoversDate(task, today)).sort((a, b) => String(a.dueDate || '9999').localeCompare(String(b.dueDate || '9999')));
+  const todaySection = el('section', 'work-today-section');
+  const todayHead = el('div', 'work-section-head');
+  const todayCopy = el('div', '');
+  todayCopy.append(el('h3', '', '오늘 해야 할 일'), el('p', 'foot-note', todayTasks.length ? `오늘 진행 중인 업무 ${todayTasks.length}건` : '오늘 예정된 업무가 없습니다.'));
+  todayHead.appendChild(todayCopy);
+  todaySection.appendChild(todayHead);
+  if(todayTasks.length) {
+    const list = el('div', 'task-list compact-task-list');
+    todayTasks.forEach(task => list.appendChild(taskRow(task, true)));
+    todaySection.appendChild(list);
+  }
+  main.appendChild(todaySection);
+
+  const section = el('section', 'work-projects-section');
+  const head = el('div', 'work-section-head');
+  const copy = el('div', '');
+  copy.append(el('h3', '', '프로젝트별 진행 업무'), el('p', 'foot-note', '각 프로젝트 안에서는 마감일이 빠른 업무부터 확인합니다.'));
+  const toggle = button('완료 업무 포함', 'tiny ghost');
+  head.append(copy, toggle); section.appendChild(head);
+  const groups = el('div', 'work-project-groups'); section.appendChild(groups); main.appendChild(section);
+  let includeDone = false;
+  const draw = () => {
+    groups.innerHTML = '';
+    const source = allTasks.filter(task => includeDone || task.status !== 'done');
+    const byProject = new Map();
+    source.forEach(task => {
+      const key = task.projectId || '__personal__';
+      if(!byProject.has(key)) byProject.set(key, []);
+      byProject.get(key).push(task);
+    });
+    if(!byProject.size) { groups.appendChild(el('div', 'empty', includeDone ? '표시할 업무가 없습니다.' : '진행 중인 업무가 없습니다. 완료 업무 포함을 눌러 지난 업무를 확인할 수 있습니다.')); return; }
+    [...byProject.entries()].sort(([, left], [, right]) => String(left.filter(task => task.status !== 'done').map(task => task.dueDate || '9999').sort()[0] || '9999').localeCompare(String(right.filter(task => task.status !== 'done').map(task => task.dueDate || '9999').sort()[0] || '9999'))).forEach(([projectId, tasks]) => {
+      const project = projects.find(item => item.id === projectId);
+      const projectTasks = tasks.sort((a, b) => {
+        const leftDone = a.status === 'done' ? 1 : 0; const rightDone = b.status === 'done' ? 1 : 0;
+        return leftDone - rightDone || String(a.dueDate || '9999').localeCompare(String(b.dueDate || '9999'));
+      });
+      const group = el('section', 'work-project-group');
+      const groupHead = button('', 'work-project-heading', () => {
+        if(project) { activeView = 'projects'; selectedProjectId = project.id; projectDetailTab = 'tasks'; rerender(); }
+      });
+      groupHead.type = 'button';
+      const name = project ? `${project.code || project.name}${project.name && project.code ? ` · ${project.name}` : ''}` : '개인 업무';
+      const activeCount = projectTasks.filter(task => task.status !== 'done').length;
+      groupHead.append(el('strong', '', name), el('span', '', includeDone ? `전체 ${projectTasks.length}건 · 진행 ${activeCount}건` : `진행 ${activeCount}건`));
+      if(project) groupHead.appendChild(el('span', 'work-project-open', '프로젝트 보기 →'));
+      group.appendChild(groupHead);
+      const list = el('div', 'task-list compact-task-list');
+      projectTasks.forEach(task => list.appendChild(taskRow(task, false)));
+      group.appendChild(list); groups.appendChild(group);
+    });
+  };
+  toggle.onclick = () => { includeDone = !includeDone; toggle.textContent = includeDone ? '진행 업무만 보기' : '완료 업무 포함'; toggle.className = includeDone ? 'tiny primary' : 'tiny ghost'; draw(); };
+  draw();
+}
 
 function filterWorkTasksByPeriod(list, period){
   if(period === 'all') return list;
