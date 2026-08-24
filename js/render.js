@@ -201,7 +201,7 @@ function taskRow(task, showProject){
   const body = el('div', 'task-main');
   body.append(el('strong', 'task-title', task.title));
   const meta = [];
-  if(showProject && task.projectId) meta.push(projects.find(project => project.id === task.projectId)?.code || projects.find(project => project.id === task.projectId)?.name || '프로젝트');
+  if(showProject) meta.push(task.projectId ? projectCode(task) : '개인 업무');
   if(task.platform) meta.push(platformName(task.platform));
   meta.push(departmentName(task.departmentId), taskAssigneeName(task));
   if(task.startDate || task.dueDate) meta.push(`${fmtDate(task.startDate)} ~ ${fmtDate(task.dueDate)}`);
@@ -401,7 +401,7 @@ function renderProjectSchedule(main, project){
 function renderWork(main){
   const heading = el('section', 'panel page-heading'); const copy = el('div', 'page-copy');
   copy.append(el('p', 'eyebrow', 'MY WORK'), el('h2', '', '내 업무'));
-  copy.append(el('p', 'sub', '오늘 해야 할 일과 가까운 마감을 확인하고, 한 줄 단위로 업무를 관리합니다.'));
+  copy.append(el('p', 'sub', '프로젝트 업무와 개인 실무를 함께 확인하고, 한 줄 단위로 업무를 관리합니다.'));
   heading.appendChild(copy);
   main.appendChild(heading);
   const actions = el('div', 'row');
@@ -1132,7 +1132,7 @@ function openTaskEditor(task, initial = {}){
   form.onsubmit = async event => {
     event.preventDefault();
     try {
-      if(!title.input.value.trim() || !project.select.value || !start.input.value || !estimate.input.value) throw new Error('프로젝트, 업무명, 시작일, 예상 작업일을 입력해주세요.');
+      if(!title.input.value.trim() || !start.input.value || !estimate.input.value) throw new Error('업무명, 시작일, 예상 작업일을 입력해주세요. 프로젝트 연결은 선택 사항입니다.');
       if(!dependencyWarning.hidden && !dependencyConfirm.checked) throw new Error('선행 업무와 겹치는 일정을 확인해주세요.');
       if(assignmentHasChanged() && latestAssignmentAssessments.some(item => item.assessment.level === 'danger') && !capacityConfirm.checked) throw new Error('담당자 과부하 경고를 확인해주세요.');
       await saveTask({ id: task?.id, title: title.input.value, departmentId: department.select.value, assigneeId: assignee.select.value, assignees: selectedAssignees(), projectId: project.select.value || null, platform: platform.select.value || null, milestoneId: milestone.select.value || null, dependsOn: [...dependsOn.select.selectedOptions].map(option => option.value), status: status.select.value, progress: Number(progress.input.value), estimatedDays: Number(estimate.input.value), startDate: start.input.value || null, dueDate: due.input.value || null, capacityConfirmed: capacityConfirm.checked, dateOverride: Boolean(task?.generated && (dateOnly(task.startDate) !== start.input.value || dateOnly(task.dueDate) !== due.input.value)) });
