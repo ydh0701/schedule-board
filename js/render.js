@@ -1123,7 +1123,8 @@ function openTaskEditor(task, initial = {}){
   if(task?.assigneeId && !people.some(user => user.id === task.assigneeId)) assignee.select.add(new Option(userName(task.assigneeId), task.assigneeId));
   assignee.select.value = task?.assigneeId || '';
   if(editing) assignee.select.disabled = true;
-  const canManageSupport = isAdmin() || isPM() || isLead();
+  // 공동 지원 배정은 여러 부서의 업무량과 접근 권한에 영향을 주므로 PM/관리자만 처리합니다.
+  const canManageSupport = isAdmin() || isPM();
   const supportAssignees = multiSelectField('지원 담당자 (선택)');
   const initialSupportIds = (task?.assignees || []).filter(item => item.userId !== task?.assigneeId).map(item => item.userId);
   const initialAssigneeIds = task?.assigneeIds || task?.assignees?.map(item => item.userId) || (task?.assigneeId ? [task.assigneeId] : []);
@@ -1213,7 +1214,7 @@ function openTaskEditor(task, initial = {}){
   form.append(dependencyWarning, assignmentWarning, capacityConfirmLabel);
   refreshDependencyWarning();
   refreshAssignmentWarning();
-  if(editing) {
+  if(editing && canManageTaskAssignment(task)) {
     const assignRow = el('div', 'assignment-editor-row');
     assignRow.append(el('span', 'foot-note', `현재 담당자 · ${taskAssigneeName(task)}`), button('담당자 변경', 'tiny ghost', () => openAssignmentEditor(task)));
     form.appendChild(assignRow);
