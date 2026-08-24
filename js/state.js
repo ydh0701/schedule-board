@@ -741,7 +741,7 @@ async function saveUserRole(userId, role, departmentId, adminAccess = false){
   if(!requirePermission(isAdmin(), '사용자 권한은 관리자만 변경할 수 있습니다.')) return;
   if(!['pm', 'lead', 'member'].includes(role)) throw new Error('올바른 업무 역할을 선택해주세요.');
   if(role !== 'pm' && !departmentId) throw new Error('소속 부서를 선택해주세요.');
-  if(userId === currentUser.uid && isAdmin() && !adminAccess && role !== 'pm') throw new Error('본인의 관리자 권한은 해제할 수 없습니다. 다른 관리자에게 요청해주세요.');
+  if(userId === currentUser.uid && isAdmin() && !adminAccess) throw new Error('본인의 관리자 권한은 해제할 수 없습니다. 다른 관리자에게 요청해주세요.');
   await db.collection('users').doc(userId).update({
     role, departmentId: role === 'pm' ? null : departmentId, isAdmin: Boolean(adminAccess),
     updatedAt: firebase.firestore.FieldValue.serverTimestamp(), updatedBy: currentUser.uid
