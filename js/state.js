@@ -145,8 +145,13 @@ function normalizeTask(input){
   task.generated = task.generated === true;
   task.estimatedDays = Math.max(0, Number(task.estimatedDays || 0));
   const rawAssignees = Array.isArray(task.assignees) ? task.assignees : (task.assigneeId ? [{ userId: task.assigneeId, share: 1, role: 'primary' }] : []);
-  const totalShare = rawAssignees.reduce((sum, item) => sum + Number(item.share || 0), 0);
-  task.assignees = rawAssignees.filter(item => item?.userId).map((item, index) => ({ userId: item.userId, share: totalShare ? Number(item.share || 0) / totalShare : 1 / rawAssignees.length, role: item.role || (index === 0 ? 'primary' : 'co') }));
+  const uniqueAssignees = [...new Map(rawAssignees.filter(item => item?.userId).map(item => [item.userId, item])).values()];
+  const primaryIndex = Math.max(0, uniqueAssignees.findIndex(item => item.userId === task.assigneeId || item.role === 'primary'));
+  const orderedAssignees = uniqueAssignees.length ? [uniqueAssignees[primaryIndex], ...uniqueAssignees.filter((_, index) => index !== primaryIndex)] : [];
+  const totalShare = orderedAssignees.reduce((sum, item) => sum + Number(item.share || 0), 0);
+  task.assignees = orderedAssignees.map((item, index) => ({ userId: item.userId, share: totalShare ? Number(item.share || 0) / totalShare : 1 / orderedAssignees.length, role: index === 0 ? 'primary' : 'co' }));
+  task.assigneeId = task.assignees[0]?.userId || null;
+  task.assigneeIds = task.assignees.map(item => item.userId);
   return task;
 }
 
@@ -239,9 +244,9 @@ function nextAvailableDate(userId, extraTask = null){
   }
   return null;
 }
-function assignmentAssessment(userId, task){
+function assignmentAssessment(userId, task, keepSharedAssignees = false){
   if(!userId || !task) return { level: 'unknown', label: '담당자를 선택해주세요.', weeklyLoad: 0, nextDate: null, overflowDays: 0 };
-  const candidate = { ...task, assigneeId: userId, assignees: [{ userId, share: 1, role: 'primary' }], status: task.status || 'todo' };
+  const candidate = normalizeTask({ ...task, assigneeId: keepSharedAssignees ? task.assigneeId : userId, assignees: keepSharedAssignees ? task.assignees : [{ userId, share: 1, role: 'primary' }], status: task.status || 'todo' });
   const missingDates = !candidate.startDate || !candidate.dueDate || !candidate.estimatedDays;
   if(missingDates) return { level: 'unknown', label: '기간과 예상 작업일을 입력하면 가용성을 계산할 수 있습니다.', weeklyLoad: 0, nextDate: null, overflowDays: 0 };
   const start = localDate(candidate.startDate || dateKey(new Date()));
@@ -383,9 +388,17 @@ function subscribeApprovedData(){
     subscribeCollection(db.collection('holidays'), data => { holidays = data; }, '공휴일');
     subscribeCollection(db.collection('users').where('departmentId', '==', currentProfile.departmentId), data => { visibleUsers = data; }, '팀원');
   } else {
+    let primaryTasks = [], supportTasks = [];
+    const publishOwnTasks = () => {
+      const ownTasks = [...new Map([...primaryTasks, ...supportTasks].map(task => [task.id, task])).values()];
+      subscribeProjectScopeForMember(ownTasks);
+    };
     subscribeCollection(db.collection('tasks').where('assigneeId', '==', currentUser.uid), data => {
-      subscribeProjectScopeForMember(data);
-    }, '내 업무');
+      primaryTasks = data; publishOwnTasks();
+    }, '내 주 담당 업무');
+    subscribeCollection(db.collection('tasks').where('assigneeIds', 'array-contains', currentUser.uid), data => {
+      supportTasks = data; publishOwnTasks();
+    }, '내 지원 업무');
     subscribeCollection(db.collection('holidays'), data => { holidays = data; }, '공휴일');
   }
 }
@@ -492,11 +505,14 @@ async function saveTask(input){
   if(isNew && !canCreateTask(departmentId, input.assigneeId)) throw new Error('다른 사람의 업무는 팀장, PM 또는 관리자만 등록할 수 있습니다.');
 
   const data = normalizeTask({ ...previous, ...input, title: input.title.trim(), departmentId, assigneeName: personName(input.assigneeId), updatedBy: currentUser.uid });
-  if(isNew) {
-    const assessment = assignmentAssessment(data.assigneeId, data);
-    if(assessment.level === 'danger' && !input.capacityConfirmed) {
+  const previousAssigneeIds = previous?.assigneeIds || previous?.assignees?.map(item => item.userId) || (previous?.assigneeId ? [previous.assigneeId] : []);
+  const assignmentChanged = isNew || previousAssigneeIds.join('|') !== data.assigneeIds.join('|');
+  if(assignmentChanged) {
+    const assessments = data.assignees.map(assignee => assignmentAssessment(assignee.userId, data, true));
+    const overloaded = assessments.filter(assessment => assessment.level === 'danger');
+    if(overloaded.length && !input.capacityConfirmed) {
       const error = new Error('선택한 담당자는 과부하 상태입니다. 경고를 확인한 뒤 다시 저장해주세요.');
-      error.code = 'OVER_CAPACITY'; error.assessment = assessment; throw error;
+      error.code = 'OVER_CAPACITY'; error.assessments = overloaded; throw error;
     }
   }
   if(data.status === 'done' && previous?.status !== 'done') data.completedAt = firebase.firestore.FieldValue.serverTimestamp();
@@ -520,10 +536,10 @@ async function saveTask(input){
   }, { merge: true });
   // 프로젝트 구성원 문서가 있어야 팀원이 해당 프로젝트의 전체 흐름을 읽을 수 있습니다.
   if(data.projectId && (isAdmin() || isPM() || isLead())) {
-    batch.set(db.collection('projectMembers').doc(`${data.projectId}_${data.assigneeId}`), {
-      projectId: data.projectId, userId: data.assigneeId,
+    data.assignees.forEach(assignee => batch.set(db.collection('projectMembers').doc(`${data.projectId}_${assignee.userId}`), {
+      projectId: data.projectId, userId: assignee.userId,
       updatedAt: firebase.firestore.FieldValue.serverTimestamp()
-    }, { merge: true });
+    }, { merge: true }));
   }
   await batch.commit();
 }
