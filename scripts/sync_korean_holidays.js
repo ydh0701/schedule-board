@@ -57,7 +57,10 @@ async function serviceAccessToken(serviceAccount) {
 }
 
 function yearsToSync() {
-  const configured = (process.env.HOLIDAY_SYNC_YEARS || '').split(',').map(value => Number(value.trim())).filter(Number.isInteger);
+  const configured = (process.env.HOLIDAY_SYNC_YEARS || '')
+    .split(',')
+    .map(value => Number(value.trim()))
+    .filter(value => Number.isInteger(value) && value >= 2000 && value <= 2100);
   if (configured.length) return [...new Set(configured)];
   const year = new Date().getFullYear();
   return [year, year + 1];
