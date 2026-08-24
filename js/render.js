@@ -1,5 +1,5 @@
-Warning: truncated output (original token count: 22405)
-Total output lines: 1225
+Warning: truncated output (original token count: 22520)
+Total output lines: 1233
 
 /* render.js — 로그인, 프로젝트 일정, 실무 일정 화면 */
 
@@ -562,12 +562,7 @@ function renderTeam(main){
 
 function renderPeople(main){
   const scopeUsers = activeUsers().filter(user => isPM() || isAdmin() || user.departmentId === currentProfile?.departmentId);
-  const heading = el('section', 'panel page-heading'); const co…2405 tokens truncated…Id || '']));
-  (project.platforms || []).forEach(platform => {
-    const card = el('section', 'staffing-card'); card.append(el('strong', '', `${platformName(platform)} 담당자`));
-    TEMPLATE_DEPARTMENTS.forEach(departmentId => {
-      const people = visibleUsers.filter(user => user.active && user.departmentId === departmentId);
-      const field = selectField(departmentName(departmentId), [['', '나중에 배정'], ...people.map(user => [user.id, user.name || user.email])]);
+  const heading = el('section', 'panel page-heading'); const co…2520 tokens truncated…name || user.email])]);
       field.select.value = staffingValues.get(`${platform}:${departmentId}`) || '';
       field.select.onchange = () => staffingValues.set(`${platform}:${departmentId}`, field.select.value);
       card.appendChild(field.wrap);
@@ -1068,16 +1063,24 @@ function openUserRoleEditor(user){
 function rerender(){
   const main = document.getElementById('main');
   if(!main || !authResolved) return;
-  main.innerHTML = '';
-  renderAccountActions();
-  renderPrimaryNavigation();
-  if(!currentUser) { loginScreen(main); return; }
-  if(!currentProfile || !isApproved()) { pendingScreen(main); return; }
-  if(activeView === 'home') { renderHome(main); return; }
-  if(activeView === 'my-work' || activeView === 'work') { renderWork(main); return; }
-  if(activeView === 'team') { renderTeam(main); return; }
-  if(activeView === 'people') { renderPeople(main); return; }
-  if(activeView === 'admin' && isAdmin()) { renderAdmin(main); return; }
-  renderProjects(main);
+  try {
+    main.innerHTML = '';
+    renderAccountActions();
+    renderPrimaryNavigation();
+    if(!currentUser) { loginScreen(main); return; }
+    if(!currentProfile || !isApproved()) { pendingScreen(main); return; }
+    if(activeView === 'home') { renderHome(main); return; }
+    if(activeView === 'my-work' || activeView === 'work') { renderWork(main); return; }
+    if(activeView === 'team') { renderTeam(main); return; }
+    if(activeView === 'people') { renderPeople(main); return; }
+    if(activeView === 'admin' && isAdmin()) { renderAdmin(main); return; }
+    renderProjects(main);
+  } catch(error) {
+    console.error('화면 렌더링 실패:', error);
+    main.innerHTML = '';
+    const panel = el('section', 'panel render-error');
+    panel.append(el('p', 'eyebrow', 'SCREEN ERROR'), el('h2', '', '화면을 표시하지 못했습니다.'), el('p', 'sub', '오류 정보를 확인해 수정 중입니다.'), el('code', 'render-error-code', error?.message || String(error)));
+    main.appendChild(panel);
+  }
 }
 
