@@ -444,11 +444,27 @@ function renderWork(main){
   if(workViewMode === 'list') main.appendChild(periodTabs);
   const allMyTasks = workTasks();
   const list = filterWorkTasksByPeriod(allMyTasks, workPeriod);
+  if(workViewMode === 'calendar') { renderWorkCalendar(main, allMyTasks); return; }
+  const nearDueCount = allMyTasks.filter(task => task.dueDate && Math.round((localDate(task.dueDate) - new Date(new Date().setHours(0,0,0,0))) / 86400000) <= 3 && task.status !== 'done').length;
+  const blockedCount = allMyTasks.filter(task => task.status === 'blocked').length;
+  // 오늘은 확인·처리가 목적이므로, 큰 통계 카드보다 업무 행을 먼저 보여줍니다.
+  if(workPeriod === 'today') {
+    if(list.length) {
+      const section = el('section', 'task-list today-task-list');
+      list.sort((a, b) => String(a.dueDate || '9999').localeCompare(String(b.dueDate || '9999'))).forEach(task => section.appendChild(taskRow(task, true)));
+      main.appendChild(section);
+    } else {
+      main.appendChild(el('div', 'empty today-empty', '오늘 예정된 업무가 없습니다.'));
+    }
+    const summary = el('div', 'work-summary-inline');
+    summary.append(el('strong', '', `오늘 ${list.length}건`), el('span', '', `3일 내 마감 ${nearDueCount}건`), el('span', blockedCount ? 'danger-text' : '', blockedCount ? `차단 ${blockedCount}건` : '차단 없음'));
+    main.appendChild(summary);
+    return;
+  }
   const workMetrics = el('div', 'metric-grid compact-metrics');
-  workMetrics.append(metric(workPeriod === 'today' ? '오늘 업무' : '활성 업무', list.length), metric('오늘·3일 내 마감', allMyTasks.filter(task => task.dueDate && Math.round((localDate(task.dueDate) - new Date(new Date().setHours(0,0,0,0))) / 86400000) <= 3 && task.status !== 'done').length, 'warn'), metric('차단됨', allMyTasks.filter(task => task.status === 'blocked').length, 'danger'));
+  workMetrics.append(metric('활성 업무', list.length), metric('오늘·3일 내 마감', nearDueCount, 'warn'), metric('차단됨', blockedCount, 'danger'));
   main.appendChild(workMetrics);
   renderDueAlerts(main, allMyTasks);
-  if(workViewMode === 'calendar') { renderWorkCalendar(main, allMyTasks); return; }
   if(!list.length) { main.appendChild(el('div', 'empty', '이 기간에 표시할 업무가 없습니다.')); return; }
   const section = el('section', 'task-list');
   list.sort((a, b) => String(a.dueDate || '9999').localeCompare(String(b.dueDate || '9999'))).forEach(task => section.appendChild(taskRow(task, true)));
