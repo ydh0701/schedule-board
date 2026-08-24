@@ -68,6 +68,7 @@ let holidays = [];
 let visibleUsers = [];
 let accessRequests = [];
 let profileLookup = { status: 'idle', uid: '', message: '' };
+let importPreview = null;
 
 let profileUnsubscribe = null;
 let dataUnsubscribers = [];
@@ -111,7 +112,11 @@ function userRoleLabel(profile){
 }
 function departmentName(id){ return DEPARTMENTS.find(x => x.id === id)?.name || id || '미지정'; }
 function platformName(id){ return PLATFORMS.find(item => item.id === id)?.name || id || '공통'; }
-function dateOnly(value){ return value ? String(value).slice(0, 10) : ''; }
+function dateOnly(value){
+  if(!value) return '';
+  if(value?.toDate) return dateKey(value.toDate());
+  return String(value).slice(0, 10);
+}
 function activeUsers(){ return visibleUsers.filter(user => user.active); }
 function personName(userId){
   if(userId === currentUser?.uid) return currentProfile?.name || currentUser?.displayName || currentUser?.email || '이름 미지정';
@@ -133,6 +138,9 @@ function normalizeTask(input){
   task.platform = task.platform || null;
   task.generated = task.generated === true;
   task.estimatedDays = Math.max(0, Number(task.estimatedDays || 0));
+  const rawAssignees = Array.isArray(task.assignees) ? task.assignees : (task.assigneeId ? [{ userId: task.assigneeId, share: 1, role: 'primary' }] : []);
+  const totalShare = rawAssignees.reduce((sum, item) => sum + Number(item.share || 0), 0);
+  task.assignees = rawAssignees.filter(item => item?.userId).map((item, index) => ({ userId: item.userId, share: totalShare ? Number(item.share || 0) / totalShare : 1 / rawAssignees.length, role: item.role || (index === 0 ? 'primary' : 'co') }));
   return task;
 }
 
@@ -190,21 +198,25 @@ function taskCoversDate(task, date){
   if(!start || !end) return false;
   return date >= start && date <= end;
 }
-function taskDailyLoad(task, date){
+function assignmentShareFor(task, userId){
+  const item = (task.assignees || []).find(assignee => assignee.userId === userId);
+  return item ? Number(item.share || 0) : (task.assigneeId === userId ? 1 : 0);
+}
+function taskDailyLoad(task, date, userId = task.assigneeId){
   if(task.status === 'done' || !task.estimatedDays || !taskCoversDate(task, date) || !isWeekday(date)) return 0;
   const start = localDate(task.startDate || task.dueDate); const end = localDate(task.dueDate || task.startDate);
   let workingDays = 0;
   for(let cursor = new Date(start); cursor <= end; cursor.setDate(cursor.getDate() + 1)) if(isWeekday(cursor)) workingDays++;
-  return workingDays ? task.estimatedDays / workingDays : 0;
+  return workingDays ? (task.estimatedDays / workingDays) * assignmentShareFor(task, userId) : 0;
 }
 function userWeeklyCapacity(userId){
   const user = userId === currentUser?.uid ? currentProfile : visibleUsers.find(item => item.id === userId);
   return Math.max(1, Number(user?.weeklyCapacity || 5));
 }
 function taskLoadForUserOnDate(userId, date, extraTask = null){
-  const list = activeTasks().filter(task => task.assigneeId === userId && task.status !== 'done');
+  const list = activeTasks().filter(task => task.assigneeId === userId && task.status !== 'done' && task.id !== extraTask?.id);
   if(extraTask) list.push(extraTask);
-  return list.reduce((sum, task) => sum + taskDailyLoad(task, date), 0);
+  return list.reduce((sum, task) => sum + taskDailyLoad(task, date, userId), 0);
 }
 function nextAvailableDate(userId, extraTask = null){
   const cursor = new Date(); cursor.setHours(0, 0, 0, 0);
@@ -216,7 +228,7 @@ function nextAvailableDate(userId, extraTask = null){
 }
 function assignmentAssessment(userId, task){
   if(!userId || !task) return { level: 'unknown', label: '담당자를 선택해주세요.', weeklyLoad: 0, nextDate: null, overflowDays: 0 };
-  const candidate = { ...task, assigneeId: userId, status: task.status || 'todo' };
+  const candidate = { ...task, assigneeId: userId, assignees: [{ userId, share: 1, role: 'primary' }], status: task.status || 'todo' };
   const start = localDate(candidate.startDate || dateKey(new Date()));
   const end = localDate(candidate.dueDate || candidate.startDate || dateKey(new Date()));
   let overflowDays = 0, workingDays = 0, totalLoad = 0;
@@ -463,6 +475,8 @@ async function saveTask(input){
   if(isNew && !canCreateTask(departmentId, input.assigneeId)) throw new Error('다른 사람의 업무는 팀장, PM 또는 관리자만 등록할 수 있습니다.');
 
   const data = normalizeTask({ ...previous, ...input, title: input.title.trim(), departmentId, assigneeName: personName(input.assigneeId), updatedBy: currentUser.uid });
+  if(data.status === 'done' && previous?.status !== 'done') data.completedAt = firebase.firestore.FieldValue.serverTimestamp();
+  if(data.status !== 'done') data.completedAt = null;
   if(data.milestoneId) {
     const milestone = milestones.find(item => item.id === data.milestoneId);
     if(!milestone || milestone.projectId !== data.projectId) throw new Error('선택한 마일스톤은 연결 프로젝트에 속해야 합니다.');
@@ -500,6 +514,76 @@ async function archiveTask(taskId){
   });
 }
 
+function importedTaskStatus(value){
+  const text = String(value || '').trim().toLowerCase();
+  if(['완료', 'done', '100', '100%'].includes(text)) return 'done';
+  if(['차단', '차단됨', 'blocked'].includes(text)) return 'blocked';
+  if(['진행', '진행중', '진행 중', 'in progress', 'in_progress'].includes(text)) return 'in_progress';
+  return 'todo';
+}
+function importedPlatform(value){
+  const text = String(value || '').toLowerCase();
+  if(text.includes('모바일') || text.includes('mobile')) return 'mobile';
+  if(text.includes('콘솔') || text.includes('console') || text.includes('ps')) return 'console';
+  return 'pc';
+}
+function importedDepartment(value){
+  const text = String(value || '').toLowerCase();
+  if(text.includes('ui')) return 'ui';
+  if(text.includes('개발') || text.includes('program')) return 'development';
+  if(text.includes('qa')) return 'qa';
+  if(text.includes('영상')) return 'video';
+  if(text.includes('글비') || text.includes('타코')) return 'business';
+  if(text.includes('제작')) return 'studio';
+  return 'planning';
+}
+
+async function importTasksFromPreview(rows, sourceName = ''){
+  if(!requirePermission(canManageProjects(), '엑셀 이관은 PM 또는 관리자만 실행할 수 있습니다.')) return;
+  const validRows = (rows || []).filter(row => row.valid);
+  if(!validRows.length) throw new Error('이관할 수 있는 업무 행이 없습니다.');
+  const batchId = `import_${Date.now()}`;
+  const knownProjects = new Map(projects.map(project => [String(project.code || project.name).trim().toLowerCase(), project]));
+  const projectRefs = new Map();
+  const writes = [];
+  const queueWrite = (ref, data, options = {}) => writes.push({ ref, data, options });
+  validRows.forEach(row => {
+    const projectKey = String(row.projectCode || row.projectName).trim().toLowerCase();
+    let project = knownProjects.get(projectKey);
+    let projectId;
+    if(project) projectId = project.id;
+    else if(projectRefs.has(projectKey)) projectId = projectRefs.get(projectKey).id;
+    else {
+      const ref = db.collection('projects').doc();
+      projectId = ref.id; projectRefs.set(projectKey, ref);
+      queueWrite(ref, {
+        code: row.projectCode || row.projectName, name: row.projectName || row.projectCode,
+        platforms: [row.platform || 'pc'], versions: [row.platform || 'pc'],
+        schedulingMode: 'manual', status: 'active', health: 'on_track', importedAt: firebase.firestore.FieldValue.serverTimestamp(),
+        createdBy: currentUser.uid, createdAt: firebase.firestore.FieldValue.serverTimestamp(), updatedBy: currentUser.uid, updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+      });
+    }
+    const assigned = activeUsers().find(user => (user.name || '').trim() === String(row.assignee || '').trim() || (user.email || '').trim() === String(row.assignee || '').trim());
+    const taskRef = db.collection('tasks').doc();
+    const estimatedDays = Math.max(0.5, Number(row.estimatedDays || 1));
+    queueWrite(taskRef, normalizeTask({
+      projectId, platform: row.platform || 'pc', departmentId: row.departmentId || 'planning', taskGroup: row.taskGroup || '',
+      title: row.title, system: row.system || '', buildVersion: row.buildVersion || '',
+      assigneeId: assigned?.id || null, assigneeName: assigned ? (assigned.name || assigned.email) : (row.assignee || '담당자 미배정'), legacyAssigneeName: assigned ? null : (row.assignee || null), needsAssignment: !assigned,
+      status: row.status || 'todo', progress: row.status === 'done' ? 100 : 0, estimatedDays,
+      startDate: row.startDate || null, dueDate: row.dueDate || null, scheduleMode: 'manual', importedAt: firebase.firestore.FieldValue.serverTimestamp(), importBatchId: batchId, importSource: sourceName,
+      archivedAt: null, createdBy: currentUser.uid, createdAt: firebase.firestore.FieldValue.serverTimestamp(), updatedBy: currentUser.uid, updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    }));
+    if(assigned) queueWrite(db.collection('projectMembers').doc(`${projectId}_${assigned.id}`), { projectId, userId: assigned.id, importedAt: firebase.firestore.FieldValue.serverTimestamp(), updatedAt: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true });
+  });
+  for(let index = 0; index < writes.length; index += 400) {
+    const batch = db.batch();
+    writes.slice(index, index + 400).forEach(write => batch.set(write.ref, write.data, write.options));
+    await batch.commit();
+  }
+  return { batchId, imported: validRows.length, projectsCreated: projectRefs.size, excluded: (rows || []).length - validRows.length };
+}
+
 async function reassignTask(taskId, assigneeId, force = false){
   const task = tasks.find(item => item.id === taskId);
   if(!task) throw new Error('업무를 찾을 수 없습니다.');
@@ -515,9 +599,15 @@ async function reassignTask(taskId, assigneeId, force = false){
   const batch = db.batch();
   batch.update(db.collection('tasks').doc(taskId), {
     assigneeId, assigneeName: target.name || target.email || '이름 미지정', needsAssignment: false,
+    assignees: [{ userId: assigneeId, share: 1, role: 'primary' }],
     previousAssigneeId: task.assigneeId || null, previousAssigneeName: task.assigneeId ? personName(task.assigneeId) : '담당자 미배정',
     assignmentWarning: assessment.level === 'danger' ? assessment.label : null,
     updatedAt: firebase.firestore.FieldValue.serverTimestamp(), updatedBy: currentUser.uid
+  });
+  batch.set(db.collection('assignmentHistory').doc(), {
+    taskId, projectId: task.projectId || null, previousAssigneeId: task.assigneeId || null, previousAssigneeName: task.assigneeId ? personName(task.assigneeId) : '담당자 미배정',
+    nextAssigneeId: assigneeId, nextAssigneeName: target.name || target.email || '이름 미지정', warningLevel: assessment.level, warningMessage: assessment.level === 'danger' ? assessment.label : null,
+    changedBy: currentUser.uid, changedByName: currentProfile.name || currentUser.displayName || currentUser.email || '', changedAt: firebase.firestore.FieldValue.serverTimestamp()
   });
   if(task.projectId && (isAdmin() || isPM() || isLead())) batch.set(db.collection('projectMembers').doc(`${task.projectId}_${assigneeId}`), {
     projectId: task.projectId, userId: assigneeId, updatedAt: firebase.firestore.FieldValue.serverTimestamp()
