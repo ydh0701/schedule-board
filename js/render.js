@@ -30,13 +30,13 @@ function taskAssigneeName(task){ return task?.assigneeName || userName(task?.ass
 function scheduleStatus(task){
   if(task.status === 'done') {
     const completed = dateOnly(task.completedAt);
-    return { label: completed && task.dueDate && completed > dateOnly(task.dueDate) ? '완료 · 지연' : '완료', tone: 'ok' };
+    return { label: completed && task.dueDate && completed > dateOnly(task.dueDate) ? '완료 지연' : '완료', tone: 'ok' };
   }
-  if(task.status === 'blocked') return { label: '차단', tone: 'danger' };
-  if(taskIsOverdue(task)) return { label: '지연', tone: 'danger' };
+  if(task.status === 'blocked') return { label: '일정 차단', tone: 'danger' };
+  if(taskIsOverdue(task)) return { label: '일정 지연', tone: 'danger' };
   const today = dateKey(new Date());
-  if(task.dueDate && task.dueDate <= addBusinessDays(today, 3)) return { label: '임박', tone: 'warn' };
-  return { label: '정상', tone: 'ok' };
+  if(task.dueDate && task.dueDate <= addBusinessDays(today, 3)) return { label: '마감 임박', tone: 'warn' };
+  return { label: '일정 정상', tone: 'ok' };
 }
 function projectCode(task){
   const project = projects.find(item => item.id === task?.projectId);
@@ -215,14 +215,20 @@ function taskRow(task, showProject, mineCompact = false){
   row.appendChild(body);
   const state = el('div', 'task-state');
   const schedule = scheduleStatus(task);
-  state.append(el('span', `tag ${statusClass(task.status)}`, TASK_STATUS[task.status] || '할 일'), el('span', `tag ${schedule.tone}`, schedule.label), el('span', 'task-progress', `${task.progress}%`));
+  state.appendChild(el('span', `tag ${statusClass(task.status)}`, TASK_STATUS[task.status] || '미착수'));
+  if(!['done', 'blocked'].includes(task.status)) state.appendChild(el('span', `tag ${schedule.tone}`, schedule.label));
+  state.appendChild(el('span', 'task-progress', `진척 ${task.progress}%`));
   if(taskHasUnfinishedDependencies(task)) state.appendChild(el('span', 'tag warn', '선행 대기'));
   row.appendChild(state);
-  if(canEditTask(task) && task.status !== 'done') row.appendChild(button('완료', 'tiny ghost', async () => {
-    try { await completeTask(task.id); showToast('업무를 완료 처리했습니다.'); }
-    catch(error) { showToast(error.message, 'error'); }
-  }));
-  if(canEditTask(task)) row.appendChild(button('수정', 'tiny ghost', () => openTaskEditor(task)));
+  if(canEditTask(task)) {
+    const actions = el('div', 'task-actions');
+    if(task.status !== 'done') actions.appendChild(button('✓ 완료', 'tiny complete-task-button', async () => {
+      try { await completeTask(task.id); showToast('업무를 완료 처리했습니다.'); }
+      catch(error) { showToast(error.message, 'error'); }
+    }));
+    actions.appendChild(button('수정', 'tiny edit-task-button', () => openTaskEditor(task)));
+    row.appendChild(actions);
+  }
   return row;
 }
 
@@ -1503,4 +1509,3 @@ function rerender(){
 
 // state.js의 인증·Firestore 콜백에서도 항상 같은 렌더러를 호출할 수 있게 노출합니다.
 window.renderScheduleApp = rerender;
-
