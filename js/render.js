@@ -501,7 +501,7 @@ function renderCapacity(main, list){
   nav.appendChild(button('▶', 'tiny ghost', () => { capacityWeekCursor.setDate(capacityWeekCursor.getDate() + 7); rerender(); }));
   title.appendChild(nav); heading.append(title);
   heading.append(el('p', 'sub', '예상 작업일을 업무 기간의 평일에 균등 배분합니다. 1일 초과 배정은 경고로 표시됩니다.')); main.appendChild(heading);
-  const assignees = [...new Set(list.map(task => task.assigneeId))];
+  const assignees = [...new Set(list.flatMap(task => task.assigneeIds || task.assignees?.map(item => item.userId) || [task.assigneeId]).filter(Boolean))];
   const tableWrap = el('div', 'table-wrap panel'); const table = document.createElement('table');
   const thead = document.createElement('thead'); const headRow = document.createElement('tr');
   ['담당자', ...days.map(day => `${day.getMonth() + 1}/${day.getDate()}`), '합계'].forEach(label => headRow.appendChild(el('th', '', label))); thead.appendChild(headRow); table.appendChild(thead);
@@ -509,17 +509,17 @@ function renderCapacity(main, list){
   assignees.forEach(assigneeId => {
     const row = document.createElement('tr'); row.appendChild(el('td', '', userName(assigneeId)));
     let total = 0;
-    days.forEach(day => { const load = list.filter(task => task.assigneeId === assigneeId).reduce((sum, task) => sum + taskDailyLoad(task, day, assigneeId), 0); total += load; const cell = el('td', load > 1 ? 'capacity-over' : '', `${load.toFixed(1)}일`); row.appendChild(cell); });
+    days.forEach(day => { const load = list.filter(task => taskAssignedToUser(task, assigneeId)).reduce((sum, task) => sum + taskDailyLoad(task, day, assigneeId), 0); total += load; const cell = el('td', load > 1 ? 'capacity-over' : '', `${load.toFixed(1)}일`); row.appendChild(cell); });
     row.appendChild(el('td', total > 5 ? 'capacity-over' : '', `${total.toFixed(1)}일`)); tbody.appendChild(row);
   });
   table.appendChild(tbody); tableWrap.appendChild(table); main.appendChild(tableWrap);
 }
 
 function personProjectBadges(userId){
-  const related = projects.filter(project => tasksForProject(project.id).some(task => task.assigneeId === userId));
+  const related = projects.filter(project => tasksForProject(project.id).some(task => taskAssignedToUser(task, userId)));
   const wrap = el('div', 'project-badges');
   related.slice(0, 3).forEach(project => {
-    const active = tasksForProject(project.id).some(task => task.assigneeId === userId && task.status !== 'done');
+    const active = tasksForProject(project.id).some(task => taskAssignedToUser(task, userId) && task.status !== 'done');
     wrap.append(el('span', active ? 'project-badge active' : 'project-badge', project.code || project.name));
   });
   if(related.length > 3) wrap.append(el('span', 'project-badge', `+${related.length - 3}`));
@@ -532,7 +532,7 @@ function renderTeam(main){
   const copy = el('div', 'page-copy');
   copy.append(el('p', 'eyebrow', 'TEAM OVERVIEW'), el('h2', '', isPM() || isAdmin() ? '팀 현황' : `${departmentName(currentProfile?.departmentId)}팀 현황`), el('p', 'sub', '오늘 막힌 업무와 팀원의 업무량을 확인하고 재배정합니다.'));
   heading.appendChild(copy); main.appendChild(heading);
-  const scopedTasks = activeTasks().filter(task => scopeUsers.some(user => user.id === task.assigneeId));
+  const scopedTasks = activeTasks().filter(task => scopeUsers.some(user => taskAssignedToUser(task, user.id)));
   const metrics = el('div', 'metric-grid');
   metrics.append(metric('오늘 마감', scopedTasks.filter(task => task.status !== 'done' && task.dueDate === dateKey(new Date())).length, 'warn'), metric('지연·차단', scopedTasks.filter(task => taskIsOverdue(task) || task.status === 'blocked').length, 'danger'), metric('과부하 인원', scopeUsers.filter(user => assignmentAssessment(user.id, { assigneeId: user.id, startDate: dateKey(new Date()), dueDate: addBusinessDays(dateKey(new Date()), 4), estimatedDays: 0 }).weeklyLoad > 100).length, 'warn'));
   main.appendChild(metrics);
@@ -541,7 +541,7 @@ function renderTeam(main){
   ['이름 / 직군', '프로젝트', '진행 업무', '이번 주 업무량', '다음 가능일', '위험'].forEach(label => headerRow.appendChild(el('th', '', label))); head.appendChild(headerRow); table.appendChild(head);
   const body = document.createElement('tbody');
   scopeUsers.forEach(user => {
-    const userTasks = scopedTasks.filter(task => task.assigneeId === user.id && task.status !== 'done');
+    const userTasks = scopedTasks.filter(task => taskAssignedToUser(task, user.id) && task.status !== 'done');
     const sample = { assigneeId: user.id, startDate: dateKey(new Date()), dueDate: addBusinessDays(dateKey(new Date()), 4), estimatedDays: 0 };
     const assessment = assignmentAssessment(user.id, sample);
     const dangerCount = userTasks.filter(task => taskIsOverdue(task) || task.status === 'blocked').length;
@@ -1031,6 +1031,20 @@ function openTaskEditor(task, initial = {}){
   if(task?.assigneeId && !people.some(user => user.id === task.assigneeId)) assignee.select.add(new Option(userName(task.assigneeId), task.assigneeId));
   assignee.select.value = task?.assigneeId || '';
   if(editing) assignee.select.disabled = true;
+  const canManageSupport = isAdmin() || isPM() || isLead();
+  const supportAssignees = multiSelectField('지원 담당자 (선택)');
+  const initialSupportIds = (task?.assignees || []).filter(item => item.userId !== task?.assigneeId).map(item => item.userId);
+  const initialAssigneeIds = task?.assigneeIds || task?.assignees?.map(item => item.userId) || (task?.assigneeId ? [task.assigneeId] : []);
+  const refreshSupportOptions = () => {
+    const selected = new Set([...supportAssignees.select.selectedOptions].map(option => option.value));
+    initialSupportIds.forEach(id => selected.add(id));
+    supportAssignees.select.innerHTML = '';
+    people.filter(user => user.id !== assignee.select.value).forEach(user => {
+      const option = new Option(user.name || user.email, user.id); option.selected = selected.has(user.id); supportAssignees.select.add(option);
+    });
+  };
+  refreshSupportOptions();
+  supportAssignees.select.disabled = !canManageSupport;
   const project = selectField('연결 프로젝트', [['', '프로젝트와 연결하지 않음'], ...projects.map(item => [item.id, item.code || item.name])]); project.select.value = task?.projectId || initial.projectId || '';
   const platform = selectField('플랫폼', [['', '공통'], ...PLATFORMS.map(item => [item.id, item.name])]); platform.select.value = task?.platform || initial.platform || '';
   const milestone = selectField('연결 마일스톤', [['', '마일스톤과 연결하지 않음']]);
@@ -1057,23 +1071,30 @@ function openTaskEditor(task, initial = {}){
   const estimate = inputField('예상 작업일', '예: 2.5', 'number'); estimate.input.min = '0'; estimate.input.step = '0.5'; estimate.input.value = task?.estimatedDays ?? '';
   const start = inputField('시작일', '', 'date'); start.input.value = dateOnly(task?.startDate);
   const due = inputField('마감일', '', 'date'); due.input.value = dateOnly(task?.dueDate);
-  const assignmentWarning = el('section', 'assignment-assessment'); assignmentWarning.hidden = editing;
+  const assignmentWarning = el('section', 'assignment-assessment');
   const capacityConfirm = document.createElement('input'); capacityConfirm.type = 'checkbox'; capacityConfirm.id = `capacity-confirm-${task?.id || 'new'}`;
   const capacityConfirmLabel = document.createElement('label'); capacityConfirmLabel.className = 'force-assignment'; capacityConfirmLabel.htmlFor = capacityConfirm.id;
   capacityConfirmLabel.append(capacityConfirm, document.createTextNode('과부하 경고를 확인했고, 그래도 배정합니다.'));
   capacityConfirmLabel.hidden = true;
-  let latestAssignmentAssessment = null;
+  let latestAssignmentAssessments = [];
+  const selectedAssignees = () => {
+    const ids = [...new Set([assignee.select.value, ...[...supportAssignees.select.selectedOptions].map(option => option.value)].filter(Boolean))];
+    return ids.map((userId, index) => ({ userId, share: 1 / ids.length, role: index === 0 ? 'primary' : 'co' }));
+  };
+  const assignmentHasChanged = () => selectedAssignees().map(item => item.userId).join('|') !== initialAssigneeIds.join('|');
   const refreshAssignmentWarning = () => {
-    if(editing) return;
-    const candidate = { assigneeId: assignee.select.value, startDate: start.input.value || null, dueDate: due.input.value || null, estimatedDays: Number(estimate.input.value || 0), status: status?.select?.value || 'todo' };
-    latestAssignmentAssessment = assignmentAssessment(assignee.select.value, candidate);
-    assignmentWarning.className = `assignment-assessment ${latestAssignmentAssessment.level}`;
+    const assignees = selectedAssignees();
+    const candidate = { assigneeId: assignee.select.value, assignees, startDate: start.input.value || null, dueDate: due.input.value || null, estimatedDays: Number(estimate.input.value || 0), status: status?.select?.value || 'todo' };
+    latestAssignmentAssessments = assignees.map(item => ({ userId: item.userId, assessment: assignmentAssessment(item.userId, candidate, true) }));
+    const worst = latestAssignmentAssessments.find(item => item.assessment.level === 'danger') || latestAssignmentAssessments.find(item => item.assessment.level === 'warn') || latestAssignmentAssessments[0] || { assessment: { level: 'unknown', label: '담당자를 선택해주세요.', weeklyLoad: 0, nextDate: null } };
+    const assessment = worst.assessment;
+    assignmentWarning.className = `assignment-assessment ${assessment.level}`;
     assignmentWarning.innerHTML = '';
-    assignmentWarning.append(el('strong', '', latestAssignmentAssessment.level === 'danger' ? '과부하 예상' : latestAssignmentAssessment.level === 'warn' ? '배정 주의' : latestAssignmentAssessment.level === 'ok' ? '배정 가능' : '계산 필요'));
-    assignmentWarning.append(el('span', '', latestAssignmentAssessment.level === 'unknown' ? '담당자·기간·예상 작업일 입력 후 자동 계산' : `최대 주간 ${latestAssignmentAssessment.weeklyLoad}% · 다음 가능일 ${fmtDate(latestAssignmentAssessment.nextDate)}`));
-    assignmentWarning.append(el('p', '', latestAssignmentAssessment.label));
+    assignmentWarning.append(el('strong', '', assessment.level === 'danger' ? '과부하 예상' : assessment.level === 'warn' ? '배정 주의' : assessment.level === 'ok' ? '배정 가능' : '계산 필요'));
+    assignmentWarning.append(el('span', '', assessment.level === 'unknown' ? '담당자·기간·예상 작업일 입력 후 자동 계산' : `최대 주간 ${assessment.weeklyLoad}% · 다음 가능일 ${fmtDate(assessment.nextDate)}`));
+    assignmentWarning.append(el('p', '', `${assignees.length > 1 ? `${assignees.length}명 균등 분배 · ` : ''}${assessment.label}`));
     capacityConfirm.checked = false;
-    capacityConfirmLabel.hidden = latestAssignmentAssessment.level !== 'danger';
+    capacityConfirmLabel.hidden = assessment.level !== 'danger';
   };
   const dependencyWarning = el('section', 'dependency-warning'); dependencyWarning.hidden = true;
   const dependencyConfirm = document.createElement('input'); dependencyConfirm.type = 'checkbox'; dependencyConfirm.id = `dependency-confirm-${task?.id || 'new'}`;
@@ -1090,12 +1111,13 @@ function openTaskEditor(task, initial = {}){
   };
   dependsOn.select.onchange = refreshDependencyWarning;
   start.input.onchange = refreshDependencyWarning;
-  assignee.select.onchange = refreshAssignmentWarning;
+  assignee.select.onchange = () => { refreshSupportOptions(); refreshAssignmentWarning(); };
+  supportAssignees.select.onchange = refreshAssignmentWarning;
   estimate.input.oninput = refreshAssignmentWarning;
   start.input.onchange = () => { refreshDependencyWarning(); refreshAssignmentWarning(); };
   due.input.onchange = refreshAssignmentWarning;
   if(task?.generated) form.append(el('p', 'sub', '자동 생성 업무입니다. 일정 날짜를 직접 바꾸면 이후 자동 재계산 대상에서 제외됩니다.'));
-  form.append(title.wrap, department.wrap, assignee.wrap, project.wrap, platform.wrap, milestone.wrap, dependsOn.wrap, status.wrap, progress.wrap, estimate.wrap, start.wrap, due.wrap);
+  form.append(title.wrap, department.wrap, assignee.wrap, supportAssignees.wrap, project.wrap, platform.wrap, milestone.wrap, dependsOn.wrap, status.wrap, progress.wrap, estimate.wrap, start.wrap, due.wrap);
   form.append(dependencyWarning, assignmentWarning, capacityConfirmLabel);
   refreshDependencyWarning();
   refreshAssignmentWarning();
@@ -1112,8 +1134,8 @@ function openTaskEditor(task, initial = {}){
     try {
       if(!title.input.value.trim() || !project.select.value || !start.input.value || !estimate.input.value) throw new Error('프로젝트, 업무명, 시작일, 예상 작업일을 입력해주세요.');
       if(!dependencyWarning.hidden && !dependencyConfirm.checked) throw new Error('선행 업무와 겹치는 일정을 확인해주세요.');
-      if(!editing && latestAssignmentAssessment?.level === 'danger' && !capacityConfirm.checked) throw new Error('담당자 과부하 경고를 확인해주세요.');
-      await saveTask({ id: task?.id, title: title.input.value, departmentId: department.select.value, assigneeId: assignee.select.value, projectId: project.select.value || null, platform: platform.select.value || null, milestoneId: milestone.select.value || null, dependsOn: [...dependsOn.select.selectedOptions].map(option => option.value), status: status.select.value, progress: Number(progress.input.value), estimatedDays: Number(estimate.input.value), startDate: start.input.value || null, dueDate: due.input.value || null, capacityConfirmed: capacityConfirm.checked, dateOverride: Boolean(task?.generated && (dateOnly(task.startDate) !== start.input.value || dateOnly(task.dueDate) !== due.input.value)) });
+      if(assignmentHasChanged() && latestAssignmentAssessments.some(item => item.assessment.level === 'danger') && !capacityConfirm.checked) throw new Error('담당자 과부하 경고를 확인해주세요.');
+      await saveTask({ id: task?.id, title: title.input.value, departmentId: department.select.value, assigneeId: assignee.select.value, assignees: selectedAssignees(), projectId: project.select.value || null, platform: platform.select.value || null, milestoneId: milestone.select.value || null, dependsOn: [...dependsOn.select.selectedOptions].map(option => option.value), status: status.select.value, progress: Number(progress.input.value), estimatedDays: Number(estimate.input.value), startDate: start.input.value || null, dueDate: due.input.value || null, capacityConfirmed: capacityConfirm.checked, dateOverride: Boolean(task?.generated && (dateOnly(task.startDate) !== start.input.value || dateOnly(task.dueDate) !== due.input.value)) });
       close();
     } catch(error) { alert(error.message); }
   };
