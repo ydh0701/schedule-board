@@ -1,5 +1,5 @@
-Warning: truncated output (original token count: 22520)
-Total output lines: 1233
+Warning: truncated output (original token count: 22558)
+Total output lines: 1236
 
 /* render.js — 로그인, 프로젝트 일정, 실무 일정 화면 */
 
@@ -562,9 +562,7 @@ function renderTeam(main){
 
 function renderPeople(main){
   const scopeUsers = activeUsers().filter(user => isPM() || isAdmin() || user.departmentId === currentProfile?.departmentId);
-  const heading = el('section', 'panel page-heading'); const co…2520 tokens truncated…name || user.email])]);
-      field.select.value = staffingValues.get(`${platform}:${departmentId}`) || '';
-      field.select.onchange = () => staffingValues.set(`${platform}:${departmentId}`, field.select.value);
+  const heading = el('section', 'panel page-heading'); const co…2558 tokens truncated…Values.set(`${platform}:${departmentId}`, field.select.value);
       card.appendChild(field.wrap);
     });
     staffingBox.appendChild(card);
@@ -1083,4 +1081,7 @@ function rerender(){
     main.appendChild(panel);
   }
 }
+
+// state.js의 인증·Firestore 콜백에서도 항상 같은 렌더러를 호출할 수 있게 노출합니다.
+window.renderScheduleApp = rerender;
 
