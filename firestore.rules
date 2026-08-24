@@ -120,6 +120,14 @@ service cloud.firestore {
       allow delete: if manager();
     }
 
+    match /assignmentHistory/{historyId} {
+      allow get, list: if approved() && (manager() || resource.data.previousAssigneeId == request.auth.uid || resource.data.nextAssigneeId == request.auth.uid);
+      allow create: if approved() && (
+        manager() || get(/databases/$(database)/documents/tasks/$(request.resource.data.taskId)).data.assigneeId == request.auth.uid
+      );
+      allow update, delete: if false;
+    }
+
     // 상세 변경 이력은 후속 서버 측 기능에서만 작성합니다.
     match /activityLogs/{logId} {
       allow read: if manager() || lead();
