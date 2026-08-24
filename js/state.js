@@ -271,7 +271,7 @@ function projectProgress(projectId){
 }
 function canEditTask(task){
   if(!currentProfile || !task || !isApproved()) return false;
-  if(isAdmin()) return true;
+  if(isAdmin() || isPM()) return true;
   if(isLead()) return task.departmentId === currentProfile.departmentId;
   return task.assigneeId === currentUser?.uid;
 }
@@ -364,7 +364,8 @@ function subscribeApprovedData(){
     subscribeCollection(db.collection('assignmentHistory'), data => { assignmentHistory = data; }, '배정 이력');
     subscribeCollection(db.collection('holidays'), data => { holidays = data; }, '공휴일');
     subscribeCollection(db.collection('users'), data => { visibleUsers = data; }, '사용자');
-    subscribeCollection(db.collection('accessRequests'), data => { accessRequests = data; }, '승인 요청');
+    // 승인 요청은 사용자 권한 관리 화면을 보는 관리자만 필요합니다.
+    if(isAdmin()) subscribeCollection(db.collection('accessRequests'), data => { accessRequests = data; }, '승인 요청');
   } else if(isLead()) {
     subscribeCollection(db.collection('projects'), data => { projects = data; }, '프로젝트');
     subscribeCollection(db.collection('tasks').where('departmentId', '==', currentProfile.departmentId), data => { tasks = data; }, '업무');
@@ -737,7 +738,7 @@ async function syncProjectStaffing(projectId, staffing){
 }
 
 async function saveProjectUpdate(input){
-  if(!requirePermission(isAdmin() || isLead(), '프로젝트 업데이트는 팀장 또는 관리자만 작성할 수 있습니다.')) return;
+  if(!requirePermission(isAdmin() || isPM() || isLead(), '프로젝트 업데이트는 PM, 팀장 또는 관리자만 작성할 수 있습니다.')) return;
   if(!input.projectId) throw new Error('프로젝트를 선택해주세요.');
   const project = projects.find(item => item.id === input.projectId);
   if(!project) throw new Error('프로젝트를 찾을 수 없습니다.');
