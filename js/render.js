@@ -1,5 +1,5 @@
-Warning: truncated output (original token count: 20886)
-Total output lines: 1143
+Warning: truncated output (original token count: 21221)
+Total output lines: 1163
 
 /* render.js — 로그인, 프로젝트 일정, 실무 일정 화면 */
 
@@ -411,19 +411,39 @@ function renderWork(main){
   const modes = el('nav', 'view-tabs');
   [['list', '목록'], ['calendar', '월간 캘린더']].forEach(([key, label]) => modes.appendChild(button(label, workViewMode === key ? 'primary tiny' : 'ghost tiny', () => { workViewMode = key; rerender(); })));
   main.appendChild(modes);
-  const list = activeTasks().filter(task => task.assigneeId === currentUser?.uid);
+  const periodTabs = el('nav', 'timeline-filters work-period-tabs');
+  [['today', '오늘'], ['week', '이번 주'], ['month', '이번 달'], ['all', '전체']].forEach(([key, label]) => periodTabs.appendChild(button(label, workPeriod === key ? 'primary tiny' : 'ghost tiny', () => { workPeriod = key; rerender(); })));
+  if(workViewMode === 'list') main.appendChild(periodTabs);
+  const allMyTasks = workTasks();
+  const list = filterWorkTasksByPeriod(allMyTasks, workPeriod);
   const workMetrics = el('div', 'metric-grid compact-metrics');
-  workMetrics.append(metric('활성 업무', list.length), metric('오늘·3일 내 마감', list.filter(task => task.dueDate && Math.round((localDate(task.dueDate) - new Date(new Date().setHours(0,0,0,0))) / 86400000) <= 3 && task.status !== 'done').length, 'warn'), metric('차단됨', list.filter(task => task.status === 'blocked').length, 'danger'));
+  workMetrics.append(metric(workPeriod === 'today' ? '오늘 업무' : '활성 업무', list.length), metric('오늘·3일 내 마감', allMyTasks.filter(task => task.dueDate && Math.round((localDate(task.dueDate) - new Date(new Date().setHours(0,0,0,0))) / 86400000) <= 3 && task.status !== 'done').length, 'warn'), metric('차단됨', allMyTasks.filter(task => task.status === 'blocked').length, 'danger'));
   main.appendChild(workMetrics);
-  renderDueAlerts(main, list);
-  if(!list.length) { main.appendChild(el('div', 'empty', '표시할 업무가 없습니다.')); return; }
-  if(workViewMode === 'calendar') { renderWorkCalendar(main, list); return; }
+  renderDueAlerts(main, allMyTasks);
+  if(workViewMode === 'calendar') { renderWorkCalendar(main, allMyTasks); return; }
+  if(!list.length) { main.appendChild(el('div', 'empty', '이 기간에 표시할 업무가 없습니다.')); return; }
   const section = el('section', 'task-list');
   list.sort((a, b) => String(a.dueDate || '9999').localeCompare(String(b.dueDate || '9999'))).forEach(task => section.appendChild(taskRow(task, true)));
   main.appendChild(section);
 }
 
-function workTasks(){ return activeTasks().filter(task => task.assigneeId === currentUser?.uid); }
+function taskAssignedToUser(task, userId){ return task.assigneeId === userId || (task.assignees || []).some(item => item.userId === userId); }
+
+function workTasks(){ return activeTasks().filter(task => taskAssignedToUser(task, currentUser?.uid)); }
+
+function filterWorkTasksByPeriod(list, period){
+  if(period === 'all') return list;
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  let start = new Date(today), end = new Date(today);
+  if(period === 'week') { start = mondayOf(today); end = new Date(start); end.setDate(start.getDate() + 6); }
+  if(period === 'month') { start = new Date(today.getFullYear(), today.getMonth(), 1); end = new Date(today.getFullYear(), today.getMonth() + 1, 0); }
+  return list.filter(task => {
+    const taskStart = localDate(task.startDate || task.dueDate);
+    const taskEnd = localDate(task.dueDate || task.startDate);
+    if(!taskStart || !taskEnd) return false;
+    return taskStart <= end && taskEnd >= start;
+  });
+}
 
 function renderDueAlerts(main, list){
   const today = new Date(); today.setHours(0, 0, 0, 0);
@@ -541,18 +561,7 @@ function renderTeam(main){
 function renderPeople(main){
   const scopeUsers = activeUsers().filter(user => isPM() || isAdmin() || user.departmentId === currentProfile?.departmentId);
   const heading = el('section', 'panel page-heading'); const copy = el('div', 'page-copy');
-  copy.append(el('p', 'eyebrow', 'WORKFORCE'), el('h2', '', '인력 현황'), el('p', 'sub', '등록된 업무를 기준으로 담당 후보의 여유와 다음 가능일을 비교합니다.'));
-  heading.appendChild(copy); main.appendChild(heading);
-  const groups = { ok: 0, warn: 0, danger: 0 };
-  scopeUsers.forEach(user => { const level = assignmentAssessment(user.id, { assigneeId: user.id, startDate: dateKey(new Date()), dueDate: addBusinessDays(dateKey(new Date()), 4), estimatedDays: 0 }).level; groups[level] = (groups[level] || 0) + 1; });
-  const metrics = el('div', 'metric-grid'); metrics.append(metric('여유', groups.ok), metric('주의', groups.warn, 'warn'), metric('과부하', groups.danger, 'danger')); main.appendChild(metrics);
-  const list = el('section', 'people-list');
-  scopeUsers.forEach(user => {
-    const sample = { assigneeId: user.id, startDate: dateKey(new Date()), dueDate: addBusinessDays(dateKey(new Date()), 4), estimatedDays: 0 };
-    const assessment = assignmentAssessment(user.id, sample);
-    const card = el('article', `person-row ${assessment.level}`);
-    const identity = el('div', 'person-identity'); identity.append(el('strong', '', user.name || user.email), el('span', 'foot-note', `${departmentName(user.departmentId)} · ${userRoleLabel(user)}`));
-    const workload = el('div', 'person-workload'); workload.append(el('span', `tag ${assessment.level}`, assessment.weeklyLoad > 100 ? '과부하' : assessm…886 tokens truncated…다. 계정 로그인과 새 업무 배정만 중지합니다.'));
+  copy.append(el('p', 'eyebrow', 'WORKFORCE'), el('h2', '', '인력 현황'), el('p', 'sub', '등록된 업무를 …1221 tokens truncated…다. 계정 로그인과 새 업무 배정만 중지합니다.'));
   openTasks.forEach(task => {
     const card = el('section', 'handover-task');
     card.append(el('strong', '', task.title));
