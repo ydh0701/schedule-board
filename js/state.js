@@ -683,7 +683,7 @@ async function importTasksFromPreview(rows, sourceName = ''){
 async function reassignTask(taskId, assigneeId, force = false){
   const task = tasks.find(item => item.id === taskId);
   if(!task) throw new Error('업무를 찾을 수 없습니다.');
-  if(!requirePermission(canManageTaskAssignment(task), '담당자 변경은 PM, 관리자 또는 해당 부서 팀장만 할 수 있습니다.')) return;
+  if(!requirePermission(canManageTaskAssignment(task), '담당자 변경은 본인 업무의 담당자, PM, 관리자 또는 해당 부서 팀장만 할 수 있습니다.')) return;
   if(!assigneeId) throw new Error('새 담당자를 선택해주세요.');
   const target = activeUsers().find(user => user.id === assigneeId) || (assigneeId === currentUser?.uid ? currentProfile : null);
   if(!target?.active) throw new Error('활성 상태의 담당자만 배정할 수 있습니다.');
