@@ -70,6 +70,8 @@ let assignmentHistory = [];
 let holidays = [];
 let visibleUsers = [];
 let accessRequests = [];
+// 업무량·가용 시간은 업무와 공휴일 데이터를 모두 받은 뒤에만 확정합니다.
+let workDataReadiness = { tasks: false, holidays: false };
 let profileLookup = { status: 'idle', uid: '', message: '' };
 let importPreview = null;
 
@@ -101,7 +103,10 @@ function resetDataSubscriptions(){
   holidays = [];
   visibleUsers = [];
   accessRequests = [];
+  workDataReadiness = { tasks: false, holidays: false };
 }
+
+function isWorkDataReady(){ return workDataReadiness.tasks && workDataReadiness.holidays; }
 
 function docToObject(doc){ return { id: doc.id, ...doc.data() }; }
 function workRole(profile = currentProfile){ return profile?.role === 'admin' ? 'pm' : profile?.role || 'member'; }
@@ -385,34 +390,36 @@ function subscribeApprovedData(){
   resetDataSubscriptions();
   if(isAdmin() || isPM()) {
     subscribeCollection(db.collection('projects'), data => { projects = data; }, '프로젝트');
-    subscribeCollection(db.collection('tasks'), data => { tasks = data; }, '업무');
+    subscribeCollection(db.collection('tasks'), data => { tasks = data; workDataReadiness.tasks = true; }, '업무');
     subscribeCollection(db.collection('milestones'), data => { milestones = data; }, '마일스톤');
     subscribeCollection(db.collection('projectUpdates'), data => { projectUpdates = data; }, '프로젝트 업데이트');
     subscribeCollection(db.collection('assignmentHistory'), data => { assignmentHistory = data; }, '배정 이력');
-    subscribeCollection(db.collection('holidays'), data => { holidays = data; }, '공휴일');
+    subscribeCollection(db.collection('holidays'), data => { holidays = data; workDataReadiness.holidays = true; }, '공휴일');
     subscribeCollection(db.collection('users'), data => { visibleUsers = data; }, '사용자');
     // 승인 요청은 사용자 권한 관리 화면을 보는 관리자만 필요합니다.
     if(isAdmin()) subscribeCollection(db.collection('accessRequests'), data => { accessRequests = data; }, '승인 요청');
   } else if(isLead()) {
     subscribeCollection(db.collection('projects'), data => { projects = data; }, '프로젝트');
-    subscribeCollection(db.collection('tasks').where('departmentId', '==', currentProfile.departmentId), data => { tasks = data; }, '업무');
+    subscribeCollection(db.collection('tasks').where('departmentId', '==', currentProfile.departmentId), data => { tasks = data; workDataReadiness.tasks = true; }, '업무');
     subscribeCollection(db.collection('milestones'), data => { milestones = data; }, '마일스톤');
     subscribeCollection(db.collection('projectUpdates'), data => { projectUpdates = data; }, '프로젝트 업데이트');
-    subscribeCollection(db.collection('holidays'), data => { holidays = data; }, '공휴일');
+    subscribeCollection(db.collection('holidays'), data => { holidays = data; workDataReadiness.holidays = true; }, '공휴일');
     subscribeCollection(db.collection('users').where('departmentId', '==', currentProfile.departmentId), data => { visibleUsers = data; }, '팀원');
   } else {
     let primaryTasks = [], supportTasks = [];
+    let primaryLoaded = false, supportLoaded = false;
     const publishOwnTasks = () => {
       const ownTasks = [...new Map([...primaryTasks, ...supportTasks].map(task => [task.id, task])).values()];
+      if(primaryLoaded && supportLoaded) { tasks = ownTasks; workDataReadiness.tasks = true; }
       subscribeProjectScopeForMember(ownTasks);
     };
     subscribeCollection(db.collection('tasks').where('assigneeId', '==', currentUser.uid), data => {
-      primaryTasks = data; publishOwnTasks();
+      primaryTasks = data; primaryLoaded = true; publishOwnTasks();
     }, '내 주 담당 업무');
     subscribeCollection(db.collection('tasks').where('assigneeIds', 'array-contains', currentUser.uid), data => {
-      supportTasks = data; publishOwnTasks();
+      supportTasks = data; supportLoaded = true; publishOwnTasks();
     }, '내 지원 업무');
-    subscribeCollection(db.collection('holidays'), data => { holidays = data; }, '공휴일');
+    subscribeCollection(db.collection('holidays'), data => { holidays = data; workDataReadiness.holidays = true; }, '공휴일');
   }
 }
 
