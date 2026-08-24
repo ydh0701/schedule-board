@@ -19,7 +19,7 @@ const DEPARTMENTS = [
   { id: 'pm', name: 'PM' }
 ];
 const TASK_STATUS = {
-  todo: '할 일', in_progress: '진행 중', blocked: '차단됨', done: '완료'
+  todo: '미착수', in_progress: '진행 중', blocked: '차단됨', done: '완료'
 };
 // 프로젝트의 "고정 일정"과 실제 실무 업무를 분리합니다. 고정 일정만 바뀌면
 // scheduleRule을 가진 자동 생성 업무는 같은 규칙으로 다시 계산할 수 있습니다.
@@ -997,4 +997,3 @@ async function offboardUser(userId, decisions){
   });
   await batch.commit();
 }
-
