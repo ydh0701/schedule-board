@@ -144,7 +144,7 @@ function normalizeTask(input){
   task.platform = task.platform || null;
   task.generated = task.generated === true;
   task.estimatedDays = Math.max(0, Number(task.estimatedDays || 0));
-  const rawAssignees = Array.isArray(task.assignees) ? task.assignees : (task.assigneeId ? [{ userId: task.assigneeId, share: 1, role: 'primary' }] : []);
+  const rawAssignees = Array.isArray(task.assignees) && task.assignees.length ? task.assignees : (task.assigneeId ? [{ userId: task.assigneeId, share: 1, role: 'primary' }] : (task.assigneeIds || []).map((userId, index) => ({ userId, share: 1, role: index === 0 ? 'primary' : 'co' })));
   const uniqueAssignees = [...new Map(rawAssignees.filter(item => item?.userId).map(item => [item.userId, item])).values()];
   const primaryIndex = Math.max(0, uniqueAssignees.findIndex(item => item.userId === task.assigneeId || item.role === 'primary'));
   const orderedAssignees = uniqueAssignees.length ? [uniqueAssignees[primaryIndex], ...uniqueAssignees.filter((_, index) => index !== primaryIndex)] : [];
@@ -153,6 +153,16 @@ function normalizeTask(input){
   task.assigneeId = task.assignees[0]?.userId || null;
   task.assigneeIds = task.assignees.map(item => item.userId);
   return task;
+}
+
+function primaryAssignmentFields(userId, name = null){
+  return {
+    assigneeId: userId || null,
+    assigneeName: userId ? (name || personName(userId)) : '담당자 미배정',
+    assignees: userId ? [{ userId, share: 1, role: 'primary' }] : [],
+    assigneeIds: userId ? [userId] : [],
+    needsAssignment: !userId
+  };
 }
 
 function activeTasks(){ return tasks.filter(task => !task.archivedAt); }
@@ -669,8 +679,7 @@ async function reassignTask(taskId, assigneeId, force = false){
   }
   const batch = db.batch();
   batch.update(db.collection('tasks').doc(taskId), {
-    assigneeId, assigneeName: target.name || target.email || '이름 미지정', needsAssignment: false,
-    assignees: [{ userId: assigneeId, share: 1, role: 'primary' }],
+    ...primaryAssignmentFields(assigneeId, target.name || target.email || '이름 미지정'),
     previousAssigneeId: task.assigneeId || null, previousAssigneeName: task.assigneeId ? personName(task.assigneeId) : '담당자 미배정',
     assignmentWarning: assessment.level === 'danger' ? assessment.label : null,
     updatedAt: firebase.firestore.FieldValue.serverTimestamp(), updatedBy: currentUser.uid
@@ -790,7 +799,7 @@ async function syncProjectStaffing(projectId, staffing){
   batch.update(db.collection('projects').doc(projectId), { staffing: cleaned, updatedAt: firebase.firestore.FieldValue.serverTimestamp(), updatedBy: currentUser.uid });
   tasksForProject(projectId).filter(task => task.generated).forEach(task => {
     const staff = staffingFor({ staffing: cleaned }, task.platform, task.departmentId);
-    batch.update(db.collection('tasks').doc(task.id), { assigneeId: staff?.userId || null, assigneeName: staff?.userId ? personName(staff.userId) : null, needsAssignment: !staff?.userId, updatedAt: firebase.firestore.FieldValue.serverTimestamp(), updatedBy: currentUser.uid });
+    batch.update(db.collection('tasks').doc(task.id), { ...primaryAssignmentFields(staff?.userId || null, staff?.userId ? personName(staff.userId) : null), updatedAt: firebase.firestore.FieldValue.serverTimestamp(), updatedBy: currentUser.uid });
   });
   cleaned.filter(item => item.userId).forEach(item => {
     batch.set(db.collection('projectMembers').doc(`${projectId}_${item.userId}`), {
@@ -930,7 +939,7 @@ async function offboardUser(userId, decisions){
       if(!replacement) throw new Error('재배정할 현재 직원을 선택해주세요.');
       if(!isAdmin() && replacement.departmentId !== user.departmentId) throw new Error('팀장은 자기 부서 직원에게만 재배정할 수 있습니다.');
       batch.update(db.collection('tasks').doc(task.id), {
-        assigneeId: replacement.id, assigneeName: replacement.name || replacement.email || '이름 미지정', needsAssignment: false,
+        ...primaryAssignmentFields(replacement.id, replacement.name || replacement.email || '이름 미지정'),
         previousAssigneeId: userId, previousAssigneeName: user.name || user.email || '', handoverAt: firebase.firestore.FieldValue.serverTimestamp(),
         updatedAt: firebase.firestore.FieldValue.serverTimestamp(), updatedBy: currentUser.uid
       });
@@ -946,7 +955,7 @@ async function offboardUser(userId, decisions){
       if(task.projectId) batch.set(db.collection('projectMembers').doc(`${task.projectId}_${replacement.id}`), { projectId: task.projectId, userId: replacement.id, updatedAt: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true });
     } else if(decision.action === 'unassign') {
       batch.update(db.collection('tasks').doc(task.id), {
-        assigneeId: null, assigneeName: '담당자 미배정', needsAssignment: true,
+        ...primaryAssignmentFields(null),
         previousAssigneeId: userId, previousAssigneeName: user.name || user.email || '', handoverAt: firebase.firestore.FieldValue.serverTimestamp(),
         updatedAt: firebase.firestore.FieldValue.serverTimestamp(), updatedBy: currentUser.uid
       });
