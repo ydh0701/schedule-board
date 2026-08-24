@@ -305,7 +305,9 @@ function canEditTask(task){
   return task.assigneeId === currentUser?.uid;
 }
 function canManageTaskAssignment(task){
-  return !!task && isApproved() && (isAdmin() || isPM() || (isLead() && task.departmentId === currentProfile.departmentId));
+  // 담당자는 본인 업무를 다른 활성 구성원에게 이관할 수 있습니다.
+  // 팀장·PM·관리자는 기존처럼 업무 배정 전반을 관리합니다.
+  return !!task && isApproved() && (isAdmin() || isPM() || (isLead() && task.departmentId === currentProfile.departmentId) || task.assigneeId === currentUser?.uid);
 }
 function canCreateTask(departmentId, assigneeId = currentUser?.uid){
   return isApproved() && (isAdmin() || isPM() || (isLead() && currentProfile.departmentId === departmentId) || assigneeId === currentUser?.uid);
