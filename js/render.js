@@ -997,7 +997,7 @@ function openAssignmentEditor(task){
     result.className = `assignment-assessment ${assessment.level}`;
     result.innerHTML = '';
     result.append(el('strong', '', assessment.level === 'danger' ? '과부하 예상' : assessment.level === 'warn' ? '배정 주의' : assessment.level === 'ok' ? '배정 가능' : '계산 필요'));
-    result.append(el('span', '', `이번 주 ${assessment.weeklyLoad}% · 다음 가능일 ${fmtDate(assessment.nextDate)}`));
+    result.append(el('span', '', `최대 주간 ${assessment.weeklyLoad}% · 다음 가능일 ${fmtDate(assessment.nextDate)}`));
     result.append(el('p', '', assessment.label));
   };
   assignee.select.onchange = update; update();
@@ -1057,6 +1057,24 @@ function openTaskEditor(task, initial = {}){
   const estimate = inputField('예상 작업일', '예: 2.5', 'number'); estimate.input.min = '0'; estimate.input.step = '0.5'; estimate.input.value = task?.estimatedDays ?? '';
   const start = inputField('시작일', '', 'date'); start.input.value = dateOnly(task?.startDate);
   const due = inputField('마감일', '', 'date'); due.input.value = dateOnly(task?.dueDate);
+  const assignmentWarning = el('section', 'assignment-assessment'); assignmentWarning.hidden = editing;
+  const capacityConfirm = document.createElement('input'); capacityConfirm.type = 'checkbox'; capacityConfirm.id = `capacity-confirm-${task?.id || 'new'}`;
+  const capacityConfirmLabel = document.createElement('label'); capacityConfirmLabel.className = 'force-assignment'; capacityConfirmLabel.htmlFor = capacityConfirm.id;
+  capacityConfirmLabel.append(capacityConfirm, document.createTextNode('과부하 경고를 확인했고, 그래도 배정합니다.'));
+  capacityConfirmLabel.hidden = true;
+  let latestAssignmentAssessment = null;
+  const refreshAssignmentWarning = () => {
+    if(editing) return;
+    const candidate = { assigneeId: assignee.select.value, startDate: start.input.value || null, dueDate: due.input.value || null, estimatedDays: Number(estimate.input.value || 0), status: status?.select?.value || 'todo' };
+    latestAssignmentAssessment = assignmentAssessment(assignee.select.value, candidate);
+    assignmentWarning.className = `assignment-assessment ${latestAssignmentAssessment.level}`;
+    assignmentWarning.innerHTML = '';
+    assignmentWarning.append(el('strong', '', latestAssignmentAssessment.level === 'danger' ? '과부하 예상' : latestAssignmentAssessment.level === 'warn' ? '배정 주의' : latestAssignmentAssessment.level === 'ok' ? '배정 가능' : '계산 필요'));
+    assignmentWarning.append(el('span', '', latestAssignmentAssessment.level === 'unknown' ? '담당자·기간·예상 작업일 입력 후 자동 계산' : `최대 주간 ${latestAssignmentAssessment.weeklyLoad}% · 다음 가능일 ${fmtDate(latestAssignmentAssessment.nextDate)}`));
+    assignmentWarning.append(el('p', '', latestAssignmentAssessment.label));
+    capacityConfirm.checked = false;
+    capacityConfirmLabel.hidden = latestAssignmentAssessment.level !== 'danger';
+  };
   const dependencyWarning = el('section', 'dependency-warning'); dependencyWarning.hidden = true;
   const dependencyConfirm = document.createElement('input'); dependencyConfirm.type = 'checkbox'; dependencyConfirm.id = `dependency-confirm-${task?.id || 'new'}`;
   const refreshDependencyWarning = () => {
@@ -1072,10 +1090,15 @@ function openTaskEditor(task, initial = {}){
   };
   dependsOn.select.onchange = refreshDependencyWarning;
   start.input.onchange = refreshDependencyWarning;
+  assignee.select.onchange = refreshAssignmentWarning;
+  estimate.input.oninput = refreshAssignmentWarning;
+  start.input.onchange = () => { refreshDependencyWarning(); refreshAssignmentWarning(); };
+  due.input.onchange = refreshAssignmentWarning;
   if(task?.generated) form.append(el('p', 'sub', '자동 생성 업무입니다. 일정 날짜를 직접 바꾸면 이후 자동 재계산 대상에서 제외됩니다.'));
   form.append(title.wrap, department.wrap, assignee.wrap, project.wrap, platform.wrap, milestone.wrap, dependsOn.wrap, status.wrap, progress.wrap, estimate.wrap, start.wrap, due.wrap);
-  form.appendChild(dependencyWarning);
+  form.append(dependencyWarning, assignmentWarning, capacityConfirmLabel);
   refreshDependencyWarning();
+  refreshAssignmentWarning();
   if(editing) {
     const assignRow = el('div', 'assignment-editor-row');
     assignRow.append(el('span', 'foot-note', `현재 담당자 · ${taskAssigneeName(task)}`), button('담당자 변경', 'tiny ghost', () => openAssignmentEditor(task)));
@@ -1089,7 +1112,8 @@ function openTaskEditor(task, initial = {}){
     try {
       if(!title.input.value.trim() || !project.select.value || !start.input.value || !estimate.input.value) throw new Error('프로젝트, 업무명, 시작일, 예상 작업일을 입력해주세요.');
       if(!dependencyWarning.hidden && !dependencyConfirm.checked) throw new Error('선행 업무와 겹치는 일정을 확인해주세요.');
-      await saveTask({ id: task?.id, title: title.input.value, departmentId: department.select.value, assigneeId: assignee.select.value, projectId: project.select.value || null, platform: platform.select.value || null, milestoneId: milestone.select.value || null, dependsOn: [...dependsOn.select.selectedOptions].map(option => option.value), status: status.select.value, progress: Number(progress.input.value), estimatedDays: Number(estimate.input.value), startDate: start.input.value || null, dueDate: due.input.value || null, dateOverride: Boolean(task?.generated && (dateOnly(task.startDate) !== start.input.value || dateOnly(task.dueDate) !== due.input.value)) });
+      if(!editing && latestAssignmentAssessment?.level === 'danger' && !capacityConfirm.checked) throw new Error('담당자 과부하 경고를 확인해주세요.');
+      await saveTask({ id: task?.id, title: title.input.value, departmentId: department.select.value, assigneeId: assignee.select.value, projectId: project.select.value || null, platform: platform.select.value || null, milestoneId: milestone.select.value || null, dependsOn: [...dependsOn.select.selectedOptions].map(option => option.value), status: status.select.value, progress: Number(progress.input.value), estimatedDays: Number(estimate.input.value), startDate: start.input.value || null, dueDate: due.input.value || null, capacityConfirmed: capacityConfirm.checked, dateOverride: Boolean(task?.generated && (dateOnly(task.startDate) !== start.input.value || dateOnly(task.dueDate) !== due.input.value)) });
       close();
     } catch(error) { alert(error.message); }
   };
