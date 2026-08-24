@@ -21,21 +21,49 @@ function fmtDate(value){ return value ? String(value).slice(0, 10) : '일정 미
 function statusClass(status){ return status === 'done' ? 'ok' : status === 'blocked' ? 'danger' : status === 'in_progress' ? 'accent' : 'neutral'; }
 function healthLabel(health){ return { on_track: '정상', at_risk: '주의', off_track: '위험' }[health] || '미설정'; }
 function healthClass(health){ return health === 'on_track' ? 'ok' : health === 'at_risk' ? 'warn' : health === 'off_track' ? 'danger' : 'neutral'; }
-function timeOffLabel(type){ return { leave: '휴가', sick: '병가', external: '외근', other: '부재' }[type] || '부재'; }
 function userName(uid){
   if(uid === currentUser?.uid) return currentProfile?.name || currentUser?.displayName || '나';
   return visibleUsers.find(user => user.id === uid)?.name || '담당자 미확인';
 }
 function taskAssigneeName(task){ return task?.assigneeName || userName(task?.assigneeId); }
 
+function scheduleStatus(task){
+  if(task.status === 'done') return { label: '완료', tone: 'ok' };
+  if(task.status === 'blocked') return { label: '차단', tone: 'danger' };
+  if(taskIsOverdue(task)) return { label: '지연', tone: 'danger' };
+  const today = dateKey(new Date());
+  if(task.dueDate && task.dueDate <= addBusinessDays(today, 3)) return { label: '임박', tone: 'warn' };
+  return { label: '정상', tone: 'ok' };
+}
+function projectCode(task){
+  const project = projects.find(item => item.id === task?.projectId);
+  const base = project?.code || project?.name || '개인 업무';
+  const suffix = task?.platform === 'mobile' ? 'M' : task?.platform === 'console' ? 'C' : '';
+  return `${base}${suffix}`;
+}
+function setView(view, projectId = null){ activeView = view; selectedProjectId = projectId; rerender(); }
+
+function renderPrimaryNavigation(){
+  const nav = document.getElementById('primaryNav');
+  if(!nav) return;
+  nav.innerHTML = '';
+  if(!currentProfile) return;
+  const entries = [{ id: 'my-work', label: '내 업무' }];
+  if(isLead() || isPM() || isAdmin()) entries.push({ id: 'team', label: '팀 현황' });
+  entries.push({ id: 'projects', label: '프로젝트' });
+  if(isLead() || isPM() || isAdmin()) entries.push({ id: 'people', label: '인력 현황' });
+  entries.forEach(entry => nav.appendChild(button(entry.label, activeView === entry.id ? 'nav-link active' : 'nav-link', () => setView(entry.id))));
+}
+
 function renderAccountActions(){
   const target = document.getElementById('accountActions');
   target.innerHTML = '';
   if(currentUser){
+    target.append(el('span', 'account-name', `${currentProfile?.name || currentUser.displayName || ''} · ${userRoleLabel(currentProfile)}`));
     const profile = el('span', 'account-chip', (currentProfile?.name || currentUser.displayName || currentUser.email || '?').slice(0, 1).toUpperCase());
     profile.title = currentUser.email || '';
     target.append(profile);
-    if(isAdmin() || isLead()) target.appendChild(button(isAdmin() ? '사용자 관리' : '팀원 관리', 'tiny ghost', openAdminManager));
+    if(isAdmin()) target.appendChild(button('사용자 관리', 'tiny ghost', () => setView('admin')));
     target.appendChild(button('로그아웃', 'tiny ghost', signOut));
   }
 }
@@ -83,8 +111,8 @@ function renderHome(main){
   const open = view => { activeView = view; selectedProjectId = null; rerender(); };
   const project = button('', 'workspace-card project-workspace', () => open('projects'));
   project.append(el('span', 'workspace-icon', '◫'), el('span', 'workspace-type', 'PROJECT PORTFOLIO'), el('strong', '', '프로젝트 일정'), el('span', 'workspace-copy', '전체 프로젝트의 진행률, 마감일, 위험 신호를 확인합니다.'), el('span', 'workspace-action', '프로젝트 현황 보기  →'));
-  const work = button('', 'workspace-card work-workspace', () => open('work'));
-  work.append(el('span', 'workspace-icon', '✓'), el('span', 'workspace-type', 'TEAM OPERATIONS'), el('strong', '', '실무 일정'), el('span', 'workspace-copy', '팀 업무, 휴가·부재, 주간 업무량을 관리합니다.'), el('span', 'workspace-action', '실무 일정 보기  →'));
+  const work = button('', 'workspace-card work-workspace', () => open('my-work'));
+  work.append(el('span', 'workspace-icon', '✓'), el('span', 'workspace-type', 'MY WORKSPACE'), el('strong', '', '내 업무'), el('span', 'workspace-copy', '오늘과 이번 주 해야 할 업무를 한 줄 단위로 관리합니다.'), el('span', 'workspace-action', '내 업무 보기  →'));
   modules.append(project, work);
   main.append(intro, modules);
 }
@@ -299,32 +327,29 @@ function renderProjectSchedule(main, project){
 
 function renderWork(main){
   const heading = el('section', 'panel page-heading'); const copy = el('div', 'page-copy');
-  const label = isAdmin() ? '전체 실무 일정' : isLead() ? `${departmentName(currentProfile.departmentId)}팀 실무 일정` : '내 실무 일정';
-  copy.append(el('p', 'eyebrow', isMember() ? 'MY WORK' : 'TEAM OPERATIONS'), el('h2', '', label));
-  copy.append(el('p', 'sub', isMember() ? '내 업무의 상태, 진척률, 일정과 내용을 갱신합니다.' : '업무 배정, 일정, 팀의 가용량을 함께 관리합니다.'));
+  copy.append(el('p', 'eyebrow', 'MY WORK'), el('h2', '', '내 업무'));
+  copy.append(el('p', 'sub', '오늘 해야 할 일과 가까운 마감을 확인하고, 한 줄 단위로 업무를 관리합니다.'));
   heading.appendChild(copy);
   main.appendChild(heading);
   const actions = el('div', 'row');
-  if(isAdmin() || isLead()) actions.appendChild(button('+ 업무 추가', 'primary', () => openTaskEditor(null)));
-  actions.appendChild(button('+ 휴가·부재 등록', 'tiny ghost', () => openTimeOffEditor(null)));
+  actions.appendChild(button('+ 업무 추가', 'primary', () => openTaskEditor(null)));
   main.appendChild(actions);
   const modes = el('nav', 'view-tabs');
-  [['list', '목록'], ['calendar', '월간 캘린더'], ['capacity', '주간 업무량']].forEach(([key, label]) => modes.appendChild(button(label, workViewMode === key ? 'primary tiny' : 'ghost tiny', () => { workViewMode = key; rerender(); })));
+  [['list', '목록'], ['calendar', '월간 캘린더']].forEach(([key, label]) => modes.appendChild(button(label, workViewMode === key ? 'primary tiny' : 'ghost tiny', () => { workViewMode = key; rerender(); })));
   main.appendChild(modes);
-  const list = workTasks();
+  const list = activeTasks().filter(task => task.assigneeId === currentUser?.uid);
   const workMetrics = el('div', 'metric-grid compact-metrics');
   workMetrics.append(metric('활성 업무', list.length), metric('오늘·3일 내 마감', list.filter(task => task.dueDate && Math.round((localDate(task.dueDate) - new Date(new Date().setHours(0,0,0,0))) / 86400000) <= 3 && task.status !== 'done').length, 'warn'), metric('차단됨', list.filter(task => task.status === 'blocked').length, 'danger'));
   main.appendChild(workMetrics);
   renderDueAlerts(main, list);
   if(!list.length) { main.appendChild(el('div', 'empty', '표시할 업무가 없습니다.')); return; }
   if(workViewMode === 'calendar') { renderWorkCalendar(main, list); return; }
-  if(workViewMode === 'capacity') { renderCapacity(main, list); return; }
   const section = el('section', 'task-list');
   list.sort((a, b) => String(a.dueDate || '9999').localeCompare(String(b.dueDate || '9999'))).forEach(task => section.appendChild(taskRow(task, true)));
   main.appendChild(section);
 }
 
-function workTasks(){ return activeTasks().filter(task => isAdmin() || isLead() || task.assigneeId === currentUser.uid); }
+function workTasks(){ return activeTasks().filter(task => task.assigneeId === currentUser?.uid); }
 
 function renderDueAlerts(main, list){
   const today = new Date(); today.setHours(0, 0, 0, 0);
@@ -363,10 +388,6 @@ function renderWorkCalendar(main, list){
       chip.type = 'button'; chip.title = `${userName(task.assigneeId)} · ${task.title}`; chip.onclick = () => canEditTask(task) && openTaskEditor(task);
       cell.appendChild(chip);
     });
-    timeOffs.filter(item => date >= localDate(item.startDate) && date <= localDate(item.endDate)).slice(0, 2).forEach(item => {
-      const chip = el('button', 'calendar-absence', `${timeOffLabel(item.type)} · ${userName(item.userId)}`);
-      chip.type = 'button'; chip.onclick = () => openTimeOffEditor(item); cell.appendChild(chip);
-    });
     const extra = list.filter(task => taskCoversDate(task, date)).length - 4;
     if(extra > 0) cell.appendChild(el('span', 'calendar-more', `+${extra}건`));
     grid.appendChild(cell);
@@ -395,10 +416,73 @@ function renderCapacity(main, list){
   assignees.forEach(assigneeId => {
     const row = document.createElement('tr'); row.appendChild(el('td', '', userName(assigneeId)));
     let total = 0;
-    days.forEach(day => { const absence = absenceFor(assigneeId, day); const load = list.filter(task => task.assigneeId === assigneeId).reduce((sum, task) => sum + taskDailyLoad(task, day), 0); total += load; const cell = el('td', absence ? 'absence-cell' : load > 1 ? 'capacity-over' : '', absence ? timeOffLabel(absence.type) : `${load.toFixed(1)}일`); row.appendChild(cell); });
+    days.forEach(day => { const load = list.filter(task => task.assigneeId === assigneeId).reduce((sum, task) => sum + taskDailyLoad(task, day), 0); total += load; const cell = el('td', load > 1 ? 'capacity-over' : '', `${load.toFixed(1)}일`); row.appendChild(cell); });
     row.appendChild(el('td', total > 5 ? 'capacity-over' : '', `${total.toFixed(1)}일`)); tbody.appendChild(row);
   });
   table.appendChild(tbody); tableWrap.appendChild(table); main.appendChild(tableWrap);
+}
+
+function personProjectBadges(userId){
+  const related = projects.filter(project => tasksForProject(project.id).some(task => task.assigneeId === userId));
+  const wrap = el('div', 'project-badges');
+  related.slice(0, 3).forEach(project => {
+    const active = tasksForProject(project.id).some(task => task.assigneeId === userId && task.status !== 'done');
+    wrap.append(el('span', active ? 'project-badge active' : 'project-badge', project.code || project.name));
+  });
+  if(related.length > 3) wrap.append(el('span', 'project-badge', `+${related.length - 3}`));
+  return wrap;
+}
+
+function renderTeam(main){
+  const scopeUsers = activeUsers().filter(user => isPM() || isAdmin() || user.departmentId === currentProfile?.departmentId);
+  const heading = el('section', 'panel page-heading');
+  const copy = el('div', 'page-copy');
+  copy.append(el('p', 'eyebrow', 'TEAM OVERVIEW'), el('h2', '', isPM() || isAdmin() ? '팀 현황' : `${departmentName(currentProfile?.departmentId)}팀 현황`), el('p', 'sub', '오늘 막힌 업무와 팀원의 업무량을 확인하고 재배정합니다.'));
+  heading.appendChild(copy); main.appendChild(heading);
+  const scopedTasks = activeTasks().filter(task => scopeUsers.some(user => user.id === task.assigneeId));
+  const metrics = el('div', 'metric-grid');
+  metrics.append(metric('오늘 마감', scopedTasks.filter(task => task.status !== 'done' && task.dueDate === dateKey(new Date())).length, 'warn'), metric('지연·차단', scopedTasks.filter(task => taskIsOverdue(task) || task.status === 'blocked').length, 'danger'), metric('과부하 인원', scopeUsers.filter(user => assignmentAssessment(user.id, { assigneeId: user.id, startDate: dateKey(new Date()), dueDate: addBusinessDays(dateKey(new Date()), 4), estimatedDays: 0 }).weeklyLoad > 100).length, 'warn'));
+  main.appendChild(metrics);
+  const tableWrap = el('section', 'table-wrap panel team-table'); const table = document.createElement('table');
+  const head = document.createElement('thead'); const headerRow = document.createElement('tr');
+  ['이름 / 직군', '프로젝트', '진행 업무', '이번 주 업무량', '다음 가능일', '위험'].forEach(label => headerRow.appendChild(el('th', '', label))); head.appendChild(headerRow); table.appendChild(head);
+  const body = document.createElement('tbody');
+  scopeUsers.forEach(user => {
+    const userTasks = scopedTasks.filter(task => task.assigneeId === user.id && task.status !== 'done');
+    const sample = { assigneeId: user.id, startDate: dateKey(new Date()), dueDate: addBusinessDays(dateKey(new Date()), 4), estimatedDays: 0 };
+    const assessment = assignmentAssessment(user.id, sample);
+    const dangerCount = userTasks.filter(task => taskIsOverdue(task) || task.status === 'blocked').length;
+    const row = document.createElement('tr');
+    const name = el('td', '', user.name || user.email); name.append(el('div', 'foot-note', departmentName(user.departmentId))); row.appendChild(name);
+    const projectCell = document.createElement('td'); projectCell.appendChild(personProjectBadges(user.id)); row.appendChild(projectCell);
+    row.appendChild(el('td', '', `${userTasks.length}건`));
+    row.appendChild(el('td', assessment.weeklyLoad > 100 ? 'capacity-over' : '', `${assessment.weeklyLoad}% · ${assessment.weeklyLoad > 100 ? '과부하' : assessment.weeklyLoad >= 80 ? '주의' : '여유'}`));
+    row.appendChild(el('td', '', fmtDate(assessment.nextDate)));
+    row.appendChild(el('td', dangerCount ? 'capacity-over' : '', dangerCount ? `${dangerCount}건` : '–'));
+    row.onclick = () => setView('people'); body.appendChild(row);
+  });
+  table.appendChild(body); tableWrap.appendChild(table); main.appendChild(tableWrap);
+}
+
+function renderPeople(main){
+  const scopeUsers = activeUsers().filter(user => isPM() || isAdmin() || user.departmentId === currentProfile?.departmentId);
+  const heading = el('section', 'panel page-heading'); const copy = el('div', 'page-copy');
+  copy.append(el('p', 'eyebrow', 'WORKFORCE'), el('h2', '', '인력 현황'), el('p', 'sub', '등록된 업무를 기준으로 담당 후보의 여유와 다음 가능일을 비교합니다.'));
+  heading.appendChild(copy); main.appendChild(heading);
+  const groups = { ok: 0, warn: 0, danger: 0 };
+  scopeUsers.forEach(user => { const level = assignmentAssessment(user.id, { assigneeId: user.id, startDate: dateKey(new Date()), dueDate: addBusinessDays(dateKey(new Date()), 4), estimatedDays: 0 }).level; groups[level] = (groups[level] || 0) + 1; });
+  const metrics = el('div', 'metric-grid'); metrics.append(metric('여유', groups.ok), metric('주의', groups.warn, 'warn'), metric('과부하', groups.danger, 'danger')); main.appendChild(metrics);
+  const list = el('section', 'people-list');
+  scopeUsers.forEach(user => {
+    const sample = { assigneeId: user.id, startDate: dateKey(new Date()), dueDate: addBusinessDays(dateKey(new Date()), 4), estimatedDays: 0 };
+    const assessment = assignmentAssessment(user.id, sample);
+    const card = el('article', `person-row ${assessment.level}`);
+    const identity = el('div', 'person-identity'); identity.append(el('strong', '', user.name || user.email), el('span', 'foot-note', `${departmentName(user.departmentId)} · ${userRoleLabel(user)}`));
+    const workload = el('div', 'person-workload'); workload.append(el('span', `tag ${assessment.level}`, assessment.weeklyLoad > 100 ? '과부하' : assessment.weeklyLoad >= 80 ? '주의' : '여유'), el('strong', '', `${assessment.weeklyLoad}%`), el('span', 'foot-note', `다음 가능일 ${fmtDate(assessment.nextDate)}`));
+    card.append(identity, personProjectBadges(user.id), workload); list.appendChild(card);
+  });
+  if(!scopeUsers.length) main.appendChild(el('div', 'empty', '표시할 활성 인력이 없습니다.'));
+  else main.appendChild(list);
 }
 
 function adminAccessPanel(){
@@ -440,6 +524,13 @@ function openAdminManager(){
   const panel = adminAccessPanel();
   panel.classList.add('admin-manager-panel');
   dialog.appendChild(panel);
+}
+
+function renderAdmin(main){
+  const heading = el('section', 'panel page-heading'); const copy = el('div', 'page-copy');
+  copy.append(el('p', 'eyebrow', 'SYSTEM ADMINISTRATION'), el('h2', '', '사용자 관리'), el('p', 'sub', '계정 승인, 업무 역할, 팀과 직군, 퇴사 업무 재배정을 관리합니다.'));
+  heading.appendChild(copy); main.appendChild(heading);
+  main.appendChild(adminAccessPanel());
 }
 
 function openOffboardingEditor(user){
@@ -636,6 +727,41 @@ function openProjectCreator(){
   dialog.appendChild(form);
 }
 
+function openAssignmentEditor(task){
+  const { dialog, close } = openDialog('담당자 변경');
+  dialog.append(el('p', 'sub', `${projectCode(task)} · ${task.title} · ${task.estimatedDays || 0} 워킹데이 · 마감 ${fmtDate(task.dueDate)}`));
+  const form = el('form', 'form-grid');
+  const candidates = [...new Map([
+    ...(currentProfile?.active ? [[currentUser.uid, { id: currentUser.uid, ...currentProfile }]] : []),
+    ...activeUsers().map(user => [user.id, user])
+  ]).values()].filter(user => isAdmin() || isPM() || isLead() ? (!isLead() || user.departmentId === currentProfile.departmentId) : true);
+  const assignee = selectField('새 주 담당자', candidates.map(user => [user.id, `${user.name || user.email} · ${departmentName(user.departmentId)}`]));
+  assignee.select.value = task.assigneeId || '';
+  const result = el('div', 'assignment-assessment');
+  const update = () => {
+    const assessment = assignmentAssessment(assignee.select.value, task);
+    result.className = `assignment-assessment ${assessment.level}`;
+    result.innerHTML = '';
+    result.append(el('strong', '', assessment.level === 'danger' ? '과부하 예상' : assessment.level === 'warn' ? '배정 주의' : assessment.level === 'ok' ? '배정 가능' : '계산 필요'));
+    result.append(el('span', '', `이번 주 ${assessment.weeklyLoad}% · 다음 가능일 ${fmtDate(assessment.nextDate)}`));
+    result.append(el('p', '', assessment.label));
+  };
+  assignee.select.onchange = update; update();
+  const force = document.createElement('input'); force.type = 'checkbox'; force.id = 'force-assignment';
+  const forceLabel = document.createElement('label'); forceLabel.className = 'force-assignment'; forceLabel.htmlFor = force.id; forceLabel.append(force, document.createTextNode('과부하 경고를 확인했고, 그래도 배정합니다.'));
+  const actions = el('div', 'form-actions'); actions.append(button('취소', 'ghost', close), button('배정 저장', 'primary'));
+  form.append(assignee.wrap, result, forceLabel, actions);
+  form.onsubmit = async event => {
+    event.preventDefault();
+    try {
+      const assessment = await reassignTask(task.id, assignee.select.value, force.checked);
+      showToast(`${personName(assignee.select.value)}님에게 업무를 배정했습니다.${assessment.level === 'danger' ? ' 과부하 경고가 기록되었습니다.' : ''}`);
+      close();
+    } catch(error) { showToast(error.message, 'error'); }
+  };
+  dialog.appendChild(form);
+}
+
 function openTaskEditor(task, initial = {}){
   const editing = !!task;
   const { dialog, close, onClose } = openDialog(editing ? '업무 수정' : '업무 추가');
@@ -643,10 +769,14 @@ function openTaskEditor(task, initial = {}){
   const title = inputField('업무명', '업무 내용을 입력하세요'); title.input.value = task?.title || '';
   const departmentOptions = DEPARTMENTS.filter(dept => isAdmin() || dept.id === currentProfile.departmentId).map(dept => [dept.id, dept.name]);
   const department = selectField('담당 부서', departmentOptions); department.select.value = task?.departmentId || currentProfile.departmentId || departmentOptions[0]?.[0] || '';
-  const people = visibleUsers.filter(user => user.active && (!isLead() || user.departmentId === currentProfile.departmentId));
+  const people = [...new Map([
+    ...(currentProfile?.active ? [[currentUser.uid, { id: currentUser.uid, ...currentProfile }]] : []),
+    ...visibleUsers.filter(user => user.active && (!isLead() || user.departmentId === currentProfile.departmentId)).map(user => [user.id, user])
+  ]).values()];
   const assignee = selectField('담당자', people.map(user => [user.id, user.name || user.email]));
   if(task?.assigneeId && !people.some(user => user.id === task.assigneeId)) assignee.select.add(new Option(userName(task.assigneeId), task.assigneeId));
   assignee.select.value = task?.assigneeId || '';
+  if(editing) assignee.select.disabled = true;
   const project = selectField('연결 프로젝트', [['', '프로젝트와 연결하지 않음'], ...projects.map(item => [item.id, item.code || item.name])]); project.select.value = task?.projectId || initial.projectId || '';
   const platform = selectField('플랫폼', [['', '공통'], ...PLATFORMS.map(item => [item.id, item.name])]); platform.select.value = task?.platform || initial.platform || '';
   const milestone = selectField('연결 마일스톤', [['', '마일스톤과 연결하지 않음']]);
@@ -675,12 +805,18 @@ function openTaskEditor(task, initial = {}){
   const due = inputField('마감일', '', 'date'); due.input.value = dateOnly(task?.dueDate);
   if(task?.generated) form.append(el('p', 'sub', '자동 생성 업무입니다. 일정 날짜를 직접 바꾸면 이후 자동 재계산 대상에서 제외됩니다.'));
   form.append(title.wrap, department.wrap, assignee.wrap, project.wrap, platform.wrap, milestone.wrap, dependsOn.wrap, status.wrap, progress.wrap, estimate.wrap, start.wrap, due.wrap);
+  if(editing) {
+    const assignRow = el('div', 'assignment-editor-row');
+    assignRow.append(el('span', 'foot-note', `현재 담당자 · ${taskAssigneeName(task)}`), button('담당자 변경', 'tiny ghost', () => openAssignmentEditor(task)));
+    form.appendChild(assignRow);
+  }
   const actions = el('div', 'form-actions'); actions.appendChild(button('저장', 'primary'));
   if(editing) actions.appendChild(button('업무 보관', 'danger-button', async () => { if(confirm('이 업무를 보관할까요?')) { await archiveTask(task.id); close(); } }));
   form.appendChild(actions);
   form.onsubmit = async event => {
     event.preventDefault();
     try {
+      if(!title.input.value.trim() || !project.select.value || !start.input.value || !estimate.input.value) throw new Error('프로젝트, 업무명, 시작일, 예상 작업일을 입력해주세요.');
       await saveTask({ id: task?.id, title: title.input.value, departmentId: department.select.value, assigneeId: assignee.select.value, projectId: project.select.value || null, platform: platform.select.value || null, milestoneId: milestone.select.value || null, dependsOn: [...dependsOn.select.selectedOptions].map(option => option.value), status: status.select.value, progress: Number(progress.input.value), estimatedDays: Number(estimate.input.value), startDate: start.input.value || null, dueDate: due.input.value || null, dateOverride: Boolean(task?.generated && (dateOnly(task.startDate) !== start.input.value || dateOnly(task.dueDate) !== due.input.value)) });
       close();
     } catch(error) { alert(error.message); }
@@ -749,41 +885,6 @@ function openProjectUpdateEditor(project){
   dialog.appendChild(form);
 }
 
-function openTimeOffEditor(item){
-  const editing = !!item;
-  const { overlay, dialog } = openDialog(editing ? '휴가·부재 수정' : '휴가·부재 등록');
-  const form = el('form', 'form-grid');
-  const eligibleUsers = isAdmin() ? activeUsers() : isLead() ? activeUsers().filter(user => user.departmentId === currentProfile.departmentId) : [{ id: currentUser.uid, name: currentProfile.name || currentUser.displayName || currentUser.email }];
-  const person = selectField('대상자', eligibleUsers.map(user => [user.id, user.name || user.email])); person.select.value = item?.userId || currentUser.uid;
-  const type = selectField('구분', [['leave', '휴가'], ['sick', '병가'], ['external', '외근'], ['other', '기타 부재']]); type.select.value = item?.type || 'leave';
-  const start = inputField('시작일', '', 'date'); start.input.value = dateOnly(item?.startDate);
-  const end = inputField('종료일', '', 'date'); end.input.value = dateOnly(item?.endDate);
-  const reason = inputField('메모 (선택)', '예: 연차'); reason.input.value = item?.reason || '';
-  const submit = button('저장', 'primary');
-  submit.type = 'submit';
-  const error = el('p', 'form-error'); error.hidden = true;
-  form.append(person.wrap, type.wrap, start.wrap, end.wrap, reason.wrap, error);
-  const actions = el('div', 'form-actions'); actions.appendChild(submit);
-  if(editing) actions.appendChild(button('삭제', 'danger-button', async () => { if(confirm('이 부재 일정을 삭제할까요?')) { await deleteTimeOff(item.id); overlay.remove(); } }));
-  form.appendChild(actions);
-  form.onsubmit = async event => {
-    event.preventDefault();
-    error.hidden = true;
-    submit.disabled = true; submit.textContent = '저장 중…';
-    try {
-      await saveTimeOff({ ...item, userId: person.select.value, type: type.select.value, startDate: start.input.value, endDate: end.input.value, reason: reason.input.value });
-      overlay.remove();
-      showToast(editing ? '휴가·부재 일정을 수정했습니다.' : '휴가·부재 일정을 등록했습니다.');
-    } catch(cause) {
-      error.textContent = `저장하지 못했습니다. ${cause.message || '잠시 후 다시 시도해주세요.'}`;
-      error.hidden = false;
-    } finally {
-      submit.disabled = false; submit.textContent = '저장';
-    }
-  };
-  dialog.appendChild(form);
-}
-
 function roleFields(roleValue, departmentValue, adminAccess = false){
   const role = selectField('업무 역할', [['member', '팀원'], ['lead', '팀장'], ['pm', 'PM']]); role.select.value = roleValue === 'admin' ? 'pm' : roleValue || 'member';
   const department = selectField('소속 부서', DEPARTMENTS.map(item => [item.id, item.name])); department.select.value = departmentValue || DEPARTMENTS[0].id;
@@ -818,10 +919,14 @@ function rerender(){
   if(!main || !authResolved) return;
   main.innerHTML = '';
   renderAccountActions();
+  renderPrimaryNavigation();
   if(!currentUser) { loginScreen(main); return; }
   if(!currentProfile || !isApproved()) { pendingScreen(main); return; }
   if(activeView === 'home') { renderHome(main); return; }
-  renderHomeBack(main);
-  if(activeView === 'work') renderWork(main); else renderProjects(main);
+  if(activeView === 'my-work' || activeView === 'work') { renderWork(main); return; }
+  if(activeView === 'team') { renderTeam(main); return; }
+  if(activeView === 'people') { renderPeople(main); return; }
+  if(activeView === 'admin' && isAdmin()) { renderAdmin(main); return; }
+  renderProjects(main);
 }
 
