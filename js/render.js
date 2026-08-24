@@ -483,7 +483,10 @@ function renderWorkAvailabilityCalendar(panel, allTasks){
   for(let index = 0; index < firstDay; index++) grid.appendChild(el('div', 'availability-cell muted-cell'));
   for(let day = 1; day <= lastDate; day++) {
     const date = new Date(year, month, day); const key = dateKey(date);
-    const dayTasks = allTasks.filter(task => task.status !== 'done' && taskCoversDate(task, date));
+    // 일정 이력은 완료 업무까지 보여주되, 가용 시간 계산에는 진행 업무만 반영합니다.
+    const dayTasks = allTasks.filter(task => taskCoversDate(task, date));
+    const activeDayTasks = dayTasks.filter(task => task.status !== 'done');
+    const completedDayTasks = dayTasks.filter(task => task.status === 'done');
     const loadDays = taskLoadForUserOnDate(currentUser.uid, date);
     const capacityDays = userDailyCapacity(currentUser.uid);
     const load = isWeekday(date) && capacityDays ? Math.round((loadDays / capacityDays) * 100) : 0;
@@ -498,10 +501,9 @@ function renderWorkAvailabilityCalendar(panel, allTasks){
     if(!isWeekday(date)) cell.appendChild(el('span', 'availability-label', isHoliday(date) ? '공휴일' : '주말'));
     else if(load > 100) cell.appendChild(el('span', 'availability-label', `과부하 ${load}%`));
     else if(!dayTasks.length) cell.appendChild(el('span', 'availability-label', '업무 없음'));
-    else cell.appendChild(el('span', 'availability-label', `업무 ${dayTasks.length}건 · ${load}%`));
-    if(isWeekday(date)) cell.appendChild(el('span', 'availability-free', freeHours ? `여유 ${freeHours}시간` : '여유 없음'));
-    dayTasks.slice(0, 2).forEach(task => cell.appendChild(el('span', 'availability-task', task.title)));
-    if(dayTasks.length > 2) cell.appendChild(el('span', 'availability-more', `+${dayTasks.length - 2}건`));
+    else if(!activeDayTasks.length) cell.appendChild(el('span', 'availability-label', `완료 ${completedDayTasks.length}건`));
+    else cell.appendChild(el('span', 'availability-label', `진행 ${activeDayTasks.length}건${completedDayTasks.length ? ` · 완료 ${completedDayTasks.length}` : ''}`));
+    if(isWeekday(date)) cell.appendChild(el('span', 'availability-free', activeDayTasks.length ? (freeHours ? `여유 ${freeHours}시간 · ${load}%` : `여유 없음 · ${load}%`) : `여유 ${Math.round(capacityDays * 8)}시간`));
     grid.appendChild(cell);
   }
   panel.appendChild(grid);
