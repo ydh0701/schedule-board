@@ -493,8 +493,6 @@ function renderWorkAvailabilityCalendar(panel, allTasks){
   const monthWorkingDates = Array.from({ length: lastDate }, (_, index) => new Date(year, month, index + 1)).filter(isWeekday);
   const scheduledDays = monthWorkingDates.filter(date => allTasks.some(task => taskCoversDate(task, date))).length;
   const freeDays = monthWorkingDates.length - scheduledDays;
-  const heading = el('div', 'availability-heading');
-  heading.appendChild(el('h3', '', '이번 달 가용 시간'));
   const nav = el('div', 'availability-month-bar');
   const controls = el('div', 'availability-controls');
   controls.append(button('◀', 'tiny ghost', () => { workCalendarCursor.setMonth(workCalendarCursor.getMonth() - 1); rerender(); }), el('strong', '', `${workCalendarCursor.getFullYear()}년 ${workCalendarCursor.getMonth() + 1}월`), button('▶', 'tiny ghost', () => { workCalendarCursor.setMonth(workCalendarCursor.getMonth() + 1); rerender(); }));
@@ -503,7 +501,7 @@ function renderWorkAvailabilityCalendar(panel, allTasks){
   [[`근무일`, `${monthWorkingDates.length}일`], ['업무일', `${scheduledDays}일`], ['여유일', `${freeDays}일`]].forEach(([label, value]) => {
     const item = el('div', ''); item.append(el('span', '', label), el('strong', '', value)); summary.appendChild(item);
   });
-  panel.append(heading, nav, summary);
+  panel.append(nav, summary);
   const grid = el('div', 'availability-calendar');
   ['일', '월', '화', '수', '목', '금', '토'].forEach(label => grid.appendChild(el('div', 'availability-dow', label)));
   for(let index = 0; index < firstDay; index++) grid.appendChild(el('div', 'availability-cell muted-cell'));
@@ -546,7 +544,7 @@ function renderProjectGroupedWork(main, allTasks, options = {}){
   const head = el('div', 'work-section-head');
   const copy = el('div', '');
   copy.appendChild(el('h3', '', '프로젝트별 진행 업무'));
-  const completedProjectToggle = button('완료 프로젝트 보기', 'tiny ghost');
+  const completedProjectToggle = button('완료 프로젝트 보기', 'tiny ghost completed-project-filter');
   head.append(copy, completedProjectToggle); section.appendChild(head);
   const tabs = el('nav', 'work-project-tabs');
   const panel = el('section', 'work-project-panel');
@@ -622,7 +620,7 @@ function renderProjectGroupedWork(main, allTasks, options = {}){
   completedProjectToggle.onclick = () => {
     showCompletedProjects = !showCompletedProjects;
     completedProjectToggle.textContent = showCompletedProjects ? '완료 프로젝트 숨기기' : '완료 프로젝트 보기';
-    completedProjectToggle.className = showCompletedProjects ? 'tiny primary' : 'tiny ghost';
+    completedProjectToggle.className = showCompletedProjects ? 'tiny primary completed-project-filter' : 'tiny ghost completed-project-filter';
     draw();
   };
   draw();
