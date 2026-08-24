@@ -428,14 +428,9 @@ function renderProjectSchedule(main, project){
 }
 
 function renderWork(main){
-  const heading = el('section', 'panel page-heading'); const copy = el('div', 'page-copy');
-  copy.append(el('p', 'eyebrow', 'MY WORK'), el('h2', '', '내 업무'));
-  copy.append(el('p', 'sub', '오늘 할 일부터 프로젝트별 진행 업무까지, 실제 일하는 흐름에 맞춰 확인합니다.'));
-  heading.appendChild(copy);
-  main.appendChild(heading);
-  const actions = el('div', 'row');
-  actions.append(button('+ 빠른 추가', 'primary', openQuickTaskEditor), button('상세 업무 추가', 'ghost', () => openTaskEditor(null)));
-  main.appendChild(actions);
+  const toolbar = el('div', 'work-toolbar');
+  toolbar.append(el('h2', '', '내 업무'), button('+ 업무 추가', 'primary', () => openTaskEditor(null)));
+  main.appendChild(toolbar);
   const modes = el('nav', 'view-tabs');
   [['list', '프로젝트별 업무'], ['calendar', '월간 캘린더']].forEach(([key, label]) => modes.appendChild(button(label, workViewMode === key ? 'primary tiny' : 'ghost tiny', () => { workViewMode = key; rerender(); })));
   main.appendChild(modes);
