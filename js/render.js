@@ -560,12 +560,19 @@ function renderProjectGroupedWork(main, allTasks, options = {}){
       byProject.get(key).push(task);
     });
     if(!byProject.size) { panel.appendChild(el('div', 'empty', '표시할 업무가 없습니다.')); return; }
-    const entries = [...byProject.entries()].sort(([leftId], [rightId]) => {
-      const leftProject = projects.find(project => project.id === leftId);
-      const rightProject = projects.find(project => project.id === rightId);
-      const leftCode = leftProject?.code || leftProject?.name || (leftId === '__personal__' ? 'ZZZ 개인 업무' : 'ZZZ');
-      const rightCode = rightProject?.code || rightProject?.name || (rightId === '__personal__' ? 'ZZZ 개인 업무' : 'ZZZ');
-      return leftCode.localeCompare(rightCode, 'ko', { numeric: true, sensitivity: 'base' });
+    const entries = [...byProject.entries()].sort(([, leftTasks], [, rightTasks]) => {
+      const leftActive = leftTasks.filter(task => task.status !== 'done');
+      const rightActive = rightTasks.filter(task => task.status !== 'done');
+      // 완료된 프로젝트는 지나간 일정으로 먼저, 진행 중 프로젝트는 다음 마감이 가까운 순으로 둡니다.
+      if(!leftActive.length && rightActive.length) return -1;
+      if(leftActive.length && !rightActive.length) return 1;
+      const leftDate = !leftActive.length
+        ? leftTasks.map(task => task.completedAt || task.dueDate || '9999-12-31').sort()[0]
+        : leftActive.map(task => task.dueDate || '9999-12-31').sort()[0];
+      const rightDate = !rightActive.length
+        ? rightTasks.map(task => task.completedAt || task.dueDate || '9999-12-31').sort()[0]
+        : rightActive.map(task => task.dueDate || '9999-12-31').sort()[0];
+      return String(leftDate).localeCompare(String(rightDate));
     });
     if(!entries.some(([key]) => key === selectedProjectKey)) selectedProjectKey = (entries.find(([, tasks]) => tasks.some(task => task.status !== 'done' && taskCoversDate(task, today))) || entries[0])[0];
     entries.forEach(([projectId, tasks]) => {
@@ -574,7 +581,7 @@ function renderProjectGroupedWork(main, allTasks, options = {}){
       const activeCount = tasks.filter(task => task.status !== 'done').length;
       const todayCount = tasks.filter(task => task.status !== 'done' && taskCoversDate(task, today)).length;
       const tab = button('', projectId === selectedProjectKey ? 'primary tiny' : 'ghost tiny', () => { selectedProjectKey = projectId; draw(); });
-      tab.append(el('strong', '', code), el('span', '', ` ${activeCount}`));
+      tab.appendChild(el('strong', '', code));
       if(todayCount) tab.appendChild(el('em', '', `오늘 ${todayCount}`));
       tabs.appendChild(tab);
     });
