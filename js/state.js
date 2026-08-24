@@ -554,6 +554,16 @@ async function archiveTask(taskId){
   });
 }
 
+async function completeTask(taskId){
+  const task = tasks.find(item => item.id === taskId);
+  if(!requirePermission(canEditTask(task), '이 업무를 완료 처리할 권한이 없습니다.')) return;
+  await db.collection('tasks').doc(taskId).update({
+    status: 'done', progress: 100,
+    completedAt: firebase.firestore.FieldValue.serverTimestamp(),
+    updatedAt: firebase.firestore.FieldValue.serverTimestamp(), updatedBy: currentUser.uid
+  });
+}
+
 function importedTaskStatus(value){
   const text = String(value || '').trim().toLowerCase();
   if(['완료', 'done', '100', '100%'].includes(text)) return 'done';
