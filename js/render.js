@@ -17,7 +17,7 @@ function showToast(message, tone = 'success'){
   document.body.appendChild(toast);
   window.setTimeout(() => toast.remove(), 3600);
 }
-function fmtDate(value){ return value ? String(value).slice(0, 10) : '일정 미정'; }
+function fmtDate(value){ return dateOnly(value) || '일정 미정'; }
 function statusClass(status){ return status === 'done' ? 'ok' : status === 'blocked' ? 'danger' : status === 'in_progress' ? 'accent' : 'neutral'; }
 function healthLabel(health){ return { on_track: '정상', at_risk: '주의', off_track: '위험' }[health] || '미설정'; }
 function healthClass(health){ return health === 'on_track' ? 'ok' : health === 'at_risk' ? 'warn' : health === 'off_track' ? 'danger' : 'neutral'; }
@@ -142,7 +142,7 @@ function projectCard(project){
   const projectProgressValue = projectProgress(project.id) ?? 0;
   const card = el('article', 'proj-card');
   card.tabIndex = 0;
-  const open = () => { selectedProjectId = project.id; projectScheduleCursor = null; rerender(); };
+  const open = () => { selectedProjectId = project.id; projectScheduleCursor = null; projectDetailTab = 'schedule'; rerender(); };
   card.onclick = open;
   card.onkeydown = event => { if(event.key === 'Enter' || event.key === ' ') open(); };
   const cardHead = el('div', 'project-card-head');
@@ -255,7 +255,70 @@ function renderProjectDetail(main, project){
   if(staffingActions.childNodes.length) staffing.appendChild(staffingActions);
   hero.appendChild(staffing);
   main.appendChild(hero);
-  renderProjectSchedule(main, project);
+  const projectTasks = tasksForProject(project.id);
+  const riskTasks = projectTasks.filter(task => taskIsOverdue(task) || task.status === 'blocked' || !task.assigneeId);
+  if(riskTasks.length) {
+    const risks = el('section', 'project-risks');
+    risks.append(el('strong', '', `확인 필요 · 지연·차단·미배정 ${riskTasks.length}건`));
+    risks.append(el('span', '', `지연 ${projectTasks.filter(taskIsOverdue).length} · 차단 ${projectTasks.filter(task => task.status === 'blocked').length} · 미배정 ${projectTasks.filter(task => !task.assigneeId).length}`));
+    risks.append(button('위험 업무 보기', 'tiny ghost', () => { projectDetailTab = 'tasks'; rerender(); }));
+    main.appendChild(risks);
+  }
+  const tabs = el('nav', 'project-detail-tabs');
+  const entries = [['schedule', '일정 조율'], ['tasks', `전체 업무 ${projectTasks.length}`], ['milestones', `마일스톤 ${milestonesForProject(project.id).length}`]];
+  if(isPM() || isAdmin()) entries.push(['history', '변경 이력']);
+  entries.forEach(([id, label]) => tabs.appendChild(button(label, projectDetailTab === id ? 'primary tiny' : 'ghost tiny', () => { projectDetailTab = id; rerender(); })));
+  main.appendChild(tabs);
+  if(projectDetailTab === 'tasks') renderProjectTaskList(main, project);
+  else if(projectDetailTab === 'milestones') renderProjectMilestoneList(main, project);
+  else if(projectDetailTab === 'history') renderProjectHistory(main, project);
+  else renderProjectSchedule(main, project);
+}
+
+function renderProjectTaskList(main, project){
+  const section = el('section', 'panel project-task-panel');
+  const head = el('div', 'section-title-row'); head.append(el('div', '', ''), canManageProjects() ? button('+ 업무 추가', 'tiny primary', () => openTaskEditor(null, { projectId: project.id })) : el('span', '', ''));
+  head.firstChild.append(el('h2', '', '전체 업무'), el('p', 'sub', '업무 행을 눌러 상태·기간·담당자를 수정합니다.'));
+  section.appendChild(head);
+  const filters = el('div', 'timeline-filters');
+  const filterState = { value: 'all' };
+  const list = el('div', 'task-list');
+  const draw = () => {
+    list.innerHTML = '';
+    const items = tasksForProject(project.id).filter(task => filterState.value === 'all' || (filterState.value === 'risk' ? (taskIsOverdue(task) || task.status === 'blocked' || !task.assigneeId) : task.departmentId === filterState.value));
+    if(!items.length) list.appendChild(el('div', 'empty', '표시할 업무가 없습니다.'));
+    else items.sort((a,b) => String(a.dueDate || '9999').localeCompare(String(b.dueDate || '9999'))).forEach(task => list.appendChild(taskRow(task, true)));
+  };
+  [['all','전체'], ['risk','위험'], ...DEPARTMENTS.map(dept => [dept.id, dept.name])].forEach(([key, label]) => filters.appendChild(button(label, key === 'all' ? 'primary tiny' : 'ghost tiny', event => { filterState.value = key; [...filters.querySelectorAll('button')].forEach(item => item.className = 'ghost tiny'); event.currentTarget.className = 'primary tiny'; draw(); })));
+  section.append(filters, list); draw(); main.appendChild(section);
+}
+
+function renderProjectMilestoneList(main, project){
+  const section = el('section', 'panel project-task-panel');
+  const head = el('div', 'section-title-row'); const copy = el('div', ''); copy.append(el('h2', '', '마일스톤'), el('p', 'sub', '고정 일정과 연결된 업무의 진행 상태를 확인합니다.')); head.append(copy);
+  if(canManageProjects()) head.appendChild(button('+ 마일스톤', 'tiny primary', () => openMilestoneEditor(null, project.id))); section.appendChild(head);
+  const list = el('div', 'milestone-list');
+  const items = milestonesForProject(project.id).sort((a,b) => String(a.dueDate).localeCompare(String(b.dueDate)));
+  if(!items.length) list.appendChild(el('div', 'empty', '등록된 마일스톤이 없습니다.'));
+  items.forEach(item => {
+    const linked = tasksForMilestone(item.id); const overdue = linked.filter(taskIsOverdue).length;
+    const row = el('article', 'milestone-row'); const info = el('div', ''); info.append(el('strong', '', item.title), el('p', 'foot-note', `${fmtDate(item.dueDate)} · 연결 업무 ${linked.length}건${overdue ? ` · 지연 ${overdue}건` : ''}`));
+    row.append(info, el('span', `tag ${overdue ? 'danger' : 'ok'}`, overdue ? '위험' : `${milestoneProgress(item.id) ?? 0}%`));
+    if(canManageProjects()) row.appendChild(button('수정', 'tiny ghost', () => openMilestoneEditor(item, project.id))); list.appendChild(row);
+  });
+  section.appendChild(list); main.appendChild(section);
+}
+
+function renderProjectHistory(main, project){
+  const section = el('section', 'panel project-task-panel'); section.append(el('h2', '', '변경 이력'), el('p', 'sub', '담당자 이관과 과부하 경고 확인 기록입니다.'));
+  const list = el('div', 'history-list');
+  const items = assignmentHistory.filter(item => item.projectId === project.id).sort((a,b) => timestampMillis(b.changedAt) - timestampMillis(a.changedAt));
+  if(!items.length) list.appendChild(el('div', 'empty', '아직 담당자 변경 이력이 없습니다.'));
+  items.forEach(item => {
+    const row = el('article', 'history-row');
+    row.append(el('strong', '', `${item.previousAssigneeName || '미배정'} → ${item.nextAssigneeName || '미배정'}`), el('span', 'foot-note', `${item.changedByName || '사용자'} · ${fmtDate(item.changedAt)}${item.warningLevel === 'danger' ? ' · 과부하 경고 확인' : ''}`)); list.appendChild(row);
+  });
+  section.appendChild(list); main.appendChild(section);
 }
 
 function timelineCategory(entry){
