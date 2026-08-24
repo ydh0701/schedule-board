@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Pretendard+Variable:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?v=20260824-08">
+<link rel="stylesheet" href="css/style.css?v=20260824-09">
 
 <!-- Firebase App, Authentication & Firestore SDK -->
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
@@ -24,6 +24,21 @@
     appId: "1:219583463660:web:74dca5304d9ec4408ca5c9"
   };
   firebase.initializeApp(firebaseConfig);
+</script>
+<script>
+  // 외부 스크립트 단계의 오류도 빈 화면으로 숨지 않도록 최소 진단기를 둡니다.
+  (function(){
+    function showBootError(message){
+      window.setTimeout(function(){
+        var main = document.getElementById('main');
+        if(!main || main.childElementCount) return;
+        main.innerHTML = '<section class="panel render-error"><p class="eyebrow">SCREEN ERROR</p><h2>화면을 표시하지 못했습니다.</h2><p class="sub">오류 정보를 확인해 수정 중입니다.</p><code class="render-error-code"></code></section>';
+        var code = main.querySelector('.render-error-code'); if(code) code.textContent = message || '알 수 없는 오류';
+      }, 0);
+    }
+    window.addEventListener('error', function(event){ showBootError(event.message || '스크립트 실행 오류'); });
+    window.addEventListener('unhandledrejection', function(event){ showBootError(event.reason && event.reason.message ? event.reason.message : String(event.reason || '처리되지 않은 오류')); });
+  })();
 </script>
 </head>
 <body>
@@ -61,9 +76,9 @@
 </script>
 
 <!-- 의존 순서: 상태/인증 → 화면 → 초기 구동. -->
-<script src="js/state.js?v=20260824-08"></script>
-<script src="js/render.js?v=20260824-08"></script>
-<script src="js/main.js?v=20260824-08"></script>
+<script src="js/state.js?v=20260824-09"></script>
+<script src="js/render.js?v=20260824-09"></script>
+<script src="js/main.js?v=20260824-09"></script>
 </body>
 </html>
 
