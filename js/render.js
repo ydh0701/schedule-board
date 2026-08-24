@@ -196,14 +196,16 @@ function renderProjects(main){
   main.appendChild(grid);
 }
 
-function taskRow(task, showProject){
+function taskRow(task, showProject, mineCompact = false){
   const row = el('article', `task-row ${taskIsOverdue(task) ? 'overdue' : ''}`);
   const body = el('div', 'task-main');
   body.append(el('strong', 'task-title', task.title));
   const meta = [];
   if(showProject) meta.push(task.projectId ? projectCode(task) : '개인 업무');
-  if(task.platform) meta.push(platformName(task.platform));
-  meta.push(departmentName(task.departmentId), taskAssigneeName(task));
+  if(!mineCompact) {
+    if(task.platform) meta.push(platformName(task.platform));
+    meta.push(departmentName(task.departmentId), taskAssigneeName(task));
+  }
   if(task.startDate || task.dueDate) meta.push(`${fmtDate(task.startDate)} ~ ${fmtDate(task.dueDate)}`);
   const milestone = milestones.find(item => item.id === task.milestoneId);
   if(milestone) meta.push(`마일스톤: ${milestone.title}`);
@@ -470,16 +472,24 @@ function renderWorkDashboard(main, allTasks){
 }
 
 function renderWorkAvailabilityCalendar(panel, allTasks){
-  const nav = el('div', 'availability-heading');
-  const copy = el('div', '');
-  copy.append(el('h3', '', '이번 달 가용 시간'), el('p', 'foot-note', '빈 날짜를 누르면 해당 날짜로 업무를 추가합니다.'));
-  const controls = el('div', 'availability-controls');
-  controls.append(button('◀', 'tiny ghost', () => { workCalendarCursor.setMonth(workCalendarCursor.getMonth() - 1); rerender(); }), el('strong', '', `${workCalendarCursor.getFullYear()}년 ${workCalendarCursor.getMonth() + 1}월`), button('▶', 'tiny ghost', () => { workCalendarCursor.setMonth(workCalendarCursor.getMonth() + 1); rerender(); }));
-  nav.append(copy, controls); panel.appendChild(nav);
-  const grid = el('div', 'availability-calendar');
-  ['일', '월', '화', '수', '목', '금', '토'].forEach(label => grid.appendChild(el('div', 'availability-dow', label)));
   const year = workCalendarCursor.getFullYear(), month = workCalendarCursor.getMonth();
   const firstDay = new Date(year, month, 1).getDay(), lastDate = new Date(year, month + 1, 0).getDate();
+  const monthWorkingDates = Array.from({ length: lastDate }, (_, index) => new Date(year, month, index + 1)).filter(isWeekday);
+  const scheduledDays = monthWorkingDates.filter(date => allTasks.some(task => taskCoversDate(task, date))).length;
+  const freeDays = monthWorkingDates.length - scheduledDays;
+  const heading = el('div', 'availability-heading');
+  heading.appendChild(el('h3', '', '이번 달 가용 시간'));
+  const nav = el('div', 'availability-month-bar');
+  const controls = el('div', 'availability-controls');
+  controls.append(button('◀', 'tiny ghost', () => { workCalendarCursor.setMonth(workCalendarCursor.getMonth() - 1); rerender(); }), el('strong', '', `${workCalendarCursor.getFullYear()}년 ${workCalendarCursor.getMonth() + 1}월`), button('▶', 'tiny ghost', () => { workCalendarCursor.setMonth(workCalendarCursor.getMonth() + 1); rerender(); }));
+  nav.appendChild(controls);
+  const summary = el('div', 'availability-month-summary');
+  [[`근무일`, `${monthWorkingDates.length}일`], ['업무일', `${scheduledDays}일`], ['여유일', `${freeDays}일`]].forEach(([label, value]) => {
+    const item = el('div', ''); item.append(el('span', '', label), el('strong', '', value)); summary.appendChild(item);
+  });
+  panel.append(heading, nav, summary);
+  const grid = el('div', 'availability-calendar');
+  ['일', '월', '화', '수', '목', '금', '토'].forEach(label => grid.appendChild(el('div', 'availability-dow', label)));
   for(let index = 0; index < firstDay; index++) grid.appendChild(el('div', 'availability-cell muted-cell'));
   for(let day = 1; day <= lastDate; day++) {
     const date = new Date(year, month, day); const key = dateKey(date);
@@ -520,7 +530,7 @@ function renderProjectGroupedWork(main, allTasks, options = {}){
   const section = el('section', `work-projects-section ${options.embedded ? 'embedded' : ''}`);
   const head = el('div', 'work-section-head');
   const copy = el('div', '');
-  copy.append(el('h3', '', '프로젝트별 진행 업무'), el('p', 'foot-note', todayTasks.length ? `오늘 해야 할 일 ${todayTasks.length}건 · 프로젝트 안에서는 마감일이 빠른 업무부터 확인합니다.` : '프로젝트 안에서는 마감일이 빠른 업무부터 확인합니다.'));
+  copy.appendChild(el('h3', '', '프로젝트별 진행 업무'));
   const toggle = button('완료 업무 포함', 'tiny ghost');
   head.append(copy, toggle); section.appendChild(head);
   const tabs = el('nav', 'work-project-tabs');
@@ -572,7 +582,7 @@ function renderProjectGroupedWork(main, allTasks, options = {}){
     if(project) panelHead.appendChild(button('프로젝트 보기 →', 'tiny ghost', () => { activeView = 'projects'; selectedProjectId = project.id; projectDetailTab = 'tasks'; rerender(); }));
     panel.appendChild(panelHead);
     const list = el('div', 'task-list compact-task-list work-project-task-grid');
-    projectTasks.forEach(task => list.appendChild(taskRow(task, false)));
+    projectTasks.forEach(task => list.appendChild(taskRow(task, false, true)));
     panel.appendChild(list);
   };
   toggle.onclick = () => { includeDone = !includeDone; toggle.textContent = includeDone ? '진행 업무만 보기' : '완료 업무 포함'; toggle.className = includeDone ? 'tiny primary' : 'tiny ghost'; draw(); };
