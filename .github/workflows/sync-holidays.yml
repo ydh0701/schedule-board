@@ -1,0 +1,26 @@
+name: 한국 공휴일 동기화
+
+on:
+  workflow_dispatch:
+  schedule:
+    # 매주 월요일 오전 3시(KST): 일요일 18:00 UTC
+    - cron: '0 18 * * 0'
+
+permissions:
+  contents: read
+
+jobs:
+  sync-holidays:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 저장소 가져오기
+        uses: actions/checkout@v4
+      - name: Node.js 준비
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: 공휴일 동기화
+        env:
+          KASI_HOLIDAY_API_KEY: ${{ secrets.KASI_HOLIDAY_API_KEY }}
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: node scripts/sync_korean_holidays.js
