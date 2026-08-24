@@ -546,35 +546,35 @@ function renderProjectGroupedWork(main, allTasks, options = {}){
   const head = el('div', 'work-section-head');
   const copy = el('div', '');
   copy.appendChild(el('h3', '', '프로젝트별 진행 업무'));
-  head.appendChild(copy); section.appendChild(head);
+  const completedProjectToggle = button('완료 프로젝트 보기', 'tiny ghost');
+  head.append(copy, completedProjectToggle); section.appendChild(head);
   const tabs = el('nav', 'work-project-tabs');
   const panel = el('section', 'work-project-panel');
   section.append(tabs, panel); main.appendChild(section);
   let selectedProjectKey = null;
+  let showCompletedProjects = false;
   const draw = () => {
     tabs.innerHTML = ''; panel.innerHTML = '';
     const byProject = new Map();
+    // 개인 업무는 언제나 첫 탭으로 남깁니다.
+    byProject.set('__personal__', []);
     allTasks.forEach(task => {
       const key = task.projectId || '__personal__';
       if(!byProject.has(key)) byProject.set(key, []);
       byProject.get(key).push(task);
     });
-    if(!byProject.size) { panel.appendChild(el('div', 'empty', '표시할 업무가 없습니다.')); return; }
-    const entries = [...byProject.entries()].sort(([, leftTasks], [, rightTasks]) => {
+    const entries = [...byProject.entries()]
+      .filter(([projectId, tasks]) => projectId === '__personal__' || showCompletedProjects || tasks.some(task => task.status !== 'done'))
+      .sort(([leftId, leftTasks], [rightId, rightTasks]) => {
+      if(leftId === '__personal__') return -1;
+      if(rightId === '__personal__') return 1;
       const leftActive = leftTasks.filter(task => task.status !== 'done');
       const rightActive = rightTasks.filter(task => task.status !== 'done');
-      // 완료된 프로젝트는 지나간 일정으로 먼저, 진행 중 프로젝트는 다음 마감이 가까운 순으로 둡니다.
-      if(!leftActive.length && rightActive.length) return -1;
-      if(leftActive.length && !rightActive.length) return 1;
-      const leftDate = !leftActive.length
-        ? leftTasks.map(task => task.completedAt || task.dueDate || '9999-12-31').sort()[0]
-        : leftActive.map(task => task.dueDate || '9999-12-31').sort()[0];
-      const rightDate = !rightActive.length
-        ? rightTasks.map(task => task.completedAt || task.dueDate || '9999-12-31').sort()[0]
-        : rightActive.map(task => task.dueDate || '9999-12-31').sort()[0];
+      const leftDate = (leftActive.length ? leftActive : leftTasks).map(task => task.dueDate || task.completedAt || '9999-12-31').sort()[0];
+      const rightDate = (rightActive.length ? rightActive : rightTasks).map(task => task.dueDate || task.completedAt || '9999-12-31').sort()[0];
       return String(leftDate).localeCompare(String(rightDate));
     });
-    if(!entries.some(([key]) => key === selectedProjectKey)) selectedProjectKey = (entries.find(([, tasks]) => tasks.some(task => task.status !== 'done' && taskCoversDate(task, today))) || entries[0])[0];
+    if(!entries.some(([key]) => key === selectedProjectKey)) selectedProjectKey = (entries.find(([key, tasks]) => key !== '__personal__' && tasks.some(task => task.status !== 'done' && taskCoversDate(task, today))) || entries.find(([, tasks]) => tasks.some(task => task.status !== 'done')) || entries[0])[0];
     entries.forEach(([projectId, tasks]) => {
       const project = projects.find(item => item.id === projectId);
       const code = project?.code || project?.name || '개인 업무';
@@ -604,10 +604,6 @@ function renderProjectGroupedWork(main, allTasks, options = {}){
     panelHead.appendChild(panelCopy);
     if(project) panelHead.appendChild(button('프로젝트 보기 →', 'tiny ghost', () => { activeView = 'projects'; selectedProjectId = project.id; projectDetailTab = 'tasks'; rerender(); }));
     panel.appendChild(panelHead);
-    const list = el('div', 'task-list compact-task-list work-project-task-grid');
-    if(projectTasks.length) projectTasks.forEach(task => list.appendChild(taskRow(task, false, true)));
-    else list.appendChild(el('div', 'empty compact-empty', '진행 중인 업무가 없습니다.'));
-    panel.appendChild(list);
     if(completedTasks.length) {
       const completed = el('details', 'completed-task-group');
       const summary = el('summary', '');
@@ -618,6 +614,16 @@ function renderProjectGroupedWork(main, allTasks, options = {}){
       completed.appendChild(completedList);
       panel.appendChild(completed);
     }
+    const list = el('div', 'task-list compact-task-list work-project-task-grid');
+    if(projectTasks.length) projectTasks.forEach(task => list.appendChild(taskRow(task, false, true)));
+    else list.appendChild(el('div', 'empty compact-empty', '진행 중인 업무가 없습니다.'));
+    panel.appendChild(list);
+  };
+  completedProjectToggle.onclick = () => {
+    showCompletedProjects = !showCompletedProjects;
+    completedProjectToggle.textContent = showCompletedProjects ? '완료 프로젝트 숨기기' : '완료 프로젝트 보기';
+    completedProjectToggle.className = showCompletedProjects ? 'tiny primary' : 'tiny ghost';
+    draw();
   };
   draw();
 }
