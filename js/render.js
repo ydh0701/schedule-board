@@ -244,6 +244,7 @@ function taskRow(task, showProject, mineCompact = false){
       try { await completeTask(task.id); showToast('업무를 완료 처리했습니다.'); }
       catch(error) { showToast(error.message, 'error'); }
     }));
+    if(task.status !== 'done' && canManageTaskAssignment(task)) actions.appendChild(button('이관', 'tiny ghost handover-task-button', () => openAssignmentEditor(task)));
     actions.appendChild(button('수정', 'tiny edit-task-button', () => openTaskEditor(task)));
     row.appendChild(actions);
   }
@@ -1261,7 +1262,8 @@ function openImportEditor(){
 }
 
 function openAssignmentEditor(task){
-  const { dialog, close } = openDialog('담당자 변경');
+  const isOwnHandover = task.assigneeId === currentUser?.uid && !isAdmin() && !isPM() && !isLead();
+  const { dialog, close } = openDialog(isOwnHandover ? '업무 이관' : '담당자 변경');
   dialog.append(el('p', 'sub', `${projectCode(task)} · ${task.title} · ${task.estimatedDays || 0} 워킹데이 · 마감 ${fmtDate(task.dueDate)}`));
   const form = el('form', 'form-grid');
   const candidates = [...new Map([
@@ -1280,15 +1282,22 @@ function openAssignmentEditor(task){
     result.append(el('p', '', assessment.label));
   };
   assignee.select.onchange = update; update();
-  const force = document.createElement('input'); force.type = 'checkbox'; force.id = 'force-assignment';
+  const force = document.createElement('input'); force.type = 'checkbox'; force.id = `force-assignment-${task.id}`;
   const forceLabel = document.createElement('label'); forceLabel.className = 'force-assignment'; forceLabel.htmlFor = force.id; forceLabel.append(force, document.createTextNode('과부하 경고를 확인했고, 그래도 배정합니다.'));
-  const actions = el('div', 'form-actions'); actions.append(button('취소', 'ghost', close), button('배정 저장', 'primary'));
+  const refresh = () => {
+    update();
+    const assessment = assignmentAssessment(assignee.select.value, task);
+    force.checked = false;
+    forceLabel.hidden = assessment.level !== 'danger';
+  };
+  assignee.select.onchange = refresh; refresh();
+  const actions = el('div', 'form-actions'); actions.append(button('취소', 'ghost', close), button(isOwnHandover ? '이관하기' : '배정 저장', 'primary'));
   form.append(assignee.wrap, result, forceLabel, actions);
   form.onsubmit = async event => {
     event.preventDefault();
     try {
       const assessment = await reassignTask(task.id, assignee.select.value, force.checked);
-      showToast(`${personName(assignee.select.value)}님에게 업무를 배정했습니다.${assessment.level === 'danger' ? ' 과부하 경고가 기록되었습니다.' : ''}`);
+      showToast(`${personName(assignee.select.value)}님에게 업무를 ${isOwnHandover ? '이관했습니다' : '배정했습니다'}.${assessment.level === 'danger' ? ' 과부하 경고가 기록되었습니다.' : ''}`);
       close();
     } catch(error) { showToast(error.message, 'error'); }
   };
