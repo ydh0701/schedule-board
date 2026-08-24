@@ -1,6 +1,3 @@
-Warning: truncated output (original token count: 22558)
-Total output lines: 1236
-
 /* render.js — 로그인, 프로젝트 일정, 실무 일정 화면 */
 
 function el(tag, className, text){
@@ -562,7 +559,159 @@ function renderTeam(main){
 
 function renderPeople(main){
   const scopeUsers = activeUsers().filter(user => isPM() || isAdmin() || user.departmentId === currentProfile?.departmentId);
-  const heading = el('section', 'panel page-heading'); const co…2558 tokens truncated…Values.set(`${platform}:${departmentId}`, field.select.value);
+  const heading = el('section', 'panel page-heading'); const copy = el('div', 'page-copy');
+  copy.append(el('p', 'eyebrow', 'WORKFORCE'), el('h2', '', '인력 현황'), el('p', 'sub', '등록된 업무를 기준으로 담당 후보의 여유와 다음 가능일을 비교합니다.'));
+  heading.appendChild(copy); main.appendChild(heading);
+  const groups = { ok: 0, warn: 0, danger: 0 };
+  scopeUsers.forEach(user => { const level = assignmentAssessment(user.id, { assigneeId: user.id, startDate: dateKey(new Date()), dueDate: addBusinessDays(dateKey(new Date()), 4), estimatedDays: 0 }).level; groups[level] = (groups[level] || 0) + 1; });
+  const metrics = el('div', 'metric-grid'); metrics.append(metric('여유', groups.ok), metric('주의', groups.warn, 'warn'), metric('과부하', groups.danger, 'danger')); main.appendChild(metrics);
+  const list = el('section', 'people-list');
+  scopeUsers.forEach(user => {
+    const sample = { assigneeId: user.id, startDate: dateKey(new Date()), dueDate: addBusinessDays(dateKey(new Date()), 4), estimatedDays: 0 };
+    const assessment = assignmentAssessment(user.id, sample);
+    const card = el('article', `person-row ${assessment.level}`);
+    const identity = el('div', 'person-identity'); identity.append(el('strong', '', user.name || user.email), el('span', 'foot-note', `${departmentName(user.departmentId)} · ${userRoleLabel(user)}`));
+    const workload = el('div', 'person-workload'); workload.append(el('span', `tag ${assessment.level}`, assessment.weeklyLoad > 100 ? '과부하' : assessment.weeklyLoad >= 80 ? '주의' : '여유'), el('strong', '', `${assessment.weeklyLoad}%`), el('span', 'foot-note', `다음 가능일 ${fmtDate(assessment.nextDate)}`));
+    card.append(identity, personProjectBadges(user.id), workload); list.appendChild(card);
+  });
+  if(!scopeUsers.length) main.appendChild(el('div', 'empty', '표시할 활성 인력이 없습니다.'));
+  else main.appendChild(list);
+}
+
+function adminAccessPanel(){
+  const panel = el('section', 'panel admin-access-panel');
+  const title = el('div', 'section-title-row'); title.append(el('h2', '', '사용자 및 권한 관리'));
+  const managedUsers = visibleUsers.filter(user => isAdmin() || user.departmentId === currentProfile.departmentId);
+  const active = managedUsers.filter(user => user.active);
+  const inactive = managedUsers.filter(user => !user.active);
+  title.appendChild(el('span', 'foot-note', `${isAdmin() ? `승인 대기 ${accessRequests.length}명 · ` : ''}현재 사용자 ${active.length}명`));
+  panel.appendChild(title);
+  if(isAdmin() && accessRequests.length) {
+    panel.append(el('h3', 'small-heading', '승인 대기'));
+    accessRequests.forEach(request => {
+      const row = el('div', 'admin-user-row');
+      row.append(el('div', '', request.name || request.email || '이름 미지정'));
+      row.append(el('span', 'foot-note', request.email || '이메일 없음'));
+      row.appendChild(button('승인 및 배정', 'tiny primary', () => openApprovalEditor(request)));
+      panel.appendChild(row);
+    });
+  }
+  panel.append(el('h3', 'small-heading', '현재 사용자'));
+  active.forEach(user => {
+    const row = el('div', 'admin-user-row');
+    row.append(el('div', '', user.name || user.email));
+    row.append(el('span', 'foot-note', `${user.email || ''} · ${userRoleLabel(user)}${user.departmentId ? ' · ' + departmentName(user.departmentId) : ''}`));
+    if(isAdmin()) row.appendChild(button('권한 수정', 'tiny ghost', () => openUserRoleEditor(user)));
+    if(canManageOffboarding(user)) row.appendChild(button('퇴사 처리', 'tiny danger-button', () => openOffboardingEditor(user)));
+    panel.appendChild(row);
+  });
+  if(inactive.length) {
+    panel.append(el('h3', 'small-heading', '비활성 계정'));
+    inactive.forEach(user => panel.append(el('p', 'foot-note', `${user.name || user.email} · 과거 기록 보존`)));
+  }
+  return panel;
+}
+
+function openAdminManager(){
+  const { dialog } = openDialog('사용자 및 권한 관리');
+  const panel = adminAccessPanel();
+  panel.classList.add('admin-manager-panel');
+  dialog.appendChild(panel);
+}
+
+function renderAdmin(main){
+  const heading = el('section', 'panel page-heading'); const copy = el('div', 'page-copy');
+  copy.append(el('p', 'eyebrow', 'SYSTEM ADMINISTRATION'), el('h2', '', '사용자 관리'), el('p', 'sub', '계정 승인, 업무 역할, 팀과 직군, 퇴사 업무 재배정을 관리합니다.'));
+  heading.appendChild(copy); main.appendChild(heading);
+  main.appendChild(adminAccessPanel());
+}
+
+function openOffboardingEditor(user){
+  const { overlay, dialog } = openDialog(`${user.name || user.email} 퇴사 처리`);
+  const openTasks = unfinishedTasksForUser(user.id);
+  dialog.append(el('p', 'sub', '완료 업무는 그대로 보존됩니다. 진행 중·예정·차단 업무는 반드시 재배정, 미배정 또는 보관 중 하나로 처리해야 합니다.'));
+  const form = el('form', 'form-grid');
+  const decisions = [];
+  if(!openTasks.length) form.append(el('p', 'sub', '처리할 미완료 업무가 없습니다. 계정 로그인과 새 업무 배정만 중지합니다.'));
+  openTasks.forEach(task => {
+    const card = el('section', 'handover-task');
+    card.append(el('strong', '', task.title));
+    const project = projects.find(item => item.id === task.projectId);
+    card.append(el('p', 'foot-note', `${project?.code || '공통 업무'}${task.platform ? ` · ${platformName(task.platform)}` : ''} · ${TASK_STATUS[task.status] || '할 일'}`));
+    const candidates = activeUsers().filter(candidate => candidate.id !== user.id && (isAdmin() || candidate.departmentId === user.departmentId) && candidate.departmentId === task.departmentId);
+    const action = selectField('처리 방법', [
+      ['reassign', '다른 담당자에게 재배정'], ['unassign', '미배정으로 남기기'], ['archive', '업무 보관']
+    ]);
+    const replacement = selectField('새 담당자', [['', '담당자 선택'], ...candidates.map(candidate => [candidate.id, candidate.name || candidate.email])]);
+    if(!candidates.length) action.select.value = 'unassign';
+    const sync = () => { replacement.wrap.hidden = action.select.value !== 'reassign'; };
+    action.select.onchange = sync; sync();
+    card.append(action.wrap, replacement.wrap); form.appendChild(card);
+    decisions.push({ task, action, replacement });
+  });
+  const error = el('p', 'form-error'); error.hidden = true;
+  const submit = button('업무 처리 후 퇴사 확정', 'danger-button'); submit.type = 'submit';
+  const actions = el('div', 'form-actions'); actions.append(submit); form.append(error, actions);
+  form.onsubmit = async event => {
+    event.preventDefault(); error.hidden = true;
+    const input = decisions.map(item => ({ taskId: item.task.id, action: item.action.select.value, userId: item.replacement.select.value }));
+    const invalid = input.find(item => item.action === 'reassign' && !item.userId);
+    if(invalid) { error.textContent = '재배정 업무의 새 담당자를 선택해주세요.'; error.hidden = false; return; }
+    submit.disabled = true; submit.textContent = '퇴사 처리 중…';
+    try {
+      await offboardUser(user.id, input); overlay.remove(); showToast(`${user.name || user.email}님의 계정을 비활성화하고 업무 인수인계를 반영했습니다.`);
+    } catch(cause) {
+      error.textContent = cause.message || '퇴사 처리에 실패했습니다.'; error.hidden = false;
+    } finally { submit.disabled = false; submit.textContent = '업무 처리 후 퇴사 확정'; }
+  };
+  dialog.appendChild(form);
+}
+
+function inputField(label, placeholder, type = 'text'){
+  const wrap = el('label', 'field'); wrap.append(el('span', '', label));
+  const input = document.createElement('input'); input.type = type; input.placeholder = placeholder || ''; wrap.appendChild(input);
+  return { wrap, input };
+}
+function selectField(label, options){
+  const wrap = el('label', 'field'); wrap.append(el('span', '', label));
+  const select = document.createElement('select');
+  options.forEach(([value, labelText]) => { const option = new Option(labelText, value); select.add(option); });
+  wrap.appendChild(select); return { wrap, select };
+}
+function multiSelectField(label){
+  const wrap = el('label', 'field'); wrap.append(el('span', '', label));
+  const select = document.createElement('select'); select.multiple = true; select.size = 4;
+  wrap.appendChild(select); return { wrap, select };
+}
+
+function openDialog(title){
+  const overlay = el('div', 'modal-backdrop');
+  const dialog = el('section', 'modal panel');
+  const cleanup = [];
+  const close = () => { cleanup.splice(0).forEach(fn => fn()); overlay.remove(); };
+  const header = el('div', 'modal-header'); header.append(el('h2', '', title));
+  header.appendChild(button('×', 'tiny ghost', close));
+  dialog.appendChild(header); overlay.appendChild(dialog);
+  overlay.onclick = event => { if(event.target === overlay) close(); };
+  document.body.appendChild(overlay);
+  return { overlay, dialog, close, onClose: fn => cleanup.push(fn) };
+}
+
+function openProjectEditor(project){
+  const { overlay, dialog } = openDialog('프로젝트 정보 수정');
+  const form = el('form', 'form-grid');
+  const name = inputField('프로젝트명', ''); name.input.value = project.name || '';
+  const code = inputField('코드', ''); code.input.value = project.code || '';
+  const staffingTitle = el('h3', 'small-heading', '플랫폼별 직군 담당자');
+  const staffingBox = el('div', 'staffing-grid');
+  const staffingValues = new Map((project.staffing || []).map(item => [`${item.platform}:${item.departmentId}`, item.userId || '']));
+  (project.platforms || []).forEach(platform => {
+    const card = el('section', 'staffing-card'); card.append(el('strong', '', `${platformName(platform)} 담당자`));
+    TEMPLATE_DEPARTMENTS.forEach(departmentId => {
+      const people = visibleUsers.filter(user => user.active && user.departmentId === departmentId);
+      const field = selectField(departmentName(departmentId), [['', '나중에 배정'], ...people.map(user => [user.id, user.name || user.email])]);
+      field.select.value = staffingValues.get(`${platform}:${departmentId}`) || '';
+      field.select.onchange = () => staffingValues.set(`${platform}:${departmentId}`, field.select.value);
       card.appendChild(field.wrap);
     });
     staffingBox.appendChild(card);
