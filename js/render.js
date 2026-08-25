@@ -53,7 +53,6 @@ function renderPrimaryNavigation(){
   if(!currentProfile) return;
   const entries = [{ id: 'my-work', label: '내 업무' }];
   entries.push({ id: 'projects', label: '프로젝트' });
-  if(isLead() || isPM() || isAdmin()) entries.push({ id: 'team', label: '팀 현황' });
   if(isLead() || isPM() || isAdmin()) entries.push({ id: 'people', label: '인력 현황' });
   entries.forEach(entry => nav.appendChild(button(entry.label, activeView === entry.id ? 'nav-link active' : 'nav-link', () => setView(entry.id))));
 }
@@ -963,13 +962,24 @@ function renderPeople(main){
   const groups = { ok: 0, warn: 0, danger: 0 };
   scopeUsers.forEach(user => { const level = userWorkloadSummary(user.id).assessment.level; groups[level] = (groups[level] || 0) + 1; });
   const metrics = el('div', 'metric-grid'); metrics.append(metric('여유', groups.ok), metric('주의', groups.warn, 'warn'), metric('과부하', groups.danger, 'danger')); main.appendChild(metrics);
+  const toolbar = el('div', 'people-view-toolbar');
+  [['department', '직군별'], ['risk', '위험 업무'], ['available', '가용 인력'], ['all', '전체 인력']].forEach(([id, label]) => toolbar.appendChild(button(label, peopleView === id ? 'primary tiny' : 'ghost tiny', () => { peopleView = id; rerender(); })));
+  main.appendChild(toolbar);
   const list = el('section', 'people-list');
-  scopeUsers.forEach(user => {
+  let visible = scopeUsers.filter(user => {
+    const summary = userWorkloadSummary(user.id);
+    return peopleView === 'risk' ? summary.riskCount > 0 || summary.assessment.weeklyLoad >= 80 : peopleView === 'available' ? summary.assessment.weeklyLoad < 80 : true;
+  });
+  visible.sort((a, b) => peopleView === 'department' ? departmentName(a.departmentId).localeCompare(departmentName(b.departmentId)) || String(a.name || '').localeCompare(String(b.name || '')) : userWorkloadSummary(b.id).assessment.weeklyLoad - userWorkloadSummary(a.id).assessment.weeklyLoad);
+  let lastDepartment = '';
+  visible.forEach(user => {
+    if(peopleView === 'department' && user.departmentId !== lastDepartment) { list.appendChild(el('h2', 'people-department-heading', departmentName(user.departmentId))); lastDepartment = user.departmentId; }
     const summary = userWorkloadSummary(user.id); const assessment = summary.assessment;
     const card = el('article', `person-row ${assessment.level}`);
     const identity = el('div', 'person-identity'); identity.append(el('strong', '', user.name || user.email), el('span', 'foot-note', `${departmentName(user.departmentId)} · ${userRoleLabel(user)}`));
     const workload = el('div', 'person-workload'); workload.append(el('span', `tag ${assessment.level}`, assessment.weeklyLoad > 100 ? '과부하' : assessment.weeklyLoad >= 80 ? '주의' : '여유'), el('strong', '', `${assessment.weeklyLoad}%`), el('span', 'foot-note', `다음 가능일 ${fmtDate(assessment.nextDate)}`));
-    const reason = el('p', 'foot-note', summary.topTasks.length ? `이번 주 집중 업무 · ${summary.topTasks.map(item => `${item.task.title} ${item.load.toFixed(1)}일`).join(' · ')}` : '이번 주 예정 업무가 없습니다.');
+    const activeTasks = activeTasks().filter(task => taskAssignedToUser(task, user.id) && task.status !== 'done').sort((a, b) => String(a.dueDate || '9999').localeCompare(String(b.dueDate || '9999')));
+    const reason = el('p', 'foot-note', activeTasks.length ? `현재 업무 · ${activeTasks.slice(0, 2).map(task => `${task.title} (${fmtDate(task.dueDate)}까지)`).join(' · ')}` : '진행 중인 업무가 없습니다.');
     card.append(identity, personProjectBadges(user.id), workload, reason); list.appendChild(card);
   });
   if(!scopeUsers.length) main.appendChild(el('div', 'empty', '표시할 활성 인력이 없습니다.'));
@@ -1733,7 +1743,7 @@ function rerender(){
     if(!currentProfile || !isApproved()) { pendingScreen(main); return; }
     if(activeView === 'home') { renderHome(main); return; }
     if(activeView === 'my-work' || activeView === 'work') { renderWork(main); return; }
-    if(activeView === 'team') { renderTeam(main); return; }
+    if(activeView === 'team') { renderPeople(main); return; }
     if(activeView === 'people') { renderPeople(main); return; }
     if(activeView === 'admin' && isAdmin()) { renderAdmin(main); return; }
     renderProjects(main);
