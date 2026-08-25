@@ -219,7 +219,6 @@ function taskRow(task, showProject, mineCompact = false){
   row.appendChild(body);
   const state = el('div', 'task-state');
   const schedule = scheduleStatus(task);
-  if(mineCompact && task.platform) state.appendChild(el('span', 'tag platform', platformName(task.platform)));
   if(task.status === 'done') state.appendChild(el('span', 'tag ok', '완료'));
   if(task.status === 'blocked') state.appendChild(el('span', 'tag danger', '차단됨'));
   if(task.status !== 'done' && task.status !== 'blocked' && taskIsOverdue(task)) state.appendChild(el('span', 'tag danger', schedule.label));
@@ -641,6 +640,7 @@ function renderProjectGroupedWork(main, allTasks, options = {}){
     const project = projects.find(item => item.id === projectId);
     const platformIds = [...new Set(tasks.map(task => task.platform).filter(Boolean))];
     if(selectedPlatform !== 'all' && !platformIds.includes(selectedPlatform)) selectedPlatform = 'all';
+    if(platformIds.length === 1 && selectedPlatform === 'all') selectedPlatform = platformIds[0];
     const visibleTasks = selectedPlatform === 'all' ? tasks : tasks.filter(task => task.platform === selectedPlatform);
     const projectTasks = visibleTasks.filter(task => task.status !== 'done').sort((a, b) => String(a.dueDate || '9999').localeCompare(String(b.dueDate || '9999')));
     const completedTasks = visibleTasks.filter(task => task.status === 'done').sort((a, b) => String(b.completedAt || b.dueDate || '').localeCompare(String(a.completedAt || a.dueDate || '')));
@@ -657,11 +657,11 @@ function renderProjectGroupedWork(main, allTasks, options = {}){
     panelCopy.appendChild(progressLine);
     panelHead.appendChild(panelCopy);
     const panelActions = el('div', 'work-project-panel-actions');
-    if(platformIds.length > 1) {
+    if(platformIds.length) {
       const platformTabs = el('nav', 'work-platform-tabs');
-      [['all', '전체'], ...platformIds.map(id => [id, platformName(id)])].forEach(([id, label]) => {
-        const count = id === 'all' ? tasks.length : tasks.filter(task => task.platform === id).length;
-        const filter = button(`${label} ${count}`, id === selectedPlatform ? 'primary tiny' : 'ghost tiny', () => { selectedPlatform = id; draw(); });
+      const platformOptions = platformIds.length > 1 ? [['all', '전체'], ...platformIds.map(id => [id, platformName(id)])] : platformIds.map(id => [id, platformName(id)]);
+      platformOptions.forEach(([id, label]) => {
+        const filter = button(label, id === selectedPlatform ? 'primary tiny' : 'ghost tiny', () => { selectedPlatform = id; draw(); });
         platformTabs.appendChild(filter);
       });
       panelActions.appendChild(platformTabs);
