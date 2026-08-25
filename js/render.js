@@ -410,7 +410,7 @@ function projectCommandCenter(project, projectTasks){
 
 function renderProjectDetail(main, project){
   if(!project) { selectedProjectId = null; rerender(); return; }
-  main.appendChild(button('← 전체 프로젝트', 'tiny ghost', () => { selectedProjectId = null; projectTimelineFilter = 'all'; projectScheduleCursor = null; rerender(); }));
+  main.appendChild(button('← 전체 프로젝트', 'tiny ghost', () => { selectedProjectId = null; projectTimelineFilter = 'all'; projectScheduleCursor = null; projectScheduleSelectedDate = null; rerender(); }));
 
   const hero = el('section', 'panel project-hero');
   const overview = el('div', 'project-hero-overview');
@@ -449,9 +449,15 @@ function renderProjectDetail(main, project){
   overview.append(progressBlock(projectProgress(project.id)));
   overview.append(el('span', `tag ${healthClass(project.health)}`, healthLabel(project.health)));
   hero.appendChild(overview);
+  const staffing = el('aside', 'project-header-staffing');
+  staffing.appendChild(el('strong', '', '플랫폼별 담당자'));
+  (project.platforms || []).forEach(platform => {
+    const members = (project.staffing || []).filter(item => item.platform === platform && item.userId).map(item => `${departmentName(item.departmentId)} ${userName(item.userId)}`);
+    staffing.append(el('div', 'project-header-staffing-row', `${platformName(platform)} · ${members.join(' / ') || '미배정'}`));
+  });
+  hero.appendChild(staffing);
   main.appendChild(hero);
   const projectTasks = tasksForProject(project.id);
-  main.appendChild(projectCommandCenter(project, projectTasks));
   const tabs = el('nav', 'project-detail-tabs');
   const entries = [['schedule', '일정 조율'], ['tasks', `전체 업무 ${projectTasks.length}`], ['milestones', `마일스톤 ${milestonesForProject(project.id).length}`]];
   if(isPM() || isAdmin()) entries.push(['history', '변경 이력']);
@@ -552,24 +558,32 @@ function renderProjectSchedule(main, project){
   if(!projectScheduleCursor) { const base = localDate(dates[0]) || new Date(); projectScheduleCursor = new Date(base.getFullYear(), base.getMonth(), 1); }
   const cursor = new Date(projectScheduleCursor.getFullYear(), projectScheduleCursor.getMonth(), 1);
   const firstDay = cursor.getDay(), lastDate = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 0).getDate();
+  const todayKey = dateKey(todayDate());
+  if(!projectScheduleSelectedDate || !projectScheduleSelectedDate.startsWith(`${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, '0')}`)) projectScheduleSelectedDate = todayKey.startsWith(`${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, '0')}`) ? todayKey : dateKey(new Date(cursor.getFullYear(), cursor.getMonth(), 1));
   const section = el('section', 'panel project-month-schedule');
   const head = el('div', 'section-title-row'); const copy = el('div', ''); copy.append(el('h2', '', '월간 일정'), el('p', 'sub', '날짜를 누르면 직군별 업무와 마일스톤을 확인합니다.'));
   const actions = el('div', 'timeline-actions'); if(canManageProjects()) actions.append(button('+ 마일스톤', 'tiny ghost', () => openMilestoneEditor(null, project.id)), button('+ 업무 추가', 'tiny primary', () => openTaskEditor(null, { projectId: project.id }))); head.append(copy, actions); section.appendChild(head);
   const nav = el('div', 'availability-month-bar'); const controls = el('div', 'availability-controls'); controls.append(button('◀', 'tiny ghost', () => { projectScheduleCursor = new Date(cursor.getFullYear(), cursor.getMonth() - 1, 1); rerender(); }), el('strong', '', `${cursor.getFullYear()}년 ${cursor.getMonth() + 1}월`), button('▶', 'tiny ghost', () => { projectScheduleCursor = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1); rerender(); })); nav.appendChild(controls); section.appendChild(nav);
-  const grid = el('div', 'project-month-calendar'); ['일', '월', '화', '수', '목', '금', '토'].forEach(label => grid.appendChild(el('div', 'project-month-dow', label)));
-  for(let index = 0; index < firstDay; index++) grid.appendChild(el('div', 'project-month-cell muted-cell'));
+  const layout = el('div', 'project-schedule-layout'); const calendar = el('div', 'project-month-calendar'); ['일', '월', '화', '수', '목', '금', '토'].forEach(label => calendar.appendChild(el('div', 'project-month-dow', label)));
+  for(let index = 0; index < firstDay; index++) calendar.appendChild(el('div', 'project-month-cell muted-cell'));
   for(let day = 1; day <= lastDate; day++) {
     const date = new Date(cursor.getFullYear(), cursor.getMonth(), day), key = dateKey(date);
     const dayTasks = projectTasks.filter(task => taskCoversDate(task, date)); const dayMilestones = milestonesForProject(project.id).filter(item => item.dueDate === key);
-    const cell = button('', `project-month-cell ${key === dateKey(todayDate()) ? 'today' : ''} ${isHoliday(date) ? 'holiday' : ''}`, () => openProjectSchedulePopover(cell, date, project, dayTasks, dayMilestones));
+    const cell = button('', `project-month-cell ${key === projectScheduleSelectedDate ? 'selected' : ''} ${key === todayKey ? 'today' : ''} ${isHoliday(date) ? 'holiday' : ''}`, () => { projectScheduleSelectedDate = key; rerender(); });
     cell.appendChild(el('strong', 'project-month-date', String(day)));
     dayMilestones.slice(0, 1).forEach(item => cell.appendChild(el('span', 'project-month-milestone', item.title)));
     const counts = DEPARTMENTS.map(department => [department, dayTasks.filter(task => task.departmentId === department.id).length]).filter(([, count]) => count);
     counts.slice(0, 3).forEach(([department, count]) => cell.appendChild(el('span', 'project-month-department', `${department.name} ${count}`)));
     if(counts.length > 3) cell.appendChild(el('span', 'project-month-more', `+${counts.length - 3}`));
-    grid.appendChild(cell);
+    calendar.appendChild(cell);
   }
-  section.appendChild(grid); main.appendChild(section);
+  const selectedDate = localDate(projectScheduleSelectedDate); const selectedTasks = projectTasks.filter(task => taskCoversDate(task, selectedDate)); const selectedMilestones = milestonesForProject(project.id).filter(item => item.dueDate === projectScheduleSelectedDate);
+  const detail = el('aside', 'project-schedule-detail'); detail.append(el('strong', '', `${projectScheduleSelectedDate} 상세`));
+  selectedMilestones.forEach(item => detail.appendChild(canManageProjects() ? button(item.title, 'project-day-milestone', () => openMilestoneEditor(item, project.id)) : el('div', 'project-day-milestone', item.title)));
+  const groups = new Map(); selectedTasks.forEach(task => { const key = task.departmentId || 'other'; if(!groups.has(key)) groups.set(key, []); groups.get(key).push(task); });
+  if(!selectedTasks.length && !selectedMilestones.length) detail.appendChild(el('p', 'foot-note', '등록된 업무가 없습니다.'));
+  groups.forEach((tasks, departmentId) => { const group = el('section', 'project-day-group'); group.appendChild(el('strong', '', departmentName(departmentId))); tasks.forEach(task => { const item = canEditTask(task) ? button('', 'project-day-task', () => openTaskEditor(task)) : el('div', 'project-day-task'); item.append(el('span', '', task.title), el('small', '', `${task.platform ? platformName(task.platform) + ' · ' : ''}${taskAssigneeName(task)}`)); group.appendChild(item); }); detail.appendChild(group); });
+  layout.append(calendar, detail); section.appendChild(layout); main.appendChild(section);
 }
 
 function renderWork(main){
