@@ -1,0 +1,77 @@
+/* 프로젝트 상세·업무 보드·인력 보드 전용 스타일. 기본 스타일보다 뒤에 로드합니다. */
+
+#main .project-hero {
+  display: grid;
+  grid-template-columns: minmax(255px, .5fr) minmax(0, 1.5fr);
+  gap: 18px;
+  align-items: start;
+  padding: 13px 18px;
+  margin: 8px 0;
+}
+
+#main .project-hero-overview-head { align-items: flex-start; }
+#main .project-hero-overview h2 { margin: 0; font-size: 22px; }
+#main .project-hero-overview .progress-line { max-width: 390px; margin-top: 8px; }
+#main .project-hero-overview > .tag { margin-top: 5px; }
+#main .project-hero-actions { justify-content: flex-end; gap: 6px; margin: 0 0 5px; }
+#main .project-hero-actions button { white-space: nowrap; }
+#main .project-header-staffing { display: grid; gap: 2px; min-width: 0; padding: 0; border-left: 0; }
+#main .project-header-staffing > strong { display: none; }
+#main .project-header-staffing-row { min-height: 0; padding: 4px 0; }
+
+#main .project-month-schedule { padding: 12px 14px; }
+#main .project-schedule-actions { display: flex; justify-content: flex-end; gap: 6px; min-height: 29px; margin: 0 0 2px; }
+#main .project-month-schedule .availability-month-bar { min-height: 37px; margin: 0 0 6px; }
+#main .project-month-schedule .project-month-cell { min-height: 72px; }
+#main .project-month-schedule .project-schedule-layout { gap: 9px; }
+#main .project-month-schedule .project-schedule-detail { padding: 10px; }
+
+.project-task-board-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 32px; }
+.project-task-board-head h2 { margin: 0; font-family: var(--font-display); font-size: 17px; letter-spacing: -.04em; }
+.project-task-board-filters { display: flex; gap: 5px; margin: 9px 0 10px; }
+.project-task-board { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; align-items: start; }
+.project-task-board-column { min-width: 0; padding: 10px; border: 1px solid var(--line); border-radius: 11px; background: var(--surface-soft); }
+.project-task-board-column-head { display: flex; align-items: center; justify-content: space-between; gap: 7px; padding: 0 1px 7px; border-bottom: 1px solid var(--line); }
+.project-task-board-column-head h3 { margin: 0; font-family: var(--font-display); font-size: 14px; }
+.project-task-board-column-head span { padding: 2px 5px; border-radius: 5px; background: var(--surface); color: var(--muted); font-family: var(--font-mono); font-size: 9px; }
+.project-task-board-cards { display: grid; gap: 6px; margin-top: 7px; }
+.project-task-board-card { min-width: 0; padding: 8px 9px; border: 1px solid var(--line); border-left: 3px solid var(--accent); border-radius: 8px; background: var(--surface); }
+.project-task-board-card.danger { border-left-color: var(--danger); }
+.project-task-board-card.done { border-left-color: var(--ok); opacity: .72; }
+.project-task-board-card[tabindex] { cursor: pointer; }
+.project-task-board-card[tabindex]:hover, .project-task-board-card[tabindex]:focus-visible { border-color: var(--accent); outline: 0; box-shadow: 0 0 0 2px var(--accent-soft); }
+.project-task-board-card-head { display: flex; align-items: center; justify-content: space-between; gap: 6px; min-width: 0; }
+.project-task-board-card-head strong { overflow: hidden; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.project-task-board-card-head .tag { flex: 0 0 auto; font-size: 8px; }
+.project-task-board-card-meta { margin: 4px 0 0; overflow: hidden; color: var(--muted); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+
+.people-department-board { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; align-items: start; }
+.people-department-column { min-width: 0; padding: 11px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
+.people-department-column-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 1px 8px; border-bottom: 1px solid var(--line); }
+.people-department-column-head h2 { margin: 0; font-family: var(--font-display); font-size: 15px; letter-spacing: -.03em; }
+.people-department-column-head span { padding: 3px 6px; border-radius: 6px; background: var(--surface-soft); color: var(--muted); font-family: var(--font-mono); font-size: 10px; }
+.people-mini-list { display: grid; gap: 7px; margin-top: 8px; }
+.people-mini-card { min-width: 0; padding: 9px 10px; border: 1px solid var(--line); border-left: 3px solid var(--ok); border-radius: 8px; background: var(--surface-soft); }
+.people-mini-card.warn { border-left-color: var(--warn); }
+.people-mini-card.danger { border-left-color: var(--danger); }
+.people-mini-card-head { display: flex; align-items: center; justify-content: space-between; gap: 7px; min-width: 0; }
+.people-mini-card-head > strong { overflow: hidden; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.people-mini-card-head .tag { flex: 0 0 auto; font-size: 9px; }
+.people-mini-task, .people-mini-meta { margin: 5px 0 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.people-mini-task { color: var(--text); font-size: 11px; font-weight: 700; }
+.people-mini-meta { color: var(--muted); font-family: var(--font-mono); font-size: 9px; }
+
+@media (max-width: 1000px) {
+  .project-task-board, .people-department-board { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 720px) {
+  #main .project-hero { grid-template-columns: 1fr; padding: 14px; }
+  #main .project-header-staffing { padding-top: 10px; border-top: 1px solid var(--line); }
+  #main .project-schedule-layout { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 620px) {
+  .project-task-board, .people-department-board { grid-template-columns: 1fr; }
+}
+
