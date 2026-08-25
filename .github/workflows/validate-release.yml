@@ -17,5 +17,7 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: 24
-      - run: node scripts/verify_release.js
+      - run: |
+          node scripts/verify_release.js
+          node scripts/verify_rules_contract.js
 
