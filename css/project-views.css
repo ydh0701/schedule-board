@@ -101,12 +101,36 @@
 .people-mini-task { color: var(--text); font-size: 11px; font-weight: 700; }
 .people-mini-meta { color: var(--muted); font-family: var(--font-mono); font-size: 9px; }
 
+.people-layout { display: grid; grid-template-columns: 205px minmax(0, 1fr); gap: 12px; align-items: start; }
+.people-summary-panel { position: sticky; top: 78px; padding: 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
+.people-summary-panel h2 { margin: 0 0 9px; font-family: var(--font-display); font-size: 16px; letter-spacing: -.035em; }
+.people-summary-list { display: grid; overflow: hidden; border: 1px solid var(--line); border-radius: 8px; }
+.people-summary-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 36px; padding: 7px 9px; border-bottom: 1px solid var(--line); background: var(--surface-soft); }
+.people-summary-row:last-child { border-bottom: 0; }
+.people-summary-row span { color: var(--muted); font-size: 10px; }
+.people-summary-row strong { font-family: var(--font-mono); font-size: 13px; }
+.people-summary-row.ok strong { color: var(--ok); }
+.people-summary-row.warn strong { color: var(--warn); }
+.people-summary-row.danger strong { color: var(--danger); }
+.people-view-toolbar { display: grid; gap: 4px; margin-top: 10px; }
+.people-view-toolbar button { width: 100%; justify-content: flex-start; box-shadow: none; }
+.people-content { min-width: 0; }
+.people-content .people-department-board { gap: 9px; }
+.people-content .people-department-column { padding: 9px; border-radius: 10px; }
+.people-content .people-mini-list { gap: 5px; margin-top: 7px; }
+.people-content .people-mini-card { padding: 8px 9px; }
+
 @media (max-width: 1000px) {
   .project-task-layout { grid-template-columns: 210px minmax(0, 1fr); }
   .project-task-board, .people-department-board { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .people-layout { grid-template-columns: 180px minmax(0, 1fr); }
 }
 
 @media (max-width: 720px) {
+  .people-layout { grid-template-columns: 1fr; }
+  .people-summary-panel { position: static; }
+  .people-view-toolbar { display: flex; overflow-x: auto; }
+  .people-view-toolbar button { width: auto; flex: 0 0 auto; }
   #main .project-hero { grid-template-columns: 1fr; padding: 14px; }
   #main .project-header-staffing { padding-top: 10px; border-top: 1px solid var(--line); }
   #main .project-schedule-layout { grid-template-columns: 1fr; }
