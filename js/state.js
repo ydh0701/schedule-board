@@ -483,7 +483,8 @@ function handleProfile(profile){
     setAppStatus('승인 대기 중');
   } else {
     activeView = isPM() ? 'projects' : isLead() ? 'team' : 'my-work';
-    setAppStatus(`${currentProfile.name || currentUser.displayName || currentUser.email} · ${userRoleLabel(currentProfile)}${isLead() && currentProfile.departmentId ? ' · ' + departmentName(currentProfile.departmentId) : ''}`);
+    // 사용자 정보는 상단 계정 영역에서 한 번만 보여줍니다. 상태 영역은 오류·로딩 안내에만 사용합니다.
+    setAppStatus('');
     subscribeApprovedData();
   }
   rerenderSafely();
