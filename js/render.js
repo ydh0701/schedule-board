@@ -687,13 +687,15 @@ function renderWorkDashboard(main, allTasks){
   const freeHours = Math.max(0, Math.round((weeklyCapacityDays - weeklyLoadDays) * 8));
   const nextFree = capacityReady ? nextAvailableDate(currentUser.uid) : null;
   const summary = el('section', 'work-summary-bar');
-  const summaryItem = (label, value, tone = '') => {
-    const item = el('div', `work-summary-item ${tone}`);
-    item.append(el('span', '', label), el('strong', '', value));
+  const summaryItem = (label, value, tone = '', extraClass = '') => {
+    const item = el('div', `work-summary-item ${tone} ${extraClass}`);
+    const valueNode = el('strong', '', value); valueNode.title = String(value);
+    item.append(el('span', '', label), valueNode);
     return item;
   };
+  const todayTaskCopy = todayTasks.length ? todayTasks.slice(0, 2).map(task => task.title).join(' · ') + (todayTasks.length > 2 ? ` 외 ${todayTasks.length - 2}건` : '') : '예정된 업무 없음';
   summary.append(
-    summaryItem('오늘 해야 할 일', `${todayTasks.length}건`),
+    summaryItem(`오늘 해야 할 일 · ${todayTasks.length}건`, todayTaskCopy, '', 'today-work'),
     summaryItem('이번 주 업무량', capacityReady ? `${weeklyLoad}%` : '계산 중', capacityReady && (weeklyLoad > 100 ? 'danger' : weeklyLoad >= 80 ? 'warn' : '')),
     summaryItem('이번 주 남은 여유', capacityReady ? `${freeHours}시간` : '계산 중', capacityReady && freeHours === 0 ? 'warn' : ''),
     summaryItem('다음 여유', capacityReady ? (nextFree ? fmtDate(nextFree) : '확인 필요') : '계산 중')
