@@ -226,6 +226,18 @@ function projectCard(project){
     });
     card.appendChild(platformStates);
   }
+  if(platforms.length) {
+    const platformProgress = el('div', 'project-platform-progress');
+    platforms.forEach(platform => {
+      const platformTasks = list.filter(task => task.platform === platform || (!task.platform && platforms.length === 1));
+      const progress = platformTasks.length ? Math.round(platformTasks.reduce((sum, task) => sum + Number(task.progress || 0), 0) / platformTasks.length) : 0;
+      const row = el('div', 'platform-progress-row');
+      const track = el('div', 'platform-progress-track'); const fill = el('span', ''); fill.style.width = `${progress}%`; track.appendChild(fill);
+      row.append(el('strong', '', platformName(platform)), track, el('span', '', `${progress}%`));
+      platformProgress.appendChild(row);
+    });
+    card.appendChild(platformProgress);
+  }
   const progressHead = el('div', 'proj-progress-head'); progressHead.append(el('span', '', '진행률'), el('strong', '', `${projectProgressValue}%`));
   const track = el('div', 'proj-progress-track'); const fill = el('div', 'proj-progress-fill'); fill.style.width = `${projectProgressValue}%`; track.appendChild(fill);
   card.append(progressHead, track);
