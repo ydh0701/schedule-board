@@ -225,6 +225,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); backgro
 .topbar h1 { font-size: 18px; font-weight: 750; }
 .nav-link { font-weight: 700; }
 .nav-link.active::after { height: 3px; }
+.status:empty { display: none; }
 
 .panel, .project-milestone-panel, .project-dashboard-projects, .work-availability-panel, .work-dashboard-projects, .people-department-column, .people-summary-panel { border-color: var(--line); box-shadow: var(--shadow); }
 .project-dashboard-projects, .work-dashboard-projects, .project-milestone-panel, .work-availability-panel { border-radius: 12px; }
