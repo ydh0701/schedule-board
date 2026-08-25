@@ -45,6 +45,8 @@
 .project-task-board-card-head .tag { flex: 0 0 auto; font-size: 8px; }
 .project-task-board-card-meta { margin: 4px 0 0; overflow: hidden; color: var(--muted); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
 
+.work-phase-tabs { display: flex; gap: 5px; overflow-x: auto; padding: 9px 0; margin-bottom: 2px; border-bottom: 1px solid var(--line); }
+
 .people-department-board { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; align-items: start; }
 .people-department-column { min-width: 0; padding: 11px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
 .people-department-column-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 1px 8px; border-bottom: 1px solid var(--line); }
