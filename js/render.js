@@ -136,27 +136,75 @@ function progressBlock(progress){
   return wrap;
 }
 
-function projectFinalReleaseDate(project){
-  const anchored = milestonesForProject(project.id).find(item => item.anchorKey === 'full_release' && item.dueDate);
-  if(anchored) return anchored.dueDate;
-  const releasePattern = /(완전판|정식|full).{0,12}(출시|런칭|release)|(출시|런칭|release).{0,12}(완전판|정식|full)/i;
-  const milestone = milestonesForProject(project.id).find(item => item.dueDate && releasePattern.test(String(item.title || '')));
-  if(milestone) return milestone.dueDate;
-  const releaseTask = tasksForProject(project.id).find(item => item.dueDate && releasePattern.test(String(item.title || '')));
-  return releaseTask?.dueDate || project.releaseDate || null;
+function normalizedScheduleTitle(value){ return String(value || '').toLowerCase().replace(/[\s·:()\-_/]/g, ''); }
+function isExactDeliveryTitle(value, type){
+  const title = normalizedScheduleTitle(value);
+  const labels = type === 'full_release' ? ['완전판출시', '완전판런칭', '정식출시', '정식런칭', 'fullrelease', 'fulllaunch'] : type === 'demo_release' ? ['데모출시', '데모런칭', 'demorelease', 'demolaunch'] : type === 'full_build' ? ['완전판빌드', '정식빌드', 'fullbuild'] : ['데모빌드', 'demobuild'];
+  return labels.some(label => title === label || title === `${label}날짜`);
 }
-
+function deliveryType(item){
+  if(DELIVERY_MILESTONES.some(definition => definition.key === item.anchorKey)) return item.anchorKey;
+  return ['demo_build', 'demo_release', 'full_build', 'full_release'].find(type => isExactDeliveryTitle(item.title, type)) || null;
+}
+function projectPlatforms(project){
+  const values = [...(project.platforms || []), ...(project.versions || []), ...tasksForProject(project.id).map(task => task.platform), ...milestonesForProject(project.id).map(item => item.version)];
+  return [...new Set(values.filter(Boolean))];
+}
+function uniqueProjectTasks(projectId){
+  const keys = new Set();
+  return tasksForProject(projectId).filter(task => {
+    const key = [task.platform || 'common', normalizedScheduleTitle(task.title), dateOnly(task.startDate), dateOnly(task.dueDate)].join('|');
+    if(keys.has(key)) return false;
+    keys.add(key); return true;
+  });
+}
+function projectDeliveryEntries(project){
+  const entries = [];
+  milestonesForProject(project.id).forEach(item => {
+    const type = deliveryType(item);
+    if(type && item.dueDate) entries.push({ project, source: item, type, platform: item.version || null, date: dateOnly(item.dueDate), title: DELIVERY_MILESTONES.find(definition => definition.key === type)?.title || item.title });
+  });
+  uniqueProjectTasks(project.id).forEach(task => {
+    const type = deliveryType(task);
+    if(type && task.dueDate) entries.push({ project, source: task, type, platform: task.platform || null, date: dateOnly(task.dueDate), title: DELIVERY_MILESTONES.find(definition => definition.key === type)?.title || task.title });
+  });
+  const keys = new Set();
+  return entries.filter(entry => {
+    const key = [entry.type, entry.platform || 'common', entry.date].join('|');
+    if(keys.has(key)) return false;
+    keys.add(key); return true;
+  });
+}
+function projectReleaseDates(project){
+  const releases = new Map();
+  projectDeliveryEntries(project).filter(entry => entry.type === 'full_release').forEach(entry => {
+    const platform = entry.platform || 'common';
+    const current = releases.get(platform);
+    if(!current || entry.date > current) releases.set(platform, entry.date);
+  });
+  if(!releases.size && project.releaseDate) releases.set('common', dateOnly(project.releaseDate));
+  return releases;
+}
+function projectFinalReleaseDate(project){
+  const dates = [...projectReleaseDates(project).values()].filter(Boolean);
+  return dates.length ? dates.sort().at(-1) : null;
+}
 function projectIsCompleted(project){
-  const releaseDate = projectFinalReleaseDate(project);
-  return project.status === 'completed' || Boolean(releaseDate && releaseDate < dateKey(todayDate()));
+  if(project.status === 'completed') return true;
+  const platforms = projectPlatforms(project);
+  const releases = projectReleaseDates(project);
+  return platforms.length > 0 && platforms.every(platform => {
+    const releaseDate = releases.get(platform) || releases.get('common');
+    return Boolean(releaseDate && releaseDate < dateKey(todayDate()));
+  });
 }
 
 function projectCard(project){
-  const list = tasksForProject(project.id);
+  const list = uniqueProjectTasks(project.id);
   const done = list.filter(task => task.status === 'done').length;
   const overdue = list.filter(taskIsOverdue).length;
   const deadlines = list.filter(task => task.status !== 'done' && task.dueDate).sort((a, b) => String(a.dueDate).localeCompare(String(b.dueDate)));
-  const projectProgressValue = projectProgress(project.id) ?? 0;
+  const projectProgressValue = list.length ? Math.round(list.reduce((sum, task) => sum + Number(task.progress || 0), 0) / list.length) : 0;
   const card = el('article', 'proj-card');
   card.tabIndex = 0;
   const open = () => { selectedProjectId = project.id; projectScheduleCursor = null; projectDetailTab = 'schedule'; rerender(); };
@@ -167,6 +215,17 @@ function projectCard(project){
   cardHead.append(title, projectIsCompleted(project) ? el('span', 'tag ok', '완료') : el('span', `tag ${healthClass(project.health)}`, healthLabel(project.health)));
   card.append(cardHead);
   if(project.code) card.append(el('div', 'proj-card-name', project.name));
+  const releases = projectReleaseDates(project);
+  const platforms = projectPlatforms(project);
+  if(platforms.length) {
+    const platformStates = el('div', 'project-platform-states');
+    platforms.forEach(platform => {
+      const releaseDate = releases.get(platform) || releases.get('common');
+      const completed = releaseDate && releaseDate < dateKey(todayDate());
+      platformStates.append(el('span', completed ? 'project-platform-state done' : 'project-platform-state', `${platformName(platform)} · ${completed ? '출시 완료' : releaseDate ? fmtDate(releaseDate) : '출시일 미정'}`));
+    });
+    card.appendChild(platformStates);
+  }
   const progressHead = el('div', 'proj-progress-head'); progressHead.append(el('span', '', '진행률'), el('strong', '', `${projectProgressValue}%`));
   const track = el('div', 'proj-progress-track'); const fill = el('div', 'proj-progress-fill'); fill.style.width = `${projectProgressValue}%`; track.appendChild(fill);
   card.append(progressHead, track);
@@ -225,12 +284,7 @@ function renderProjects(main){
 }
 
 function projectKeyMilestones(project){
-  const majorPattern = /(데모|완전판|정식|full).{0,12}(출시|런칭|빌드)|(출시|런칭|빌드).{0,12}(데모|완전판|정식|full)/i;
-  const selected = milestonesForProject(project.id).filter(item => item.dueDate && (DELIVERY_MILESTONES.some(definition => definition.key === item.anchorKey) || majorPattern.test(String(item.title || ''))));
-  const known = new Set(selected.map(item => `${item.title}|${item.dueDate}`));
-  const releaseDate = projectFinalReleaseDate(project);
-  if(releaseDate && ![...known].some(key => key.endsWith(`|${releaseDate}`))) selected.push({ id: `release-${project.id}`, projectId: project.id, title: '완전판 출시', dueDate: releaseDate, anchorKey: 'full_release' });
-  return selected.map(item => ({ project, milestone: item, date: item.dueDate }));
+  return projectDeliveryEntries(project).map(entry => ({ project, milestone: { ...entry.source, anchorKey: entry.type, title: entry.title, version: entry.platform }, date: entry.date, platform: entry.platform }));
 }
 
 function openProjectMilestonePopover(anchor, date, entries){
@@ -244,7 +298,7 @@ function openProjectMilestonePopover(anchor, date, entries){
   if(!entries.length) list.appendChild(el('p', 'foot-note', '등록된 주요 프로젝트 일정이 없습니다.'));
   entries.forEach(entry => {
     const item = button('', 'project-milestone-popover-item', () => { popover.remove(); activeView = 'projects'; selectedProjectId = entry.project.id; projectDetailTab = 'milestones'; rerender(); });
-    item.append(el('strong', '', `${entry.project.code || entry.project.name} · ${entry.milestone.title}`), el('span', '', entry.project.name || '프로젝트'));
+    item.append(el('strong', '', `${entry.project.code || entry.project.name} · ${entry.platform ? platformName(entry.platform) + ' · ' : ''}${entry.milestone.title}`), el('span', '', entry.project.name || '프로젝트'));
     list.appendChild(item);
   });
   popover.appendChild(list); document.body.appendChild(popover);
@@ -270,7 +324,7 @@ function renderProjectMilestoneCalendar(panel, activeProjects){
     const date = new Date(year, month, day), key = dateKey(date), items = entries.filter(entry => entry.date === key);
     const cell = button('', `project-milestone-cell ${key === dateKey(todayDate()) ? 'today' : ''} ${isHoliday(date) ? 'holiday' : ''}`, () => openProjectMilestonePopover(cell, date, items));
     cell.appendChild(el('strong', 'project-milestone-date', String(day)));
-    items.slice(0, 2).forEach(entry => cell.appendChild(el('span', `project-milestone-chip ${entry.milestone.anchorKey || ''}`, `${entry.project.code || entry.project.name} · ${entry.milestone.title}`)));
+    items.slice(0, 2).forEach(entry => cell.appendChild(el('span', `project-milestone-chip ${entry.milestone.anchorKey || ''}`, `${entry.project.code || entry.project.name} · ${entry.platform ? platformName(entry.platform) + ' · ' : ''}${entry.milestone.title}`)));
     if(items.length > 2) cell.appendChild(el('span', 'project-milestone-more', `+${items.length - 2}`));
     grid.appendChild(cell);
   }
