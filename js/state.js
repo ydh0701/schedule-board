@@ -34,20 +34,32 @@ const DELIVERY_MILESTONES = [
   { key: 'full_build', title: '완전판 빌드 마감' },
   { key: 'full_release', title: '완전판 출시' }
 ];
+// 업무 화면은 직군이 아니라 이 실행 단위로 먼저 묶습니다. 새 업무는 phaseId를
+// 명시적으로 저장하고, 기존 엑셀 업무는 taskGroup 텍스트로 안전하게 추론합니다.
+const PROJECT_TASK_PHASES = [
+  { id: 'detail_planning', title: '세부 기획' },
+  { id: 'field_visit', title: '현장 방문' },
+  { id: 'resource_review', title: '리소스 검수' },
+  { id: 'demo_prepare', title: '데모 준비' },
+  { id: 'demo_launch', title: '데모 런칭' },
+  { id: 'full_prepare', title: '완전판 준비' },
+  { id: 'full_launch', title: '완전판 런칭' },
+  { id: 'other', title: '기타 업무' }
+];
 const TEMPLATE_DEPARTMENTS = ['planning', 'ui', 'development', 'qa'];
 // 현재 전달받은 기획·UI 마일스톤에서 반복되는 흐름을 기준으로 한 첫 템플릿입니다.
 // 실제 운영 중 평균 작업일은 템플릿 관리 화면에서 계속 조정할 수 있게 확장합니다.
 const PROJECT_WORK_TEMPLATE = [
-  { key: 'demo-plan', departmentId: 'planning', title: '데모 기능·화면 기획 확정', anchorKey: 'demo_build', dueOffset: -18, estimatedDays: 3 },
-  { key: 'demo-ui-design', departmentId: 'ui', title: '데모 UI 디자인', anchorKey: 'demo_build', dueOffset: -15, estimatedDays: 4, dependsOnKey: 'demo-plan' },
-  { key: 'demo-ui-prefab', departmentId: 'ui', title: '데모 UI 프리팹·연출', anchorKey: 'demo_build', dueOffset: -9, estimatedDays: 3, dependsOnKey: 'demo-ui-design' },
-  { key: 'demo-dev', departmentId: 'development', title: '데모 기능 구현·연동', anchorKey: 'demo_build', dueOffset: -10, estimatedDays: 5, dependsOnKey: 'demo-plan' },
-  { key: 'demo-qa', departmentId: 'qa', title: '데모 QA·수정 확인', anchorKey: 'demo_build', dueOffset: -4, estimatedDays: 3, dependsOnKey: 'demo-ui-prefab' },
-  { key: 'full-plan', departmentId: 'planning', title: '완전판 기능·화면 기획 확정', anchorKey: 'full_build', dueOffset: -28, estimatedDays: 4 },
-  { key: 'full-ui-design', departmentId: 'ui', title: '완전판 UI 디자인', anchorKey: 'full_build', dueOffset: -22, estimatedDays: 5, dependsOnKey: 'full-plan' },
-  { key: 'full-ui-prefab', departmentId: 'ui', title: '완전판 UI 프리팹·연출', anchorKey: 'full_build', dueOffset: -14, estimatedDays: 4, dependsOnKey: 'full-ui-design' },
-  { key: 'full-dev', departmentId: 'development', title: '완전판 기능 구현·연동', anchorKey: 'full_build', dueOffset: -15, estimatedDays: 7, dependsOnKey: 'full-plan' },
-  { key: 'full-qa', departmentId: 'qa', title: '완전판 QA·수정 확인', anchorKey: 'full_build', dueOffset: -6, estimatedDays: 4, dependsOnKey: 'full-ui-prefab' }
+  { key: 'demo-plan', phaseId: 'detail_planning', departmentId: 'planning', title: '데모 기능·화면 기획 확정', anchorKey: 'demo_build', dueOffset: -18, estimatedDays: 3 },
+  { key: 'demo-ui-design', phaseId: 'demo_prepare', departmentId: 'ui', title: '데모 UI 디자인', anchorKey: 'demo_build', dueOffset: -15, estimatedDays: 4, dependsOnKey: 'demo-plan' },
+  { key: 'demo-ui-prefab', phaseId: 'demo_prepare', departmentId: 'ui', title: '데모 UI 프리팹·연출', anchorKey: 'demo_build', dueOffset: -9, estimatedDays: 3, dependsOnKey: 'demo-ui-design' },
+  { key: 'demo-dev', phaseId: 'demo_prepare', departmentId: 'development', title: '데모 기능 구현·연동', anchorKey: 'demo_build', dueOffset: -10, estimatedDays: 5, dependsOnKey: 'demo-plan' },
+  { key: 'demo-qa', phaseId: 'demo_prepare', departmentId: 'qa', title: '데모 QA·수정 확인', anchorKey: 'demo_build', dueOffset: -4, estimatedDays: 3, dependsOnKey: 'demo-ui-prefab' },
+  { key: 'full-plan', phaseId: 'full_prepare', departmentId: 'planning', title: '완전판 기능·화면 기획 확정', anchorKey: 'full_build', dueOffset: -28, estimatedDays: 4 },
+  { key: 'full-ui-design', phaseId: 'full_prepare', departmentId: 'ui', title: '완전판 UI 디자인', anchorKey: 'full_build', dueOffset: -22, estimatedDays: 5, dependsOnKey: 'full-plan' },
+  { key: 'full-ui-prefab', phaseId: 'full_prepare', departmentId: 'ui', title: '완전판 UI 프리팹·연출', anchorKey: 'full_build', dueOffset: -14, estimatedDays: 4, dependsOnKey: 'full-ui-design' },
+  { key: 'full-dev', phaseId: 'full_prepare', departmentId: 'development', title: '완전판 기능 구현·연동', anchorKey: 'full_build', dueOffset: -15, estimatedDays: 7, dependsOnKey: 'full-plan' },
+  { key: 'full-qa', phaseId: 'full_prepare', departmentId: 'qa', title: '완전판 QA·수정 확인', anchorKey: 'full_build', dueOffset: -6, estimatedDays: 4, dependsOnKey: 'full-ui-prefab' }
 ];
 
 let currentUser = null;
@@ -228,6 +240,19 @@ function staffingFor(project, platform, departmentId){
   return (project?.staffing || []).find(item => item.platform === platform && item.departmentId === departmentId) || null;
 }
 function templateTaskKey(platform, templateKey){ return `${platform}:${templateKey}`; }
+function projectTaskPhase(task){
+  const explicit = PROJECT_TASK_PHASES.find(phase => phase.id === task?.phaseId);
+  if(explicit) return explicit;
+  const text = `${task?.taskGroup || ''} ${task?.title || ''}`.replace(/\s/g, '').toLowerCase();
+  if(/현장.?방문|로케이션/.test(text)) return PROJECT_TASK_PHASES.find(phase => phase.id === 'field_visit');
+  if(/리소스|자료.?검수|에셋.?검수/.test(text)) return PROJECT_TASK_PHASES.find(phase => phase.id === 'resource_review');
+  if(/데모.*(런칭|출시)|데모.*심사/.test(text) || task?.scheduleRule?.anchorKey === 'demo_release') return PROJECT_TASK_PHASES.find(phase => phase.id === 'demo_launch');
+  if(/완전판.*(런칭|출시)|정식.*(런칭|출시)/.test(text) || task?.scheduleRule?.anchorKey === 'full_release') return PROJECT_TASK_PHASES.find(phase => phase.id === 'full_launch');
+  if(/데모/.test(text) || task?.scheduleRule?.anchorKey === 'demo_build') return PROJECT_TASK_PHASES.find(phase => phase.id === 'demo_prepare');
+  if(/완전판|정식/.test(text) || task?.scheduleRule?.anchorKey === 'full_build') return PROJECT_TASK_PHASES.find(phase => phase.id === 'full_prepare');
+  if(/세부.?기획|아이디어|기획/.test(text)) return PROJECT_TASK_PHASES.find(phase => phase.id === 'detail_planning');
+  return PROJECT_TASK_PHASES.find(phase => phase.id === 'other');
+}
 function taskCoversDate(task, date){
   const start = localDate(task.startDate || task.dueDate); const end = localDate(task.dueDate || task.startDate);
   if(!start || !end) return false;
@@ -818,6 +843,7 @@ async function createScheduledProject(input){
       batch.set(ref, normalizeTask({
         projectId: projectRef.id, platform, departmentId: template.departmentId,
         assigneeId: staff?.userId || null, assigneeName: staff?.userId ? personName(staff.userId) : null, title: template.title, milestoneId: milestoneRefs[template.anchorKey],
+        phaseId: template.phaseId,
         status: 'todo', progress: 0, estimatedDays: template.estimatedDays,
         startDate: dates.startDate, dueDate: dates.dueDate, dependsOn: predecessorId ? [predecessorId] : [],
         generated: true, templateKey: template.key,
@@ -860,6 +886,36 @@ async function syncProjectStaffing(projectId, staffing){
     .map(item => ({ platform: item.platform, departmentId: item.departmentId, userId: item.userId || null }));
   const batch = db.batch();
   batch.update(db.collection('projects').doc(projectId), { staffing: cleaned, updatedAt: firebase.firestore.FieldValue.serverTimestamp(), updatedBy: currentUser.uid });
+  // 기존 자동 일정 프로젝트에 템플릿 업무가 빠져 있으면 담당자를 저장할 때만 보완합니다.
+  // 날짜가 없는 수동 프로젝트에는 임의의 데모·완전판 일정을 만들지 않습니다.
+  const anchors = projectMilestoneMap(projectId);
+  const milestoneIds = new Map(milestonesForProject(projectId).filter(item => item.anchorKey).map(item => [item.anchorKey, item.id]));
+  const hasAllAnchors = DELIVERY_MILESTONES.every(definition => anchors[definition.key] && milestoneIds.has(definition.key));
+  if(project.schedulingMode === 'template' && hasAllAnchors) {
+    const existingGenerated = new Map(tasksForProject(projectId).filter(task => task.generated && task.templateKey).map(task => [templateTaskKey(task.platform, task.templateKey), task]));
+    const generatedIds = new Map();
+    (project.platforms || []).forEach(platform => PROJECT_WORK_TEMPLATE.forEach(template => {
+      const key = templateTaskKey(platform, template.key);
+      generatedIds.set(key, existingGenerated.get(key)?.id || db.collection('tasks').doc().id);
+    }));
+    (project.platforms || []).forEach(platform => PROJECT_WORK_TEMPLATE.forEach(template => {
+      const key = templateTaskKey(platform, template.key);
+      if(existingGenerated.has(key)) return;
+      const staff = staffingFor({ staffing: cleaned }, platform, template.departmentId);
+      const dates = scheduledDates(anchors[template.anchorKey], template.dueOffset, template.estimatedDays);
+      const predecessorId = template.dependsOnKey ? generatedIds.get(templateTaskKey(platform, template.dependsOnKey)) : null;
+      batch.set(db.collection('tasks').doc(generatedIds.get(key)), normalizeTask({
+        projectId, platform, departmentId: template.departmentId, phaseId: template.phaseId, title: template.title,
+        assigneeId: staff?.userId || null, assigneeName: staff?.userId ? personName(staff.userId) : null,
+        milestoneId: milestoneIds.get(template.anchorKey), status: 'todo', progress: 0, estimatedDays: template.estimatedDays,
+        startDate: dates.startDate, dueDate: dates.dueDate, dependsOn: predecessorId ? [predecessorId] : [],
+        generated: true, templateKey: template.key,
+        scheduleRule: { anchorKey: template.anchorKey, dueOffset: template.dueOffset, estimatedDays: template.estimatedDays },
+        archivedAt: null, createdBy: currentUser.uid, createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+        updatedBy: currentUser.uid, updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+      }));
+    }));
+  }
   tasksForProject(projectId).filter(task => task.generated).forEach(task => {
     const staff = staffingFor({ staffing: cleaned }, task.platform, task.departmentId);
     batch.update(db.collection('tasks').doc(task.id), { ...primaryAssignmentFields(staff?.userId || null, staff?.userId ? personName(staff.userId) : null), updatedAt: firebase.firestore.FieldValue.serverTimestamp(), updatedBy: currentUser.uid });
