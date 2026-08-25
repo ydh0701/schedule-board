@@ -1312,9 +1312,17 @@ function openTaskEditor(task, initial = {}){
     ...(currentProfile?.active ? [[currentUser.uid, { id: currentUser.uid, ...currentProfile }]] : []),
     ...visibleUsers.filter(user => user.active && (!isLead() || user.departmentId === currentProfile.departmentId)).map(user => [user.id, user])
   ]).values()];
-  const assignee = selectField('담당자', people.map(user => [user.id, user.name || user.email]));
-  if(task?.assigneeId && !people.some(user => user.id === task.assigneeId)) assignee.select.add(new Option(userName(task.assigneeId), task.assigneeId));
-  assignee.select.value = task?.assigneeId || '';
+  const assignee = selectField('담당자', []);
+  const peopleInDepartment = () => people.filter(user => user.departmentId === department.select.value);
+  const refreshAssigneeOptions = () => {
+    const selectedId = assignee.select.value || task?.assigneeId || '';
+    assignee.select.innerHTML = '';
+    assignee.select.add(new Option('담당자를 선택하세요', ''));
+    peopleInDepartment().forEach(user => assignee.select.add(new Option(user.name || user.email, user.id)));
+    if(task?.assigneeId && !peopleInDepartment().some(user => user.id === task.assigneeId)) assignee.select.add(new Option(userName(task.assigneeId), task.assigneeId));
+    assignee.select.value = [...assignee.select.options].some(option => option.value === selectedId) ? selectedId : '';
+  };
+  refreshAssigneeOptions();
   if(editing) assignee.select.disabled = true;
   // 공동 지원 배정은 여러 부서의 업무량과 접근 권한에 영향을 주므로 PM/관리자만 처리합니다.
   const canManageSupport = isAdmin() || isPM();
@@ -1325,13 +1333,13 @@ function openTaskEditor(task, initial = {}){
     const selected = new Set([...supportAssignees.select.selectedOptions].map(option => option.value));
     initialSupportIds.forEach(id => selected.add(id));
     supportAssignees.select.innerHTML = '';
-    people.filter(user => user.id !== assignee.select.value).forEach(user => {
+    peopleInDepartment().filter(user => user.id !== assignee.select.value).forEach(user => {
       const option = new Option(user.name || user.email, user.id); option.selected = selected.has(user.id); supportAssignees.select.add(option);
     });
   };
   refreshSupportOptions();
   supportAssignees.select.disabled = !canManageSupport;
-  const project = selectField('연결 프로젝트', [['', '프로젝트와 연결하지 않음'], ...projects.map(item => [item.id, item.code || item.name])]); project.select.value = task?.projectId || initial.projectId || '';
+  const project = selectField('프로젝트', projects.filter(item => item.status !== 'completed' || item.id === task?.projectId).map(item => [item.id, item.code ? `${item.code} · ${item.name || ''}`.trim() : item.name])); project.select.value = task?.projectId || initial.projectId || '';
   const platform = selectField('플랫폼', [['', '공통'], ...PLATFORMS.map(item => [item.id, item.name])]); platform.select.value = task?.platform || initial.platform || '';
   const milestone = selectField('연결 마일스톤', [['', '마일스톤과 연결하지 않음']]);
   const dependsOn = multiSelectField('선행 업무 (복수 선택 가능)');
@@ -1350,7 +1358,7 @@ function openTaskEditor(task, initial = {}){
     });
   };
   project.select.onchange = () => { refreshProjectRelations(); refreshDependencyWarning?.(); };
-  department.select.onchange = () => { refreshProjectRelations(); refreshDependencyWarning?.(); };
+  department.select.onchange = () => { refreshAssigneeOptions(); refreshSupportOptions(); refreshProjectRelations(); refreshDependencyWarning?.(); refreshAssignmentWarning?.(); };
   refreshProjectRelations();
   const status = selectField('상태', Object.entries(TASK_STATUS)); status.select.value = task?.status || 'todo';
   const progress = inputField('진척률 (0~100)', '', 'number'); progress.input.min = '0'; progress.input.max = '100'; progress.input.value = task?.progress ?? 0;
@@ -1403,7 +1411,15 @@ function openTaskEditor(task, initial = {}){
   start.input.onchange = () => { refreshDependencyWarning(); refreshAssignmentWarning(); };
   due.input.onchange = refreshAssignmentWarning;
   if(task?.generated) form.append(el('p', 'sub', '자동 생성 업무입니다. 일정 날짜를 직접 바꾸면 이후 자동 재계산 대상에서 제외됩니다.'));
-  form.append(title.wrap, department.wrap, assignee.wrap, supportAssignees.wrap, project.wrap, platform.wrap, milestone.wrap, dependsOn.wrap, status.wrap, progress.wrap, estimate.wrap, start.wrap, due.wrap);
+  const basic = el('section', 'task-editor-section');
+  basic.append(title.wrap, department.wrap, assignee.wrap, project.wrap, platform.wrap, estimate.wrap, start.wrap, due.wrap);
+  const advanced = el('details', 'task-editor-advanced');
+  advanced.open = editing || initial.showAdvanced === true;
+  advanced.appendChild(el('summary', '', '추가 설정'));
+  const advancedGrid = el('div', 'task-editor-advanced-grid');
+  advancedGrid.append(supportAssignees.wrap, milestone.wrap, dependsOn.wrap, status.wrap, progress.wrap);
+  advanced.appendChild(advancedGrid);
+  form.append(basic, advanced);
   form.append(dependencyWarning, assignmentWarning, capacityConfirmLabel);
   refreshDependencyWarning();
   refreshAssignmentWarning();
@@ -1418,7 +1434,7 @@ function openTaskEditor(task, initial = {}){
   form.onsubmit = async event => {
     event.preventDefault();
     try {
-      if(!title.input.value.trim() || !start.input.value || !estimate.input.value) throw new Error('업무명, 시작일, 예상 작업일을 입력해주세요. 프로젝트 연결은 선택 사항입니다.');
+      if(!title.input.value.trim() || !project.select.value || !assignee.select.value || !start.input.value || !estimate.input.value) throw new Error('업무명, 프로젝트, 담당자, 시작일, 예상 작업일을 입력해주세요.');
       if(!dependencyWarning.hidden && !dependencyConfirm.checked) throw new Error('선행 업무와 겹치는 일정을 확인해주세요.');
       if(assignmentHasChanged() && latestAssignmentAssessments.some(item => item.assessment.level === 'danger') && !capacityConfirm.checked) throw new Error('담당자 과부하 경고를 확인해주세요.');
       await saveTask({ id: task?.id, title: title.input.value, departmentId: department.select.value, assigneeId: assignee.select.value, assignees: selectedAssignees(), projectId: project.select.value || null, platform: platform.select.value || null, milestoneId: milestone.select.value || null, dependsOn: [...dependsOn.select.selectedOptions].map(option => option.value), status: status.select.value, progress: Number(progress.input.value), estimatedDays: Number(estimate.input.value), startDate: start.input.value || null, dueDate: due.input.value || null, capacityConfirmed: capacityConfirm.checked, dateOverride: Boolean(task?.generated && (dateOnly(task.startDate) !== start.input.value || dateOnly(task.dueDate) !== due.input.value)) });
