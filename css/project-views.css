@@ -65,7 +65,7 @@
 
 /* 내 업무는 달력을 우선합니다. 오른쪽 업무는 한 열의 압축 행으로 유지합니다. */
 .work-dashboard-grid { grid-template-columns: minmax(480px, 1.35fr) minmax(360px, .65fr); }
-.work-project-task-grid { grid-template-columns: 1fr; gap: 5px; }
+.work-project-task-grid { grid-template-columns: 1fr; grid-auto-rows: min-content; align-content: start; align-items: start; gap: 5px; }
 .work-project-task-grid .task-row { gap: 8px; padding: 8px 9px; }
 .work-project-task-grid .task-meta { margin-top: 2px; font-size: 10px; }
 .work-project-task-grid .task-actions { gap: 4px; }
