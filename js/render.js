@@ -168,16 +168,6 @@ function projectCard(project){
 function metric(label, value, tone){ const node = el('div', `metric-card ${tone || ''}`); node.append(el('span', 'metric-label', label), el('strong', 'metric-value', String(value))); return node; }
 
 function renderProjects(main){
-  const head = el('section', 'panel page-heading'); const copy = el('div', 'page-copy');
-  copy.append(el('p', 'eyebrow', selectedProjectId ? 'PROJECT DETAIL' : 'PORTFOLIO'), el('h2', '', selectedProjectId ? '프로젝트 상세' : '전체 프로젝트 현황'));
-  copy.append(el('p', 'sub', selectedProjectId ? '프로젝트 기준으로 모든 부서의 업무 흐름을 확인합니다.' : '진행률, 위험 신호, 마감 일정을 한눈에 확인하세요.'));
-  head.appendChild(copy);
-  if(!selectedProjectId && canManageProjects()) {
-    const actions = el('div', 'page-actions');
-    actions.append(button('엑셀 이관', 'tiny ghost', openImportEditor), button('+ 프로젝트 추가', 'primary', () => openProjectCreator()));
-    head.appendChild(actions);
-  }
-  main.appendChild(head);
   if(selectedProjectId) {
     renderProjectDetail(main, projects.find(project => project.id === selectedProjectId));
     return;
@@ -188,6 +178,11 @@ function renderProjects(main){
   const overdue = activeTasks().filter(taskIsOverdue).length;
   const metrics = el('div', 'metric-grid'); metrics.append(metric('진행 중 프로젝트', activeProjects.length), metric('완료 프로젝트', completedProjects.length), metric('지연 업무', overdue, overdue ? 'danger' : ''));
   main.appendChild(metrics);
+  if(canManageProjects()) {
+    const actions = el('div', 'project-list-actions');
+    actions.append(button('엑셀 이관', 'tiny ghost', openImportEditor), button('+ 프로젝트 추가', 'primary', () => openProjectCreator()));
+    main.appendChild(actions);
+  }
   if(!projects.length) {
     main.appendChild(el('div', 'empty', '등록된 프로젝트가 없습니다. 관리자가 첫 프로젝트를 만들어주세요.'));
     return;
@@ -466,9 +461,6 @@ function renderProjectSchedule(main, project){
 }
 
 function renderWork(main){
-  const toolbar = el('div', 'work-toolbar');
-  toolbar.append(el('h2', '', '내 업무'), button('+ 업무 추가', 'primary', () => openTaskEditor(null)));
-  main.appendChild(toolbar);
   renderWorkDashboard(main, workTasks());
 }
 
@@ -565,7 +557,9 @@ function renderProjectGroupedWork(main, allTasks, options = {}){
   const copy = el('div', '');
   copy.appendChild(el('h3', '', '프로젝트별 진행 업무'));
   const completedProjectToggle = button('완료 프로젝트 보기', 'tiny ghost completed-project-filter');
-  head.append(copy, completedProjectToggle); section.appendChild(head);
+  const actions = el('div', 'work-section-actions');
+  actions.append(completedProjectToggle, button('+ 업무 추가', 'tiny primary work-add-task-button', () => openTaskEditor(null)));
+  head.append(copy, actions); section.appendChild(head);
   const tabs = el('nav', 'work-project-tabs');
   const panel = el('section', 'work-project-panel');
   section.append(tabs, panel); main.appendChild(section);
@@ -767,10 +761,6 @@ function userWorkloadSummary(userId){
 
 function renderTeam(main){
   const scopeUsers = activeUsers().filter(user => isPM() || isAdmin() || user.departmentId === currentProfile?.departmentId);
-  const heading = el('section', 'panel page-heading compact-page-heading');
-  const copy = el('div', 'page-copy');
-  copy.append(el('h2', '', isPM() || isAdmin() ? '운영 현황' : `${departmentName(currentProfile?.departmentId)}팀 현황`));
-  heading.appendChild(copy); main.appendChild(heading);
   const scopedTasks = activeTasks().filter(task => scopeUsers.some(user => taskAssignedToUser(task, user.id)));
   const metrics = el('div', 'metric-grid');
   metrics.append(metric('오늘 마감', scopedTasks.filter(task => task.status !== 'done' && task.dueDate === dateKey(new Date())).length, 'warn'), metric('지연·차단', scopedTasks.filter(task => taskIsOverdue(task) || task.status === 'blocked').length, 'danger'), metric('과부하 인원', scopeUsers.filter(user => userWorkloadSummary(user.id).assessment.weeklyLoad > 100).length, 'warn'));
@@ -799,9 +789,6 @@ function renderTeam(main){
 
 function renderPeople(main){
   const scopeUsers = activeUsers().filter(user => isPM() || isAdmin() || user.departmentId === currentProfile?.departmentId);
-  const heading = el('section', 'panel page-heading compact-page-heading'); const copy = el('div', 'page-copy');
-  copy.append(el('h2', '', '인력 현황'));
-  heading.appendChild(copy); main.appendChild(heading);
   const groups = { ok: 0, warn: 0, danger: 0 };
   scopeUsers.forEach(user => { const level = userWorkloadSummary(user.id).assessment.level; groups[level] = (groups[level] || 0) + 1; });
   const metrics = el('div', 'metric-grid'); metrics.append(metric('여유', groups.ok), metric('주의', groups.warn, 'warn'), metric('과부하', groups.danger, 'danger')); main.appendChild(metrics);
@@ -860,9 +847,6 @@ function openAdminManager(){
 }
 
 function renderAdmin(main){
-  const heading = el('section', 'panel page-heading'); const copy = el('div', 'page-copy');
-  copy.append(el('p', 'eyebrow', 'SYSTEM ADMINISTRATION'), el('h2', '', '사용자 관리'), el('p', 'sub', '계정 승인, 업무 역할, 팀과 직군, 퇴사 업무 재배정을 관리합니다.'));
-  heading.appendChild(copy); main.appendChild(heading);
   main.appendChild(adminAccessPanel());
 }
 
