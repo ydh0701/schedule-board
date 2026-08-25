@@ -981,8 +981,8 @@ function renderPeople(main){
     const card = el('article', `person-row ${assessment.level}`);
     const identity = el('div', 'person-identity'); identity.append(el('strong', '', user.name || user.email), el('span', 'foot-note', `${departmentName(user.departmentId)} · ${userRoleLabel(user)}`));
     const workload = el('div', 'person-workload'); workload.append(el('span', `tag ${assessment.level}`, assessment.weeklyLoad > 100 ? '과부하' : assessment.weeklyLoad >= 80 ? '주의' : '여유'), el('strong', '', `${assessment.weeklyLoad}%`), el('span', 'foot-note', `다음 가능일 ${fmtDate(assessment.nextDate)}`));
-    const activeTasks = activeTasks().filter(task => taskAssignedToUser(task, user.id) && task.status !== 'done').sort((a, b) => String(a.dueDate || '9999').localeCompare(String(b.dueDate || '9999')));
-    const reason = el('p', 'foot-note', activeTasks.length ? `현재 업무 · ${activeTasks.slice(0, 2).map(task => `${task.title} (${fmtDate(task.dueDate)}까지)`).join(' · ')}` : '진행 중인 업무가 없습니다.');
+    const currentTasks = activeTasks().filter(task => taskAssignedToUser(task, user.id) && task.status !== 'done').sort((a, b) => String(a.dueDate || '9999').localeCompare(String(b.dueDate || '9999')));
+    const reason = el('p', 'foot-note', currentTasks.length ? `현재 업무 · ${currentTasks.slice(0, 2).map(task => `${task.title} (${fmtDate(task.dueDate)}까지)`).join(' · ')}` : '진행 중인 업무가 없습니다.');
     card.append(identity, personProjectBadges(user.id), workload, reason); list.appendChild(card);
   });
   if(!scopeUsers.length) main.appendChild(el('div', 'empty', '표시할 활성 인력이 없습니다.'));
