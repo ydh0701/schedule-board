@@ -476,35 +476,36 @@ function renderProjectTaskList(main, project){
   const head = el('div', 'project-task-board-head'); head.append(el('h2', '', '업무 현황'), canManageProjects() ? button('+ 업무 추가', 'tiny primary', () => openTaskEditor(null, { projectId: project.id })) : el('span', '', ''));
   section.appendChild(head);
   const filters = el('div', 'project-task-board-filters');
+  const phaseFilters = el('div', 'project-task-phase-filters');
   const filterState = { value: 'active' };
+  const allTasks = tasksForProject(project.id);
+  const phaseIds = PROJECT_TASK_PHASES.map(phase => phase.id).filter(phaseId => allTasks.some(task => projectTaskPhase(task).id === phaseId));
+  const firstActivePhase = phaseIds.find(phaseId => allTasks.some(task => projectTaskPhase(task).id === phaseId && task.status !== 'done'));
+  const phaseState = { value: firstActivePhase || phaseIds[0] || 'other' };
   const list = el('div', 'project-task-board');
   const draw = () => {
     list.innerHTML = '';
-    const items = tasksForProject(project.id).filter(task => filterState.value === 'all' || (filterState.value === 'risk' ? (taskIsOverdue(task) || task.status === 'blocked' || !task.assigneeId) : task.status !== 'done'));
+    const items = allTasks.filter(task => projectTaskPhase(task).id === phaseState.value && (filterState.value === 'all' || (filterState.value === 'risk' ? (taskIsOverdue(task) || task.status === 'blocked' || !task.assigneeId) : task.status !== 'done')))
+      .sort((a, b) => String(a.dueDate || '9999-12-31').localeCompare(String(b.dueDate || '9999-12-31')));
     if(!items.length) list.appendChild(el('div', 'empty', '표시할 업무가 없습니다.'));
     else {
-      const order = ['development', 'ui', 'planning', 'studio', 'qa', 'business', 'video', 'server', 'pm'];
-      const departmentIds = [...new Set(items.map(task => task.departmentId || 'other'))].sort((a, b) => (order.indexOf(a) < 0 ? 99 : order.indexOf(a)) - (order.indexOf(b) < 0 ? 99 : order.indexOf(b)) || departmentName(a).localeCompare(departmentName(b)));
-      departmentIds.forEach(departmentId => {
-        const departmentTasks = items.filter(task => (task.departmentId || 'other') === departmentId).sort((a, b) => String(a.dueDate || '9999-12-31').localeCompare(String(b.dueDate || '9999-12-31')));
-        const column = el('section', 'project-task-board-column');
-        const columnHead = el('div', 'project-task-board-column-head'); columnHead.append(el('h3', '', departmentName(departmentId)), el('span', '', `${departmentTasks.length}`));
-        const cards = el('div', 'project-task-board-cards');
-        departmentTasks.forEach(task => {
-          const risk = taskIsOverdue(task) || task.status === 'blocked' || !task.assigneeId;
-          const card = el('article', `project-task-board-card ${risk ? 'danger' : ''} ${task.status === 'done' ? 'done' : ''}`);
-          if(canEditTask(task)) { card.tabIndex = 0; card.onclick = () => openTaskEditor(task); card.onkeydown = event => { if(event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openTaskEditor(task); } }; }
-          const cardHead = el('div', 'project-task-board-card-head');
-          cardHead.append(el('strong', '', task.title), el('span', `tag ${risk ? 'danger' : task.status === 'done' ? 'ok' : 'neutral'}`, task.status === 'done' ? '완료' : task.status === 'blocked' ? '차단' : `${task.progress || 0}%`));
-          const meta = [task.platform ? platformName(task.platform) : '', taskAssigneeName(task), task.dueDate ? `${fmtDate(task.dueDate)}까지` : '일정 미정'].filter(Boolean).join(' · ');
-          card.append(cardHead, el('p', 'project-task-board-card-meta', meta)); cards.appendChild(card);
-        });
-        column.append(columnHead, cards); list.appendChild(column);
+      items.forEach(task => {
+        const risk = taskIsOverdue(task) || task.status === 'blocked' || !task.assigneeId;
+        const card = el('article', `project-task-board-card ${risk ? 'danger' : ''} ${task.status === 'done' ? 'done' : ''}`);
+        if(canEditTask(task)) { card.tabIndex = 0; card.onclick = () => openTaskEditor(task); card.onkeydown = event => { if(event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openTaskEditor(task); } }; }
+        const meta = [task.platform ? platformName(task.platform) : '', departmentName(task.departmentId), taskAssigneeName(task), task.dueDate ? `${fmtDate(task.dueDate)}까지` : '일정 미정'].filter(Boolean).join(' · ');
+        card.append(el('strong', '', task.title), el('span', 'project-task-board-card-meta', meta), el('span', `tag ${risk ? 'danger' : task.status === 'done' ? 'ok' : 'neutral'}`, task.status === 'done' ? '완료' : task.status === 'blocked' ? '차단' : `${task.progress || 0}%`));
+        list.appendChild(card);
       });
     }
   };
   [['active','진행 중'], ['risk','확인 필요'], ['all','전체']].forEach(([key, label]) => filters.appendChild(button(label, key === 'active' ? 'primary tiny' : 'ghost tiny', event => { filterState.value = key; [...filters.querySelectorAll('button')].forEach(item => item.className = 'ghost tiny'); event.currentTarget.className = 'primary tiny'; draw(); })));
-  section.append(filters, list); draw(); main.appendChild(section);
+  phaseIds.forEach(phaseId => {
+    const phase = PROJECT_TASK_PHASES.find(item => item.id === phaseId);
+    const count = allTasks.filter(task => projectTaskPhase(task).id === phaseId && task.status !== 'done').length;
+    phaseFilters.appendChild(button(`${phase.title} ${count}`, phaseId === phaseState.value ? 'primary tiny' : 'ghost tiny', event => { phaseState.value = phaseId; [...phaseFilters.querySelectorAll('button')].forEach(item => item.className = 'ghost tiny'); event.currentTarget.className = 'primary tiny'; draw(); }));
+  });
+  section.append(filters, phaseFilters, list); draw(); main.appendChild(section);
 }
 
 function renderProjectMilestoneList(main, project){
