@@ -558,14 +558,15 @@ function renderProjectGroupedWork(main, allTasks, options = {}){
   const section = el('section', `work-projects-section ${options.embedded ? 'embedded' : ''}`);
   const head = el('div', 'work-section-head');
   const copy = el('div', '');
+  const tabs = el('nav', 'work-project-tabs');
   copy.appendChild(el('h3', '', '프로젝트별 진행 업무'));
+  copy.appendChild(tabs);
   const completedProjectToggle = button('완료 프로젝트 보기', 'tiny ghost completed-project-filter');
   const actions = el('div', 'work-section-actions');
   actions.append(completedProjectToggle, button('+ 업무 추가', 'tiny primary work-add-task-button', () => openTaskEditor(null)));
   head.append(copy, actions); section.appendChild(head);
-  const tabs = el('nav', 'work-project-tabs');
   const panel = el('section', 'work-project-panel');
-  section.append(tabs, panel); main.appendChild(section);
+  section.append(panel); main.appendChild(section);
   let selectedProjectKey = null;
   let showCompletedProjects = false;
   const draw = () => {
