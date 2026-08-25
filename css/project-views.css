@@ -47,6 +47,18 @@
 
 .work-phase-tabs { display: flex; gap: 5px; overflow-x: auto; padding: 9px 0; margin-bottom: 2px; border-bottom: 1px solid var(--line); }
 
+/* 내 업무는 달력을 우선합니다. 오른쪽 업무는 한 열의 압축 행으로 유지합니다. */
+.work-dashboard-grid { grid-template-columns: minmax(480px, 1.35fr) minmax(360px, .65fr); }
+.work-project-task-grid { grid-template-columns: 1fr; gap: 5px; }
+.work-project-task-grid .task-row { gap: 8px; padding: 8px 9px; }
+.work-project-task-grid .task-meta { margin-top: 2px; font-size: 10px; }
+.work-project-task-grid .task-actions { gap: 4px; }
+.work-project-task-grid .task-actions .tiny { min-height: 27px; padding: 4px 7px; font-size: 10px; }
+
+@media (max-width: 1100px) {
+  .work-dashboard-grid { grid-template-columns: minmax(400px, 1.15fr) minmax(330px, .85fr); }
+}
+
 .people-department-board { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; align-items: start; }
 .people-department-column { min-width: 0; padding: 11px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
 .people-department-column-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 1px 8px; border-bottom: 1px solid var(--line); }
