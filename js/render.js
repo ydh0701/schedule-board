@@ -533,10 +533,7 @@ function renderWorkAvailabilityCalendar(panel, allTasks){
     const load = isWeekday(date) && capacityDays ? Math.round((loadDays / capacityDays) * 100) : 0;
     const freeHours = Math.max(0, Math.round((capacityDays - loadDays) * 8));
     const tone = !isWeekday(date) ? 'off' : load > 100 ? 'over' : load >= 80 ? 'busy' : load > 0 ? 'partial' : 'free';
-    const cell = button('', `availability-cell ${tone} ${dateKey(todayDate()) === key ? 'today' : ''}`, () => {
-      if(isWeekday(date)) openTaskEditor(null, { startDate: key, dueDate: key });
-    });
-    cell.disabled = !isWeekday(date);
+    const cell = button('', `availability-cell ${tone} ${dateKey(todayDate()) === key ? 'today' : ''}`, () => openCalendarDayPopover(cell, date, dayTasks));
     if(dayTasks.length) cell.title = dayTasks.map(task => `${task.status === 'done' ? '완료' : '진행'} · ${task.title}`).join('\n');
     const dateHead = el('div', 'availability-date'); dateHead.append(el('strong', '', String(day)), el('span', '', dateKey(todayDate()) === key ? '오늘' : isHoliday(date) ? '휴일' : ''));
     cell.appendChild(dateHead);
@@ -550,6 +547,34 @@ function renderWorkAvailabilityCalendar(panel, allTasks){
     grid.appendChild(cell);
   }
   panel.appendChild(grid);
+}
+
+function openCalendarDayPopover(anchor, date, dayTasks){
+  document.querySelectorAll('.availability-day-popover').forEach(node => node.remove());
+  const popover = el('section', 'availability-day-popover');
+  const weekDay = ['일', '월', '화', '수', '목', '금', '토'][date.getDay()];
+  const head = el('div', 'availability-day-popover-head');
+  head.append(el('strong', '', `${dateKey(date)} (${weekDay})`));
+  const close = button('×', 'tiny ghost', () => popover.remove()); close.setAttribute('aria-label', '닫기'); head.appendChild(close);
+  popover.appendChild(head);
+  if(isHoliday(date)) popover.appendChild(el('span', 'tag neutral', '공휴일'));
+  const list = el('div', 'availability-day-task-list');
+  if(!dayTasks.length) list.appendChild(el('p', 'foot-note', '등록된 업무가 없습니다.'));
+  dayTasks.slice().sort((a, b) => Number(a.status === 'done') - Number(b.status === 'done') || String(a.dueDate || '').localeCompare(String(b.dueDate || ''))).forEach(task => {
+    const item = button('', 'availability-day-task', () => { popover.remove(); openTaskEditor(task); });
+    const meta = [projectCode(task), task.platform ? platformName(task.platform) : '공통', TASK_STATUS[task.status] || '미착수'].join(' · ');
+    item.append(el('strong', '', task.title), el('span', '', meta));
+    list.appendChild(item);
+  });
+  popover.appendChild(list);
+  document.body.appendChild(popover);
+  const rect = anchor.getBoundingClientRect();
+  const width = Math.min(320, window.innerWidth - 24);
+  const left = Math.max(12, Math.min(rect.left, window.innerWidth - width - 12));
+  const top = rect.bottom + 8 + popover.offsetHeight > window.innerHeight ? Math.max(12, rect.top - popover.offsetHeight - 8) : rect.bottom + 8;
+  popover.style.left = `${left}px`; popover.style.top = `${top}px`;
+  const closeWhenOutside = event => { if(!popover.contains(event.target) && event.target !== anchor && !anchor.contains(event.target)) { popover.remove(); document.removeEventListener('pointerdown', closeWhenOutside, true); } };
+  setTimeout(() => document.addEventListener('pointerdown', closeWhenOutside, true), 0);
 }
 
 function todayDate(){ const date = new Date(); date.setHours(0, 0, 0, 0); return date; }
