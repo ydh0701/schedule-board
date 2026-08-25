@@ -1,5 +1,5 @@
-Warning: truncated output (original token count: 33624)
-Total output lines: 1794
+Warning: truncated output (original token count: 33559)
+Total output lines: 1793
 
 /* render.js — 로그인, 프로젝트 일정, 실무 일정 화면 */
 
@@ -420,8 +420,9 @@ function renderProjectDetail(main, project){
   const overviewTitle = el('div', 'project-hero-title');
   overviewTitle.append(el('h2', '', project.code || project.name));
   overviewHead.appendChild(overviewTitle);
+  let heroActions = null;
   if(canManageProjects() || isLead()) {
-    const heroActions = el('div', 'project-hero-actions');
+    heroActions = el('div', 'project-hero-actions');
     if(canManageProjects()) heroActions.appendChild(button('프로젝트 정보 수정', 'tiny ghost', () => openProjectEditor(project)));
     if(canManageProjects()) heroActions.appendChild(button(project.status === 'completed' ? '프로젝트 재개' : '프로젝트 완료', project.status === 'completed' ? 'tiny ghost' : 'tiny complete-project-button', async () => {
       try {
@@ -439,7 +440,6 @@ function renderProjectDetail(main, project){
       catch(error) { showToast(error.message, 'error'); }
     }));
     heroActions.appendChild(button('+ 주간 업데이트', 'tiny ghost', () => openProjectUpdateEditor(project)));
-    overviewHead.appendChild(heroActions);
   }
   overview.appendChild(overviewHead);
   if(project.code) overview.append(el('p', 'sub', project.name));
@@ -452,7 +452,7 @@ function renderProjectDetail(main, project){
   overview.append(el('span', `tag ${healthClass(project.health)}`, healthLabel(project.health)));
   hero.appendChild(overview);
   const staffing = el('aside', 'project-header-staffing');
-  staffing.appendChild(el('strong', '', '플랫폼별 담당자'));
+  if(heroActions) staffing.appendChild(heroActions);
   (project.platforms || []).forEach(platform => {
     const row = el('div', 'project-header-staffing-row'); row.appendChild(el('strong', '', platformName(platform)));
     const members = (project.staffing || []).filter(item => item.platform === platform && item.userId);
@@ -566,8 +566,8 @@ function renderProjectSchedule(main, project){
   const todayKey = dateKey(todayDate());
   if(!projectScheduleSelectedDate || !projectScheduleSelectedDate.startsWith(`${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, '0')}`)) projectScheduleSelectedDate = todayKey.startsWith(`${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, '0')}`) ? todayKey : dateKey(new Date(cursor.getFullYear(), cursor.getMonth(), 1));
   const section = el('section', 'panel project-month-schedule');
-  const head = el('div', 'section-title-row'); const copy = el('div', ''); copy.append(el('h2', '', '월간 일정'), el('p', 'sub', '날짜를 누르면 직군별 업무와 마일스톤을 확인합니다.'));
-  const actions = el('div', 'timeline-actions'); if(canManageProjects()) actions.append(button('+ 마일스톤', '…13624 tokens truncated… if(typeof value === 'number' && window.XLSX?.SSF) {
+  if(canManageProjects()) { const actions = el('div', 'project-schedule-actions'); actions.append(button('+ 마일스톤', 'tiny ghost', () => openMilestoneEditor(null, project.id)), button('+ 업무 추가', 'tiny primary', () => openTaskEditor(null, { projectId: project.id }))); section.appendChild(actions); }
+  const nav = el('div', 'availability-month-bar')…13559 tokens truncated… if(typeof value === 'number' && window.XLSX?.SSF) {
     const parsed = XLSX.SSF.parse_date_code(value); if(parsed) return `${parsed.y}-${String(parsed.m).padStart(2, '0')}-${String(parsed.d).padStart(2, '0')}`;
   }
   const text = String(value).trim().replace(/\./g, '-').replace(/\//g, '-');
