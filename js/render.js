@@ -332,6 +332,8 @@ function renderProjectMilestoneCalendar(panel, activeProjects){
   controls.append(button('◀', 'tiny ghost', () => { projectPortfolioCursor.setMonth(projectPortfolioCursor.getMonth() - 1); rerender(); }), el('strong', '', `${year}년 ${month + 1}월`), button('▶', 'tiny ghost', () => { projectPortfolioCursor.setMonth(projectPortfolioCursor.getMonth() + 1); rerender(); }));
   head.appendChild(controls); panel.appendChild(head);
   const grid = el('div', 'project-milestone-calendar');
+  const weekCount = Math.ceil((firstDay + lastDate) / 7);
+  grid.style.gridTemplateRows = `32px repeat(${weekCount}, minmax(0, 1fr))`;
   ['일', '월', '화', '수', '목', '금', '토'].forEach(label => grid.appendChild(el('div', 'project-milestone-dow', label)));
   for(let index = 0; index < firstDay; index++) grid.appendChild(el('div', 'project-milestone-cell muted-cell'));
   for(let day = 1; day <= lastDate; day++) {
@@ -642,7 +644,10 @@ function renderProjectSchedule(main, project, compactHeader){
   if(compactHeader) section.appendChild(compactHeader);
   if(canManageProjects()) { const actions = el('div', 'project-schedule-actions'); actions.append(button('+ 마일스톤', 'tiny ghost', () => openMilestoneEditor(null, project.id)), button('+ 업무 추가', 'tiny primary', () => openTaskEditor(null, { projectId: project.id }))); section.appendChild(actions); }
   const nav = el('div', 'availability-month-bar'); const controls = el('div', 'availability-controls'); controls.append(button('◀', 'tiny ghost', () => { projectScheduleCursor = new Date(cursor.getFullYear(), cursor.getMonth() - 1, 1); rerender(); }), el('strong', '', `${cursor.getFullYear()}년 ${cursor.getMonth() + 1}월`), button('▶', 'tiny ghost', () => { projectScheduleCursor = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1); rerender(); })); nav.appendChild(controls); section.appendChild(nav);
-  const layout = el('div', 'project-schedule-layout'); const calendar = el('div', 'project-month-calendar'); ['일', '월', '화', '수', '목', '금', '토'].forEach(label => calendar.appendChild(el('div', 'project-month-dow', label)));
+  const layout = el('div', 'project-schedule-layout'); const calendar = el('div', 'project-month-calendar');
+  const weekCount = Math.ceil((firstDay + lastDate) / 7);
+  calendar.style.gridTemplateRows = `32px repeat(${weekCount}, minmax(0, 1fr))`;
+  ['일', '월', '화', '수', '목', '금', '토'].forEach(label => calendar.appendChild(el('div', 'project-month-dow', label)));
   for(let index = 0; index < firstDay; index++) calendar.appendChild(el('div', 'project-month-cell muted-cell'));
   for(let day = 1; day <= lastDate; day++) {
     const date = new Date(cursor.getFullYear(), cursor.getMonth(), day), key = dateKey(date);
@@ -725,6 +730,8 @@ function renderWorkAvailabilityCalendar(panel, allTasks){
   });
   panel.append(nav, summary);
   const grid = el('div', 'availability-calendar');
+  const weekCount = Math.ceil((firstDay + lastDate) / 7);
+  grid.style.gridTemplateRows = `32px repeat(${weekCount}, minmax(0, 1fr))`;
   ['일', '월', '화', '수', '목', '금', '토'].forEach(label => grid.appendChild(el('div', 'availability-dow', label)));
   for(let index = 0; index < firstDay; index++) grid.appendChild(el('div', 'availability-cell muted-cell'));
   for(let day = 1; day <= lastDate; day++) {
