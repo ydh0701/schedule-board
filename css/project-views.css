@@ -70,6 +70,8 @@
 .work-project-task-grid .task-meta { margin-top: 2px; font-size: 10px; }
 .work-project-task-grid .task-actions { gap: 4px; }
 .work-project-task-grid .task-actions .tiny { min-height: 27px; padding: 4px 7px; font-size: 10px; }
+.work-summary-bar { grid-template-columns: minmax(280px, 1.45fr) repeat(3, minmax(0, 1fr)); margin-bottom: 10px; }
+.work-summary-item.today-work strong { font-family: var(--font-body); font-size: 13px; letter-spacing: -.025em; }
 
 /* 프로젝트 상세는 탭 대신 일정 화면을 기본으로 사용하고, 요약은 같은 카드 상단에 압축한다. */
 .project-month-schedule { padding: 14px; }
@@ -117,7 +119,9 @@
 /* 내 업무 대시보드는 페이지가 아니라 오른쪽 업무 목록만 스크롤합니다. */
 @media (min-width: 901px) {
   body:has(.work-dashboard-grid), .app:has(.work-dashboard-grid), #main:has(.work-dashboard-grid) { overflow: hidden; }
-  .work-dashboard-grid { height: calc(100dvh - 190px); min-height: 0; align-items: stretch; }
+  .app:has(.work-dashboard-grid) { padding-top: 12px; padding-bottom: 20px; }
+  .app:has(.work-dashboard-grid) .topbar { top: 8px; margin-bottom: 14px; }
+  .work-dashboard-grid { height: calc(100dvh - 188px); min-height: 0; align-items: stretch; }
   .work-availability-panel, .work-dashboard-projects { min-height: 0; height: 100%; }
   .work-availability-panel { display: flex; flex-direction: column; }
   .work-availability-panel .availability-calendar { flex: 1 1 auto; grid-auto-rows: minmax(74px, 1fr); }
