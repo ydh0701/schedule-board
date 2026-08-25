@@ -40,7 +40,7 @@ function scheduleStatus(task){
 }
 function projectCode(task){
   const project = projects.find(item => item.id === task?.projectId);
-  const base = project?.code || project?.name || '개인 업무';
+  const base = project?.code || project?.name || '미연결 프로젝트';
   const suffix = task?.platform === 'mobile' ? 'M' : task?.platform === 'console' ? 'C' : '';
   return `${base}${suffix}`;
 }
@@ -205,7 +205,7 @@ function taskRow(task, showProject, mineCompact = false){
   const body = el('div', 'task-main');
   body.append(el('strong', 'task-title', task.title));
   const meta = [];
-  if(showProject) meta.push(task.projectId ? projectCode(task) : '개인 업무');
+  if(showProject) meta.push(projectCode(task));
   if(!mineCompact) {
     if(task.platform) meta.push(platformName(task.platform));
     meta.push(departmentName(task.departmentId), taskAssigneeName(task));
@@ -466,7 +466,10 @@ function renderWork(main){
 
 function taskAssignedToUser(task, userId){ return task.assigneeId === userId || (task.assignees || []).some(item => item.userId === userId); }
 
-function workTasks(){ return activeTasks().filter(task => taskAssignedToUser(task, currentUser?.uid)); }
+function workTasks(){
+  // 이 도구에서는 프로젝트에 연결된 업무만 운영합니다.
+  return activeTasks().filter(task => task.projectId && taskAssignedToUser(task, currentUser?.uid));
+}
 
 function renderWorkDashboard(main, allTasks){
   const today = new Date(); today.setHours(0, 0, 0, 0);
@@ -568,7 +571,7 @@ function renderProjectGroupedWork(main, allTasks, options = {}){
   const draw = () => {
     tabs.innerHTML = ''; panel.innerHTML = '';
     const byProject = new Map();
-    // 개인 업무는 달력·내 업무 요약에서만 다루고, 프로젝트 영역에는 표시하지 않습니다.
+    // 프로젝트에 연결된 업무만 표시합니다.
     allTasks.filter(task => task.projectId).forEach(task => {
       const key = task.projectId;
       if(!byProject.has(key)) byProject.set(key, []);
