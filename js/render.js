@@ -534,7 +534,6 @@ function renderWorkAvailabilityCalendar(panel, allTasks){
     const freeHours = Math.max(0, Math.round((capacityDays - loadDays) * 8));
     const tone = !isWeekday(date) ? 'off' : load > 100 ? 'over' : load >= 80 ? 'busy' : load > 0 ? 'partial' : 'free';
     const cell = button('', `availability-cell ${tone} ${dateKey(todayDate()) === key ? 'today' : ''}`, () => openCalendarDayPopover(cell, date, dayTasks));
-    if(dayTasks.length) cell.title = dayTasks.map(task => `${task.status === 'done' ? '완료' : '진행'} · ${task.title}`).join('\n');
     const dateHead = el('div', 'availability-date'); dateHead.append(el('strong', '', String(day)), el('span', '', dateKey(todayDate()) === key ? '오늘' : isHoliday(date) ? '휴일' : ''));
     cell.appendChild(dateHead);
     if(!isWeekday(date)) cell.appendChild(el('span', 'availability-label', isHoliday(date) ? '공휴일' : '주말'));
