@@ -560,7 +560,6 @@ function todayDate(){ const date = new Date(); date.setHours(0, 0, 0, 0); return
 
 function renderProjectGroupedWork(main, allTasks, options = {}){
   const today = new Date(); today.setHours(0, 0, 0, 0);
-  const ongoing = allTasks.filter(task => task.status !== 'done');
   const section = el('section', `work-projects-section ${options.embedded ? 'embedded' : ''}`);
   const head = el('div', 'work-section-head');
   const copy = el('div', '');
@@ -582,8 +581,15 @@ function renderProjectGroupedWork(main, allTasks, options = {}){
       if(!byProject.has(key)) byProject.set(key, []);
       byProject.get(key).push(task);
     });
+    // 프로젝트 자체가 완료되었거나, 현재 사용자에게 남은 업무가 전혀 없으면
+    // 내 업무 화면에서는 완료 프로젝트로 취급합니다. (기존 이관 프로젝트 호환)
+    const isCompletedWorkProject = (projectId, projectTasks) => {
+      if(projectId === '__personal__') return false;
+      const project = projects.find(item => item.id === projectId);
+      return project?.status === 'completed' || (projectTasks.length > 0 && projectTasks.every(task => task.status === 'done'));
+    };
     const entries = [...byProject.entries()]
-      .filter(([projectId, tasks]) => projectId === '__personal__' || showCompletedProjects || projects.find(project => project.id === projectId)?.status !== 'completed')
+      .filter(([projectId, projectTasks]) => projectId === '__personal__' || showCompletedProjects || !isCompletedWorkProject(projectId, projectTasks))
       .sort(([leftId, leftTasks], [rightId, rightTasks]) => {
       if(leftId === '__personal__') return -1;
       if(rightId === '__personal__') return 1;
@@ -601,6 +607,7 @@ function renderProjectGroupedWork(main, allTasks, options = {}){
       const todayCount = tasks.filter(task => task.status !== 'done' && taskCoversDate(task, today)).length;
       const tab = button('', projectId === selectedProjectKey ? 'primary tiny' : 'ghost tiny', () => { selectedProjectKey = projectId; draw(); });
       tab.appendChild(el('strong', '', code));
+      if(isCompletedWorkProject(projectId, tasks)) tab.appendChild(el('em', 'completed-project-tab-mark', '완료'));
       if(todayCount) tab.appendChild(el('em', '', `오늘 ${todayCount}`));
       tabs.appendChild(tab);
     });
@@ -643,6 +650,7 @@ function renderProjectGroupedWork(main, allTasks, options = {}){
     completedProjectToggle.textContent = showCompletedProjects ? '완료 프로젝트 숨기기' : '완료 프로젝트 보기';
     completedProjectToggle.className = showCompletedProjects ? 'tiny primary completed-project-filter' : 'tiny ghost completed-project-filter';
     draw();
+    showToast(showCompletedProjects ? '완료 프로젝트를 표시합니다.' : '완료 프로젝트를 숨겼습니다.');
   };
   draw();
 }
