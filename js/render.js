@@ -189,7 +189,8 @@ function projectFinalReleaseDate(project){
   return dates.length ? dates.sort().at(-1) : null;
 }
 function projectIsCompleted(project){
-  if(project.status === 'completed') return true;
+  const status = String(project?.status || '').trim().toLowerCase();
+  if(['completed', 'complete', 'done', 'closed', 'finished', '완료'].includes(status)) return true;
   const platforms = projectPlatforms(project);
   const releases = projectReleaseDates(project);
   return platforms.length > 0 && platforms.every(platform => {
