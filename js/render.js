@@ -268,14 +268,15 @@ function renderProjects(main){
     main.appendChild(el('div', 'empty', '등록된 프로젝트가 없습니다. 관리자가 첫 프로젝트를 만들어주세요.'));
     return;
   }
-  let completed = null;
+  const completed = el('details', 'completed-project-group');
+  const summary = el('summary', ''); summary.append(el('strong', '', '완료 프로젝트 보기'), el('span', '', `${completedProjects.length}건`));
+  completed.appendChild(summary);
   if(completedProjects.length) {
-    completed = el('details', 'completed-project-group');
-    const summary = el('summary', ''); summary.append(el('strong', '', '완료 프로젝트 보기'), el('span', '', `${completedProjects.length}건`));
-    completed.appendChild(summary);
     const completedGrid = el('div', 'proj-card-grid completed-project-grid');
     completedProjects.sort((a, b) => String(projectFinalReleaseDate(b) || '').localeCompare(String(projectFinalReleaseDate(a) || ''))).forEach(project => completedGrid.appendChild(projectCard(project)));
     completed.appendChild(completedGrid);
+  } else {
+    completed.appendChild(el('p', 'completed-project-empty', '완료된 프로젝트가 없습니다.'));
   }
   const dashboard = el('div', 'project-dashboard-grid');
   const calendarPanel = el('section', 'project-milestone-panel');
@@ -289,7 +290,7 @@ function renderProjects(main){
   const grid = el('div', 'proj-card-grid');
   activeProjects.sort((a, b) => String(a.code || a.name || '').localeCompare(String(b.code || b.name || ''), undefined, { numeric: true })).forEach(project => grid.appendChild(projectCard(project)));
   const projectScroll = el('div', 'project-dashboard-project-scroll');
-  if(completed) projectScroll.appendChild(completed);
+  projectScroll.appendChild(completed);
   projectScroll.append(ongoingHead, grid);
   projectPanel.append(projectHead);
   projectPanel.appendChild(projectScroll);
