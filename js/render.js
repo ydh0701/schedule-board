@@ -478,6 +478,32 @@ function renderProjectTaskList(main, project){
   const filters = el('div', 'project-task-board-filters');
   const filterState = { value: 'active' };
   const list = el('div', 'project-task-board');
+  const layout = el('div', 'project-task-layout');
+  const calendar = el('aside', 'project-task-calendar');
+  const drawCalendar = () => {
+    calendar.innerHTML = '';
+    const cursor = projectScheduleCursor || new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+    const year = cursor.getFullYear(), month = cursor.getMonth();
+    const nav = el('div', 'project-task-calendar-nav');
+    nav.append(button('◀', 'tiny ghost', () => { projectScheduleCursor = new Date(year, month - 1, 1); drawCalendar(); }), el('strong', '', `${year}년 ${month + 1}월`), button('▶', 'tiny ghost', () => { projectScheduleCursor = new Date(year, month + 1, 1); drawCalendar(); }));
+    calendar.appendChild(nav);
+    const grid = el('div', 'project-task-calendar-grid');
+    ['일', '월', '화', '수', '목', '금', '토'].forEach(day => grid.appendChild(el('span', 'project-task-calendar-dow', day)));
+    const firstDay = new Date(year, month, 1).getDay(), lastDate = new Date(year, month + 1, 0).getDate();
+    for(let index = 0; index < firstDay; index++) grid.appendChild(el('span', 'project-task-calendar-cell muted'));
+    for(let day = 1; day <= lastDate; day++) {
+      const date = new Date(year, month, day), key = dateKey(date);
+      const count = tasksForProject(project.id).filter(task => taskCoversDate(task, date) && task.status !== 'done').length;
+      const milestoneCount = milestonesForProject(project.id).filter(item => item.dueDate === key).length;
+      const cell = button('', `project-task-calendar-cell ${key === dateKey(todayDate()) ? 'today' : ''} ${count ? 'has-work' : ''}`, () => { projectScheduleSelectedDate = key; projectDetailTab = 'schedule'; rerender(); });
+      cell.append(el('strong', '', String(day)));
+      if(count) cell.appendChild(el('span', '', `${count}건`));
+      else if(milestoneCount) cell.appendChild(el('span', 'milestone', '일정'));
+      grid.appendChild(cell);
+    }
+    calendar.appendChild(grid);
+    calendar.appendChild(el('p', 'foot-note', '날짜를 누르면 일정 조율에서 상세 업무를 확인합니다.'));
+  };
   const draw = () => {
     list.innerHTML = '';
     const items = tasksForProject(project.id).filter(task => filterState.value === 'all' || (filterState.value === 'risk' ? (taskIsOverdue(task) || task.status === 'blocked' || !task.assigneeId) : task.status !== 'done'));
@@ -504,7 +530,7 @@ function renderProjectTaskList(main, project){
     }
   };
   [['active','진행 중'], ['risk','확인 필요'], ['all','전체']].forEach(([key, label]) => filters.appendChild(button(label, key === 'active' ? 'primary tiny' : 'ghost tiny', event => { filterState.value = key; [...filters.querySelectorAll('button')].forEach(item => item.className = 'ghost tiny'); event.currentTarget.className = 'primary tiny'; draw(); })));
-  section.append(filters, list); draw(); main.appendChild(section);
+  layout.append(calendar, list); section.append(filters, layout); drawCalendar(); draw(); main.appendChild(section);
 }
 
 function renderProjectMilestoneList(main, project){
