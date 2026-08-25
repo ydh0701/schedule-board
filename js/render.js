@@ -1,5 +1,5 @@
-Warning: truncated output (original token count: 33559)
-Total output lines: 1793
+Warning: truncated output (original token count: 34018)
+Total output lines: 1811
 
 /* render.js — 로그인, 프로젝트 일정, 실무 일정 화면 */
 
@@ -476,19 +476,37 @@ function renderProjectDetail(main, project){
 
 function renderProjectTaskList(main, project){
   const section = el('section', 'panel project-task-panel');
-  const head = el('div', 'section-title-row'); head.append(el('div', '', ''), canManageProjects() ? button('+ 업무 추가', 'tiny primary', () => openTaskEditor(null, { projectId: project.id })) : el('span', '', ''));
-  head.firstChild.append(el('h2', '', '전체 업무'), el('p', 'sub', '업무 행을 눌러 상태·기간·담당자를 수정합니다.'));
+  const head = el('div', 'project-task-board-head'); head.append(el('h2', '', '업무 현황'), canManageProjects() ? button('+ 업무 추가', 'tiny primary', () => openTaskEditor(null, { projectId: project.id })) : el('span', '', ''));
   section.appendChild(head);
-  const filters = el('div', 'timeline-filters');
-  const filterState = { value: 'all' };
-  const list = el('div', 'task-list');
+  const filters = el('div', 'project-task-board-filters');
+  const filterState = { value: 'active' };
+  const list = el('div', 'project-task-board');
   const draw = () => {
     list.innerHTML = '';
-    const items = tasksForProject(project.id).filter(task => filterState.value === 'all' || (filterState.value === 'risk' ? (taskIsOverdue(task) || task.status === 'blocked' || !task.assigneeId) : task.departmentId === filterState.value));
+    const items = tasksForProject(project.id).filter(task => filterState.value === 'all' || (filterState.value === 'risk' ? (taskIsOverdue(task) || task.status === 'blocked' || !task.assigneeId) : task.status !== 'done'));
     if(!items.length) list.appendChild(el('div', 'empty', '표시할 업무가 없습니다.'));
-    else items.sort((a,b) => String(a.dueDate || '9999').localeCompare(String(b.dueDate || '9999'))).forEach(task => list.appendChild(taskRow(task, true)));
+    else {
+      const order = ['development', 'ui', 'planning', 'studio', 'qa', 'business', 'video', 'server', 'pm'];
+      const departmentIds = [...new Set(items.map(task => task.departmentId || 'other'))].sort((a, b) => (order.indexOf(a) < 0 ? 99 : order.indexOf(a)) - (order.indexOf(b) < 0 ? 99 : order.indexOf(b)) || departmentName(a).localeCompare(departmentName(b)));
+      departmentIds.forEach(departmentId => {
+        const departmentTasks = items.filter(task => (task.departmentId || 'other') === departmentId).sort((a, b) => String(a.dueDate || '9999-12-31').localeCompare(String(b.dueDate || '9999-12-31')));
+        const column = el('section', 'project-task-board-column');
+        const columnHead = el('div', 'project-task-board-column-head'); columnHead.append(el('h3', '', departmentName(departmentId)), el('span', '', `${departmentTasks.length}`));
+        const cards = el('div', 'project-task-board-cards');
+        departmentTasks.forEach(task => {
+          const risk = taskIsOverdue(task) || task.status === 'blocked' || !task.assigneeId;
+          const card = el('article', `project-task-board-card ${risk ? 'danger' : ''} ${task.status === 'done' ? 'done' : ''}`);
+          if(canEditTask(task)) { card.tabIndex = 0; card.onclick = () => openTaskEditor(task); card.onkeydown = event => { if(event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openTaskEditor(task); } }; }
+          const cardHead = el('div', 'project-task-board-card-head');
+          cardHead.append(el('strong', '', task.title), el('span', `tag ${risk ? 'danger' : task.status === 'done' ? 'ok' : 'neutral'}`, task.status === 'done' ? '완료' : task.status === 'blocked' ? '차단' : `${task.progress || 0}%`));
+          const meta = [task.platform ? platformName(task.platform) : '', taskAssigneeName(task), task.dueDate ? `${fmtDate(task.dueDate)}까지` : '일정 미정'].filter(Boolean).join(' · ');
+          card.append(cardHead, el('p', 'project-task-board-card-meta', meta)); cards.appendChild(card);
+        });
+        column.append(columnHead, cards); list.appendChild(column);
+      });
+    }
   };
-  [['all','전체'], ['risk','위험'], ...DEPARTMENTS.map(dept => [dept.id, dept.name])].forEach(([key, label]) => filters.appendChild(button(label, key === 'all' ? 'primary tiny' : 'ghost tiny', event => { filterState.value = key; [...filters.querySelectorAll('button')].forEach(item => item.className = 'ghost tiny'); event.currentTarget.className = 'primary tiny'; draw(); })));
+  [['active','진행 중'], ['risk','확인 필요'], ['all','전체']].forEach(([key, label]) => filters.appendChild(button(label, key === 'active' ? 'primary tiny' : 'ghost tiny', event => { filterState.value = key; [...filters.querySelectorAll('button')].forEach(item => item.className = 'ghost tiny'); event.currentTarget.className = 'primary tiny'; draw(); })));
   section.append(filters, list); draw(); main.appendChild(section);
 }
 
@@ -552,22 +570,7 @@ function openProjectSchedulePopover(anchor, date, project, dayTasks, dayMileston
   document.body.appendChild(popover);
   const rect = anchor.getBoundingClientRect(), width = Math.min(360, window.innerWidth - 24);
   popover.style.left = `${Math.max(12, Math.min(rect.left, window.innerWidth - width - 12))}px`;
-  popover.style.top = `${rect.bottom + 8 + popover.offsetHeight > window.innerHeight ? Math.max(12, rect.top - popover.offsetHeight - 8) : rect.bottom + 8}px`;
-  const closeOutside = event => { if(!popover.contains(event.target) && !anchor.contains(event.target)) { popover.remove(); document.removeEventListener('pointerdown', closeOutside, true); } };
-  setTimeout(() => document.addEventListener('pointerdown', closeOutside, true), 0);
-}
-
-function renderProjectSchedule(main, project){
-  const projectTasks = uniqueProjectTasks(project.id);
-  const dates = [...projectTasks.flatMap(task => [task.startDate, task.dueDate]), ...milestonesForProject(project.id).map(item => item.dueDate)].filter(Boolean).sort();
-  if(!projectScheduleCursor) { const base = localDate(dates[0]) || new Date(); projectScheduleCursor = new Date(base.getFullYear(), base.getMonth(), 1); }
-  const cursor = new Date(projectScheduleCursor.getFullYear(), projectScheduleCursor.getMonth(), 1);
-  const firstDay = cursor.getDay(), lastDate = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 0).getDate();
-  const todayKey = dateKey(todayDate());
-  if(!projectScheduleSelectedDate || !projectScheduleSelectedDate.startsWith(`${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, '0')}`)) projectScheduleSelectedDate = todayKey.startsWith(`${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, '0')}`) ? todayKey : dateKey(new Date(cursor.getFullYear(), cursor.getMonth(), 1));
-  const section = el('section', 'panel project-month-schedule');
-  if(canManageProjects()) { const actions = el('div', 'project-schedule-actions'); actions.append(button('+ 마일스톤', 'tiny ghost', () => openMilestoneEditor(null, project.id)), button('+ 업무 추가', 'tiny primary', () => openTaskEditor(null, { projectId: project.id }))); section.appendChild(actions); }
-  const nav = el('div', 'availability-month-bar')…13559 tokens truncated… if(typeof value === 'number' && window.XLSX?.SSF) {
+  popover.style.top = `${rect.bottom + 8 + popover.offsetHeight > window.in…14018 tokens truncated… if(typeof value === 'number' && window.XLSX?.SSF) {
     const parsed = XLSX.SSF.parse_date_code(value); if(parsed) return `${parsed.y}-${String(parsed.m).padStart(2, '0')}-${String(parsed.d).padStart(2, '0')}`;
   }
   const text = String(value).trim().replace(/\./g, '-').replace(/\//g, '-');
