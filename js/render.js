@@ -451,8 +451,11 @@ function renderProjectDetail(main, project){
   const staffing = el('aside', 'project-header-staffing');
   staffing.appendChild(el('strong', '', '플랫폼별 담당자'));
   (project.platforms || []).forEach(platform => {
-    const members = (project.staffing || []).filter(item => item.platform === platform && item.userId).map(item => `${departmentName(item.departmentId)} ${userName(item.userId)}`);
-    staffing.append(el('div', 'project-header-staffing-row', `${platformName(platform)} · ${members.join(' / ') || '미배정'}`));
+    const row = el('div', 'project-header-staffing-row'); row.appendChild(el('strong', '', platformName(platform)));
+    const members = (project.staffing || []).filter(item => item.platform === platform && item.userId);
+    if(!members.length) row.appendChild(el('span', 'project-staff-chip empty', '미배정'));
+    members.forEach(item => { const chip = el('span', 'project-staff-chip'); chip.append(el('small', '', departmentName(item.departmentId)), document.createTextNode(userName(item.userId))); row.appendChild(chip); });
+    staffing.appendChild(row);
   });
   hero.appendChild(staffing);
   main.appendChild(hero);
