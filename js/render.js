@@ -396,15 +396,15 @@ function projectCommandCenter(project, projectTasks){
   const upcomingTask = projectTasks.filter(task => task.status !== 'done' && task.dueDate).sort((a, b) => String(a.dueDate).localeCompare(String(b.dueDate)))[0];
   const riskTasks = projectTasks.filter(task => taskIsOverdue(task) || task.status === 'blocked' || !task.assigneeId);
   const staffingGaps = (project.platforms || []).flatMap(platform => TEMPLATE_DEPARTMENTS.filter(departmentId => !staffingFor(project, platform, departmentId)?.userId).map(departmentId => ({ platform, departmentId })));
-  const section = el('section', 'project-command-grid');
-  const addCard = (eyebrow, title, detail, tone, onClick) => {
-    const card = button('', `project-command-card ${tone || ''}`, onClick);
-    card.append(el('span', 'command-label', eyebrow), el('strong', '', title), el('span', 'command-detail', detail)); section.appendChild(card);
+  const section = el('section', 'project-brief-bar');
+  const addFact = (label, title, detail, tone, onClick) => {
+    const fact = button('', `project-brief-item ${tone || ''}`, onClick);
+    fact.append(el('span', 'project-brief-label', label), el('strong', '', title), el('span', '', detail)); section.appendChild(fact);
   };
-  addCard('NEXT MILESTONE', upcomingMilestone?.title || '예정 마일스톤 없음', upcomingMilestone ? `${fmtDate(upcomingMilestone.dueDate)} · 연결 업무 ${tasksForMilestone(upcomingMilestone.id).length}건` : '마일스톤 탭에서 고정 일정을 추가하세요.', upcomingMilestone && upcomingMilestone.dueDate <= addBusinessDays(today, 7) ? 'warn' : '', () => { projectDetailTab = 'milestones'; rerender(); });
-  addCard('NEXT DEADLINE', upcomingTask?.title || '예정 마감 없음', upcomingTask ? `${fmtDate(upcomingTask.dueDate)} · ${taskAssigneeName(upcomingTask)}` : '업무의 마감일을 입력하면 표시됩니다.', upcomingTask && taskIsOverdue(upcomingTask) ? 'danger' : '', () => { projectDetailTab = 'tasks'; rerender(); });
-  addCard('RISK WORK', riskTasks.length ? `${riskTasks.length}건 확인 필요` : '위험 업무 없음', riskTasks.length ? `지연 ${projectTasks.filter(taskIsOverdue).length} · 차단 ${projectTasks.filter(task => task.status === 'blocked').length} · 미배정 ${projectTasks.filter(task => !task.assigneeId).length}` : '현재 등록 업무 기준 정상입니다.', riskTasks.length ? 'danger' : 'ok', () => { projectDetailTab = 'tasks'; rerender(); });
-  addCard('STAFFING', staffingGaps.length ? `담당자 공백 ${staffingGaps.length}건` : '담당자 배정 완료', staffingGaps.length ? staffingGaps.slice(0, 2).map(item => `${platformName(item.platform)} ${departmentName(item.departmentId)}`).join(' · ') : '플랫폼별 직군 담당자가 배정됐습니다.', staffingGaps.length ? 'warn' : 'ok', () => openProjectEditor(project));
+  if(upcomingMilestone) addFact('다음 마일스톤', upcomingMilestone.title, fmtDate(upcomingMilestone.dueDate), upcomingMilestone.dueDate <= addBusinessDays(today, 7) ? 'warn' : '', () => { projectDetailTab = 'milestones'; rerender(); });
+  if(upcomingTask) addFact('다음 마감', upcomingTask.title, `${fmtDate(upcomingTask.dueDate)} · ${taskAssigneeName(upcomingTask)}`, taskIsOverdue(upcomingTask) ? 'danger' : '', () => { projectDetailTab = 'tasks'; rerender(); });
+  if(riskTasks.length) addFact('확인 필요', `${riskTasks.length}건`, `지연 ${projectTasks.filter(taskIsOverdue).length} · 차단 ${projectTasks.filter(task => task.status === 'blocked').length} · 미배정 ${projectTasks.filter(task => !task.assigneeId).length}`, 'danger', () => { projectDetailTab = 'tasks'; rerender(); });
+  if(staffingGaps.length) addFact('담당자 공백', `${staffingGaps.length}건`, staffingGaps.slice(0, 2).map(item => `${platformName(item.platform)} ${departmentName(item.departmentId)}`).join(' · '), 'warn', () => openProjectEditor(project));
   return section;
 }
 
@@ -416,7 +416,7 @@ function renderProjectDetail(main, project){
   const overview = el('div', 'project-hero-overview');
   const overviewHead = el('div', 'project-hero-overview-head');
   const overviewTitle = el('div', 'project-hero-title');
-  overviewTitle.append(el('p', 'eyebrow', 'PROJECT OVERVIEW'), el('h2', '', project.code || project.name));
+  overviewTitle.append(el('h2', '', project.code || project.name));
   overviewHead.appendChild(overviewTitle);
   if(canManageProjects() || isLead()) {
     const heroActions = el('div', 'project-hero-actions');
@@ -432,45 +432,26 @@ function renderProjectDetail(main, project){
         }
       } catch(error) { showToast(error.message, 'error'); }
     }));
+    if(canManageProjects() && project.schedulingMode === 'template') heroActions.appendChild(button('일정 재계산', 'tiny ghost', async () => {
+      try { await rescheduleGeneratedTasks(project.id); showToast('고정 마일스톤 기준으로 자동 업무 일정을 다시 계산했습니다.'); }
+      catch(error) { showToast(error.message, 'error'); }
+    }));
     heroActions.appendChild(button('+ 주간 업데이트', 'tiny ghost', () => openProjectUpdateEditor(project)));
     overviewHead.appendChild(heroActions);
   }
   overview.appendChild(overviewHead);
   if(project.code) overview.append(el('p', 'sub', project.name));
-  if(project.platforms?.length) overview.append(el('p', 'foot-note', `적용 플랫폼 · ${project.platforms.map(platformName).join(' · ')}`));
+  if(project.platforms?.length) {
+    const platforms = el('div', 'project-detail-platforms');
+    platforms.append(...project.platforms.map(platform => el('span', '', platformName(platform))));
+    overview.appendChild(platforms);
+  }
   overview.append(progressBlock(projectProgress(project.id)));
-  overview.append(el('span', `tag ${healthClass(project.health)}`, `프로젝트 상태 · ${healthLabel(project.health)}`));
+  overview.append(el('span', `tag ${healthClass(project.health)}`, healthLabel(project.health)));
   hero.appendChild(overview);
-
-  const staffing = el('aside', 'project-hero-staffing');
-  const staffingHead = el('div', 'section-title-row'); staffingHead.append(el('h3', '', '플랫폼별 담당자'));
-  staffing.appendChild(staffingHead);
-  if(!(project.staffing || []).some(item => item.userId)) staffing.append(el('p', 'sub', '아직 담당자가 배정되지 않았습니다.'));
-  (project.platforms || []).forEach(platform => {
-    const rows = (project.staffing || []).filter(item => item.platform === platform);
-    const row = el('div', 'hero-staffing-row');
-    row.append(el('strong', '', platformName(platform)));
-    row.append(el('span', 'foot-note', rows.map(item => `${departmentName(item.departmentId)} · ${item.userId ? userName(item.userId) : '미배정'}`).join(' / ') || '배정 정보 없음'));
-    staffing.appendChild(row);
-  });
-  const staffingActions = el('div', 'project-hero-actions');
-  if(canManageProjects() && project.schedulingMode === 'template') staffingActions.appendChild(button('일정 다시 계산', 'tiny ghost', async () => {
-    try { await rescheduleGeneratedTasks(project.id); showToast('고정 마일스톤 기준으로 자동 업무 일정을 다시 계산했습니다.'); }
-    catch(error) { alert(error.message); }
-  }));
-  if(staffingActions.childNodes.length) staffing.appendChild(staffingActions);
-  hero.appendChild(staffing);
   main.appendChild(hero);
   const projectTasks = tasksForProject(project.id);
   main.appendChild(projectCommandCenter(project, projectTasks));
-  const riskTasks = projectTasks.filter(task => taskIsOverdue(task) || task.status === 'blocked' || !task.assigneeId);
-  if(riskTasks.length) {
-    const risks = el('section', 'project-risks');
-    risks.append(el('strong', '', `확인 필요 · 지연·차단·미배정 ${riskTasks.length}건`));
-    risks.append(el('span', '', `지연 ${projectTasks.filter(taskIsOverdue).length} · 차단 ${projectTasks.filter(task => task.status === 'blocked').length} · 미배정 ${projectTasks.filter(task => !task.assigneeId).length}`));
-    risks.append(button('위험 업무 보기', 'tiny ghost', () => { projectDetailTab = 'tasks'; rerender(); }));
-    main.appendChild(risks);
-  }
   const tabs = el('nav', 'project-detail-tabs');
   const entries = [['schedule', '일정 조율'], ['tasks', `전체 업무 ${projectTasks.length}`], ['milestones', `마일스톤 ${milestonesForProject(project.id).length}`]];
   if(isPM() || isAdmin()) entries.push(['history', '변경 이력']);
