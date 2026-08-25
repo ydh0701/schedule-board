@@ -71,6 +71,29 @@
 .work-project-task-grid .task-actions { gap: 4px; }
 .work-project-task-grid .task-actions .tiny { min-height: 27px; padding: 4px 7px; font-size: 10px; }
 
+/* 프로젝트 상세는 탭 대신 일정 화면을 기본으로 사용하고, 요약은 같은 카드 상단에 압축한다. */
+.project-month-schedule { padding: 14px; }
+.project-compact-header { display: grid; grid-template-columns: minmax(270px, .7fr) minmax(0, 1.3fr); align-items: center; gap: 14px; padding: 0 0 10px; margin-bottom: 8px; border-bottom: 1px solid var(--line); }
+.project-compact-header .project-hero-overview { display: flex; align-items: center; gap: 8px; min-width: 0; flex-wrap: wrap; }
+.project-compact-header .project-hero-overview-head { min-width: 0; }
+.project-compact-header .project-hero-title h2 { margin: 0; font-family: var(--font-display); font-size: 21px; letter-spacing: -.04em; }
+.project-compact-header .project-hero-overview .sub { margin: 0; color: var(--muted); font-size: 11px; }
+.project-compact-header .project-detail-platforms { margin: 0; }
+.project-compact-header .project-hero-overview .progress-line { width: 130px; margin: 0; }
+.project-compact-header .project-hero-overview > .tag { margin: 0; }
+.project-compact-header .project-header-staffing { display: flex; align-items: center; justify-content: flex-end; gap: 6px 12px; min-width: 0; padding: 0; border: 0; }
+.project-compact-header .project-hero-actions { display: flex; align-items: center; justify-content: flex-end; gap: 6px; flex-wrap: wrap; }
+.project-compact-header .project-header-staffing-row { display: flex; align-items: center; gap: 5px; max-width: 100%; padding: 0; border: 0; overflow: hidden; white-space: nowrap; }
+.project-compact-header .project-header-staffing-row > strong { flex: 0 0 auto; font-size: 10px; }
+.project-compact-header .project-staff-chip { font-size: 9px; }
+
+@media (min-width: 901px) {
+  .project-month-schedule .project-schedule-layout { grid-template-columns: minmax(600px, 1.35fr) minmax(350px, .65fr); min-height: 430px; height: calc(100dvh - 250px); }
+  .project-month-schedule .project-month-calendar { grid-auto-rows: 1fr; }
+  .project-month-schedule .project-month-cell { min-height: 0; }
+  .project-month-schedule .project-schedule-detail { min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+}
+
 /* 프로젝트 현황: 달력은 넓게, 프로젝트 목록은 두 행만 보여주고 내부에서 스크롤한다. */
 @media (min-width: 901px) {
   body:has(.project-dashboard-grid), .app:has(.project-dashboard-grid), #main:has(.project-dashboard-grid) { overflow: hidden; }
