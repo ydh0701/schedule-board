@@ -288,7 +288,7 @@ function renderProjects(main){
   const ongoingHead = el('div', 'project-status-subhead');
   ongoingHead.append(el('strong', '', '진행 프로젝트'), el('span', '', `${activeProjects.length}건`));
   const grid = el('div', 'proj-card-grid');
-  activeProjects.forEach(project => grid.appendChild(projectCard(project)));
+  activeProjects.sort((a, b) => String(a.code || a.name || '').localeCompare(String(b.code || b.name || ''), undefined, { numeric: true })).forEach(project => grid.appendChild(projectCard(project)));
   projectPanel.append(projectHead);
   if(completed) projectPanel.appendChild(completed);
   projectPanel.append(ongoingHead, grid);
