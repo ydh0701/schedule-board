@@ -471,16 +471,39 @@ function renderProjectDetail(main, project){
   else renderProjectSchedule(main, project);
 }
 
+const PROJECT_DELIVERY_STAGES = [
+  { id: 'preparation', title: '준비' },
+  { id: 'production', title: '영상 & 개발' },
+  { id: 'demo_launch', title: '데모 런칭 준비' },
+  { id: 'full_launch', title: '완전판 런칭 준비' },
+  { id: 'other', title: '기타' }
+];
+
+function projectDeliveryStage(task){
+  const text = `${task?.milestoneStage || ''} ${task?.taskGroup || ''} ${task?.title || ''}`.replace(/\s/g, '').toLowerCase();
+  if(/완전판|정식출시|정식런칭|스토어런칭/.test(text)) return 'full_launch';
+  if(/데모|심사|출시/.test(text)) return 'demo_launch';
+  if(/영상|개발|프리랩|bm|리뷰보드|제작/.test(text) || ['development', 'video'].includes(task?.departmentId)) return 'production';
+  if(/준비|기획|아이디어|사전|리소스|현장/.test(text)) return 'preparation';
+  return 'other';
+}
+
 function renderProjectTaskList(main, project){
   const section = el('section', 'panel project-task-panel');
   const head = el('div', 'project-task-board-head'); head.append(el('h2', '', '업무 현황'), canManageProjects() ? button('+ 업무 추가', 'tiny primary', () => openTaskEditor(null, { projectId: project.id })) : el('span', '', ''));
   section.appendChild(head);
   const filters = el('div', 'project-task-board-filters');
+  const stageFilters = el('div', 'project-task-stage-filters');
   const filterState = { value: 'active' };
+  const allProjectTasks = tasksForProject(project.id);
+  const stageIds = PROJECT_DELIVERY_STAGES.map(stage => stage.id).filter(stageId => allProjectTasks.some(task => projectDeliveryStage(task) === stageId));
+  const stageState = { value: stageIds.find(stageId => allProjectTasks.some(task => projectDeliveryStage(task) === stageId && task.status !== 'done')) || stageIds[0] || 'other' };
   const list = el('div', 'project-task-board');
   const layout = el('div', 'project-task-layout');
   const calendar = el('aside', 'project-task-calendar');
-  const drawCalendar = () => {
+  let calendarTasks = [];
+  const drawCalendar = stageTasks => {
+    if(stageTasks) calendarTasks = stageTasks;
     calendar.innerHTML = '';
     const cursor = projectScheduleCursor || new Date(new Date().getFullYear(), new Date().getMonth(), 1);
     const year = cursor.getFullYear(), month = cursor.getMonth();
@@ -493,7 +516,7 @@ function renderProjectTaskList(main, project){
     for(let index = 0; index < firstDay; index++) grid.appendChild(el('span', 'project-task-calendar-cell muted'));
     for(let day = 1; day <= lastDate; day++) {
       const date = new Date(year, month, day), key = dateKey(date);
-      const count = tasksForProject(project.id).filter(task => taskCoversDate(task, date) && task.status !== 'done').length;
+      const count = calendarTasks.filter(task => taskCoversDate(task, date) && task.status !== 'done').length;
       const milestoneCount = milestonesForProject(project.id).filter(item => item.dueDate === key).length;
       const cell = button('', `project-task-calendar-cell ${key === dateKey(todayDate()) ? 'today' : ''} ${count ? 'has-work' : ''}`, () => { projectScheduleSelectedDate = key; projectDetailTab = 'schedule'; rerender(); });
       cell.append(el('strong', '', String(day)));
@@ -504,9 +527,15 @@ function renderProjectTaskList(main, project){
     calendar.appendChild(grid);
     calendar.appendChild(el('p', 'foot-note', '날짜를 누르면 일정 조율에서 상세 업무를 확인합니다.'));
   };
+  const moveCalendarToStageStart = stageTasks => {
+    const first = stageTasks.map(task => task.startDate || task.dueDate).filter(Boolean).sort()[0];
+    if(first) { const date = localDate(first); projectScheduleCursor = new Date(date.getFullYear(), date.getMonth(), 1); }
+  };
   const draw = () => {
     list.innerHTML = '';
-    const items = tasksForProject(project.id).filter(task => filterState.value === 'all' || (filterState.value === 'risk' ? (taskIsOverdue(task) || task.status === 'blocked' || !task.assigneeId) : task.status !== 'done'));
+    const stageTasks = allProjectTasks.filter(task => projectDeliveryStage(task) === stageState.value);
+    drawCalendar(stageTasks);
+    const items = stageTasks.filter(task => filterState.value === 'all' || (filterState.value === 'risk' ? (taskIsOverdue(task) || task.status === 'blocked' || !task.assigneeId) : task.status !== 'done'));
     if(!items.length) list.appendChild(el('div', 'empty', '표시할 업무가 없습니다.'));
     else {
       const order = ['development', 'ui', 'planning', 'studio', 'qa', 'business', 'video', 'server', 'pm'];
@@ -530,7 +559,17 @@ function renderProjectTaskList(main, project){
     }
   };
   [['active','진행 중'], ['risk','확인 필요'], ['all','전체']].forEach(([key, label]) => filters.appendChild(button(label, key === 'active' ? 'primary tiny' : 'ghost tiny', event => { filterState.value = key; [...filters.querySelectorAll('button')].forEach(item => item.className = 'ghost tiny'); event.currentTarget.className = 'primary tiny'; draw(); })));
-  layout.append(calendar, list); section.append(filters, layout); drawCalendar(); draw(); main.appendChild(section);
+  stageIds.forEach(stageId => {
+    const stage = PROJECT_DELIVERY_STAGES.find(item => item.id === stageId);
+    const count = allProjectTasks.filter(task => projectDeliveryStage(task) === stageId && task.status !== 'done').length;
+    stageFilters.appendChild(button(`${stage.title} ${count}`, stageId === stageState.value ? 'primary tiny' : 'ghost tiny', event => {
+      stageState.value = stageId;
+      [...stageFilters.querySelectorAll('button')].forEach(item => item.className = 'ghost tiny'); event.currentTarget.className = 'primary tiny';
+      moveCalendarToStageStart(allProjectTasks.filter(task => projectDeliveryStage(task) === stageId)); draw();
+    }));
+  });
+  moveCalendarToStageStart(allProjectTasks.filter(task => projectDeliveryStage(task) === stageState.value));
+  layout.append(calendar, list); section.append(filters, stageFilters, layout); draw(); main.appendChild(section);
 }
 
 function renderProjectMilestoneList(main, project){
