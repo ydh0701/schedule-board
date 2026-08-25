@@ -1,6 +1,3 @@
-Warning: truncated output (original token count: 34018)
-Total output lines: 1811
-
 /* render.js — 로그인, 프로젝트 일정, 실무 일정 화면 */
 
 function el(tag, className, text){
@@ -570,7 +567,766 @@ function openProjectSchedulePopover(anchor, date, project, dayTasks, dayMileston
   document.body.appendChild(popover);
   const rect = anchor.getBoundingClientRect(), width = Math.min(360, window.innerWidth - 24);
   popover.style.left = `${Math.max(12, Math.min(rect.left, window.innerWidth - width - 12))}px`;
-  popover.style.top = `${rect.bottom + 8 + popover.offsetHeight > window.in…14018 tokens truncated… if(typeof value === 'number' && window.XLSX?.SSF) {
+  popover.style.top = `${rect.bottom + 8 + popover.offsetHeight > window.innerHeight ? Math.max(12, rect.top - popover.offsetHeight - 8) : rect.bottom + 8}px`;
+  const closeOutside = event => { if(!popover.contains(event.target) && !anchor.contains(event.target)) { popover.remove(); document.removeEventListener('pointerdown', closeOutside, true); } };
+  setTimeout(() => document.addEventListener('pointerdown', closeOutside, true), 0);
+}
+
+function renderProjectSchedule(main, project){
+  const projectTasks = uniqueProjectTasks(project.id);
+  const dates = [...projectTasks.flatMap(task => [task.startDate, task.dueDate]), ...milestonesForProject(project.id).map(item => item.dueDate)].filter(Boolean).sort();
+  if(!projectScheduleCursor) { const base = localDate(dates[0]) || new Date(); projectScheduleCursor = new Date(base.getFullYear(), base.getMonth(), 1); }
+  const cursor = new Date(projectScheduleCursor.getFullYear(), projectScheduleCursor.getMonth(), 1);
+  const firstDay = cursor.getDay(), lastDate = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 0).getDate();
+  const todayKey = dateKey(todayDate());
+  if(!projectScheduleSelectedDate || !projectScheduleSelectedDate.startsWith(`${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, '0')}`)) projectScheduleSelectedDate = todayKey.startsWith(`${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, '0')}`) ? todayKey : dateKey(new Date(cursor.getFullYear(), cursor.getMonth(), 1));
+  const section = el('section', 'panel project-month-schedule');
+  if(canManageProjects()) { const actions = el('div', 'project-schedule-actions'); actions.append(button('+ 마일스톤', 'tiny ghost', () => openMilestoneEditor(null, project.id)), button('+ 업무 추가', 'tiny primary', () => openTaskEditor(null, { projectId: project.id }))); section.appendChild(actions); }
+  const nav = el('div', 'availability-month-bar'); const controls = el('div', 'availability-controls'); controls.append(button('◀', 'tiny ghost', () => { projectScheduleCursor = new Date(cursor.getFullYear(), cursor.getMonth() - 1, 1); rerender(); }), el('strong', '', `${cursor.getFullYear()}년 ${cursor.getMonth() + 1}월`), button('▶', 'tiny ghost', () => { projectScheduleCursor = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1); rerender(); })); nav.appendChild(controls); section.appendChild(nav);
+  const layout = el('div', 'project-schedule-layout'); const calendar = el('div', 'project-month-calendar'); ['일', '월', '화', '수', '목', '금', '토'].forEach(label => calendar.appendChild(el('div', 'project-month-dow', label)));
+  for(let index = 0; index < firstDay; index++) calendar.appendChild(el('div', 'project-month-cell muted-cell'));
+  for(let day = 1; day <= lastDate; day++) {
+    const date = new Date(cursor.getFullYear(), cursor.getMonth(), day), key = dateKey(date);
+    const dayTasks = projectTasks.filter(task => taskCoversDate(task, date)); const dayMilestones = milestonesForProject(project.id).filter(item => item.dueDate === key);
+    const cell = button('', `project-month-cell ${key === projectScheduleSelectedDate ? 'selected' : ''} ${key === todayKey ? 'today' : ''} ${isHoliday(date) ? 'holiday' : ''}`, () => { projectScheduleSelectedDate = key; rerender(); });
+    cell.appendChild(el('strong', 'project-month-date', String(day)));
+    dayMilestones.slice(0, 1).forEach(item => cell.appendChild(el('span', 'project-month-milestone', item.title)));
+    const counts = DEPARTMENTS.map(department => [department, dayTasks.filter(task => task.departmentId === department.id).length]).filter(([, count]) => count);
+    counts.slice(0, 3).forEach(([department, count]) => cell.appendChild(el('span', 'project-month-department', `${department.name} ${count}`)));
+    if(counts.length > 3) cell.appendChild(el('span', 'project-month-more', `+${counts.length - 3}`));
+    calendar.appendChild(cell);
+  }
+  const selectedDate = localDate(projectScheduleSelectedDate); const selectedTasks = projectTasks.filter(task => taskCoversDate(task, selectedDate)); const selectedMilestones = milestonesForProject(project.id).filter(item => item.dueDate === projectScheduleSelectedDate);
+  const detail = el('aside', 'project-schedule-detail'); detail.append(el('strong', '', `${projectScheduleSelectedDate} 상세`));
+  selectedMilestones.forEach(item => detail.appendChild(canManageProjects() ? button(item.title, 'project-day-milestone', () => openMilestoneEditor(item, project.id)) : el('div', 'project-day-milestone', item.title)));
+  const groups = new Map(); selectedTasks.forEach(task => { const key = task.departmentId || 'other'; if(!groups.has(key)) groups.set(key, []); groups.get(key).push(task); });
+  if(!selectedTasks.length && !selectedMilestones.length) detail.appendChild(el('p', 'foot-note', '등록된 업무가 없습니다.'));
+  groups.forEach((tasks, departmentId) => { const group = el('section', 'project-day-group'); group.appendChild(el('strong', '', departmentName(departmentId))); tasks.forEach(task => { const item = canEditTask(task) ? button('', 'project-day-task', () => openTaskEditor(task)) : el('div', 'project-day-task'); item.append(el('span', '', task.title), el('small', '', `${task.platform ? platformName(task.platform) + ' · ' : ''}${taskAssigneeName(task)}`)); group.appendChild(item); }); detail.appendChild(group); });
+  layout.append(calendar, detail); section.appendChild(layout); main.appendChild(section);
+}
+
+function renderWork(main){
+  renderWorkDashboard(main, workTasks());
+}
+
+function taskAssignedToUser(task, userId){ return task.assigneeId === userId || (task.assignees || []).some(item => item.userId === userId); }
+
+function workTasks(){
+  // 이 도구에서는 프로젝트에 연결된 업무만 운영합니다.
+  return activeTasks().filter(task => task.projectId && taskAssignedToUser(task, currentUser?.uid));
+}
+
+function renderWorkDashboard(main, allTasks){
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const capacityReady = isWorkDataReady();
+  const monday = mondayOf(today); const sunday = new Date(monday); sunday.setDate(sunday.getDate() + 6);
+  const todayTasks = allTasks.filter(task => task.status !== 'done' && taskCoversDate(task, today));
+  const workingDates = Array.from({ length: 7 }, (_, index) => { const date = new Date(monday); date.setDate(date.getDate() + index); return date; }).filter(isWeekday);
+  const weeklyLoadDays = workingDates.reduce((sum, date) => sum + taskLoadForUserOnDate(currentUser.uid, date), 0);
+  const weeklyCapacityDays = workingDates.length * userDailyCapacity(currentUser.uid);
+  const weeklyLoad = weeklyCapacityDays ? Math.round((weeklyLoadDays / weeklyCapacityDays) * 100) : 0;
+  const freeHours = Math.max(0, Math.round((weeklyCapacityDays - weeklyLoadDays) * 8));
+  const nextFree = capacityReady ? nextAvailableDate(currentUser.uid) : null;
+  const summary = el('section', 'work-summary-bar');
+  const summaryItem = (label, value, tone = '') => {
+    const item = el('div', `work-summary-item ${tone}`);
+    item.append(el('span', '', label), el('strong', '', value));
+    return item;
+  };
+  summary.append(
+    summaryItem('오늘 해야 할 일', `${todayTasks.length}건`),
+    summaryItem('이번 주 업무량', capacityReady ? `${weeklyLoad}%` : '계산 중', capacityReady && (weeklyLoad > 100 ? 'danger' : weeklyLoad >= 80 ? 'warn' : '')),
+    summaryItem('이번 주 남은 여유', capacityReady ? `${freeHours}시간` : '계산 중', capacityReady && freeHours === 0 ? 'warn' : ''),
+    summaryItem('다음 여유', capacityReady ? (nextFree ? fmtDate(nextFree) : '확인 필요') : '계산 중')
+  );
+  main.appendChild(summary);
+  const grid = el('div', 'work-dashboard-grid');
+  const calendarPanel = el('section', 'work-availability-panel');
+  renderWorkAvailabilityCalendar(calendarPanel, allTasks);
+  const projectPanel = el('div', 'work-dashboard-projects');
+  renderProjectGroupedWork(projectPanel, allTasks, { embedded: true });
+  grid.append(calendarPanel, projectPanel); main.appendChild(grid);
+}
+
+function renderWorkAvailabilityCalendar(panel, allTasks){
+  const year = workCalendarCursor.getFullYear(), month = workCalendarCursor.getMonth();
+  const firstDay = new Date(year, month, 1).getDay(), lastDate = new Date(year, month + 1, 0).getDate();
+  const monthWorkingDates = Array.from({ length: lastDate }, (_, index) => new Date(year, month, index + 1)).filter(isWeekday);
+  const scheduledDays = monthWorkingDates.filter(date => allTasks.some(task => taskCoversDate(task, date))).length;
+  const freeDays = monthWorkingDates.length - scheduledDays;
+  const nav = el('div', 'availability-month-bar');
+  const controls = el('div', 'availability-controls');
+  controls.append(button('◀', 'tiny ghost', () => { workCalendarCursor.setMonth(workCalendarCursor.getMonth() - 1); rerender(); }), el('strong', '', `${workCalendarCursor.getFullYear()}년 ${workCalendarCursor.getMonth() + 1}월`), button('▶', 'tiny ghost', () => { workCalendarCursor.setMonth(workCalendarCursor.getMonth() + 1); rerender(); }));
+  nav.appendChild(controls);
+  const summary = el('div', 'availability-month-summary');
+  [[`근무일`, `${monthWorkingDates.length}일`], ['업무일', `${scheduledDays}일`], ['여유일', `${freeDays}일`]].forEach(([label, value]) => {
+    const item = el('div', ''); item.append(el('span', '', label), el('strong', '', value)); summary.appendChild(item);
+  });
+  panel.append(nav, summary);
+  const grid = el('div', 'availability-calendar');
+  ['일', '월', '화', '수', '목', '금', '토'].forEach(label => grid.appendChild(el('div', 'availability-dow', label)));
+  for(let index = 0; index < firstDay; index++) grid.appendChild(el('div', 'availability-cell muted-cell'));
+  for(let day = 1; day <= lastDate; day++) {
+    const date = new Date(year, month, day); const key = dateKey(date);
+    // 일정 이력은 완료 업무까지 보여주되, 가용 시간 계산에는 진행 업무만 반영합니다.
+    const dayTasks = allTasks.filter(task => taskCoversDate(task, date));
+    const activeDayTasks = dayTasks.filter(task => task.status !== 'done');
+    const completedDayTasks = dayTasks.filter(task => task.status === 'done');
+    const loadDays = taskLoadForUserOnDate(currentUser.uid, date);
+    const capacityDays = userDailyCapacity(currentUser.uid);
+    const load = isWeekday(date) && capacityDays ? Math.round((loadDays / capacityDays) * 100) : 0;
+    const freeHours = Math.max(0, Math.round((capacityDays - loadDays) * 8));
+    const tone = !isWeekday(date) ? 'off' : load > 100 ? 'over' : load >= 80 ? 'busy' : load > 0 ? 'partial' : 'free';
+    const cell = button('', `availability-cell ${tone} ${dateKey(todayDate()) === key ? 'today' : ''}`, () => openCalendarDayPopover(cell, date, dayTasks));
+    const dateHead = el('div', 'availability-date'); dateHead.append(el('strong', '', String(day)), el('span', '', dateKey(todayDate()) === key ? '오늘' : isHoliday(date) ? '휴일' : ''));
+    cell.appendChild(dateHead);
+    if(!isWeekday(date)) cell.appendChild(el('span', 'availability-label', isHoliday(date) ? '공휴일' : '주말'));
+    else if(load > 100) cell.appendChild(el('span', 'availability-label', '과부하'));
+    else if(!dayTasks.length) cell.appendChild(el('span', 'availability-label', '업무 없음'));
+    else if(!activeDayTasks.length) cell.appendChild(el('span', 'availability-label', `완료 ${completedDayTasks.length}건`));
+    else cell.appendChild(el('span', 'availability-label', `진행 ${activeDayTasks.length}건${completedDayTasks.length ? ` · 완료 ${completedDayTasks.length}` : ''}`));
+    if(isWeekday(date) && activeDayTasks.length) cell.appendChild(el('span', 'availability-free', freeHours ? `여유 ${freeHours}시간` : '여유 없음'));
+    else if(isWeekday(date) && !completedDayTasks.length) cell.appendChild(el('span', 'availability-free', `여유 ${Math.round(capacityDays * 8)}시간`));
+    grid.appendChild(cell);
+  }
+  panel.appendChild(grid);
+}
+
+function openCalendarDayPopover(anchor, date, dayTasks){
+  document.querySelectorAll('.availability-day-popover').forEach(node => node.remove());
+  const popover = el('section', 'availability-day-popover');
+  const weekDay = ['일', '월', '화', '수', '목', '금', '토'][date.getDay()];
+  const head = el('div', 'availability-day-popover-head');
+  head.append(el('strong', '', `${dateKey(date)} (${weekDay})`));
+  const close = button('×', 'tiny ghost', () => popover.remove()); close.setAttribute('aria-label', '닫기'); head.appendChild(close);
+  popover.appendChild(head);
+  if(isHoliday(date)) popover.appendChild(el('span', 'tag neutral', '공휴일'));
+  const list = el('div', 'availability-day-task-list');
+  if(!dayTasks.length) list.appendChild(el('p', 'foot-note', '등록된 업무가 없습니다.'));
+  dayTasks.slice().sort((a, b) => Number(a.status === 'done') - Number(b.status === 'done') || String(a.dueDate || '').localeCompare(String(b.dueDate || ''))).forEach(task => {
+    const item = button('', 'availability-day-task', () => { popover.remove(); openTaskEditor(task); });
+    const meta = [projectCode(task), task.platform ? platformName(task.platform) : '공통', TASK_STATUS[task.status] || '미착수'].join(' · ');
+    item.append(el('strong', '', task.title), el('span', '', meta));
+    list.appendChild(item);
+  });
+  popover.appendChild(list);
+  document.body.appendChild(popover);
+  const rect = anchor.getBoundingClientRect();
+  const width = Math.min(320, window.innerWidth - 24);
+  const left = Math.max(12, Math.min(rect.left, window.innerWidth - width - 12));
+  const top = rect.bottom + 8 + popover.offsetHeight > window.innerHeight ? Math.max(12, rect.top - popover.offsetHeight - 8) : rect.bottom + 8;
+  popover.style.left = `${left}px`; popover.style.top = `${top}px`;
+  const closeWhenOutside = event => { if(!popover.contains(event.target) && event.target !== anchor && !anchor.contains(event.target)) { popover.remove(); document.removeEventListener('pointerdown', closeWhenOutside, true); } };
+  setTimeout(() => document.addEventListener('pointerdown', closeWhenOutside, true), 0);
+}
+
+function todayDate(){ const date = new Date(); date.setHours(0, 0, 0, 0); return date; }
+
+function renderProjectGroupedWork(main, allTasks, options = {}){
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const section = el('section', `work-projects-section ${options.embedded ? 'embedded' : ''}`);
+  const head = el('div', 'work-section-head');
+  const copy = el('div', '');
+  const tabs = el('nav', 'work-project-tabs');
+  copy.appendChild(el('h3', '', '프로젝트별 진행 업무'));
+  copy.appendChild(tabs);
+  const completedProjectToggle = button('완료 프로젝트 보기', 'tiny ghost completed-project-filter');
+  const actions = el('div', 'work-section-actions');
+  actions.append(completedProjectToggle, button('+ 업무 추가', 'tiny primary work-add-task-button', () => openTaskEditor(null)));
+  head.append(copy, actions); section.appendChild(head);
+  const panel = el('section', 'work-project-panel');
+  section.append(panel); main.appendChild(section);
+  let selectedProjectKey = null;
+  let selectedPlatform = 'all';
+  let showCompletedProjects = false;
+  const draw = () => {
+    tabs.innerHTML = ''; panel.innerHTML = '';
+    const byProject = new Map();
+    // 프로젝트에 연결된 업무만 표시합니다.
+    allTasks.filter(task => task.projectId).forEach(task => {
+      const key = task.projectId;
+      if(!byProject.has(key)) byProject.set(key, []);
+      byProject.get(key).push(task);
+    });
+    // 프로젝트 자체가 완료되었거나, 현재 사용자에게 남은 업무가 전혀 없으면
+    // 내 업무 화면에서는 완료 프로젝트로 취급합니다. (기존 이관 프로젝트 호환)
+    const isCompletedWorkProject = (projectId, projectTasks) => {
+      const project = projects.find(item => item.id === projectId);
+      return project?.status === 'completed' || (projectTasks.length > 0 && projectTasks.every(task => task.status === 'done'));
+    };
+    const entries = [...byProject.entries()]
+      .filter(([projectId, projectTasks]) => showCompletedProjects || !isCompletedWorkProject(projectId, projectTasks))
+      .sort(([leftId, leftTasks], [rightId, rightTasks]) => {
+      const leftActive = leftTasks.filter(task => task.status !== 'done');
+      const rightActive = rightTasks.filter(task => task.status !== 'done');
+      const leftDate = (leftActive.length ? leftActive : leftTasks).map(task => task.dueDate || task.completedAt || '9999-12-31').sort()[0];
+      const rightDate = (rightActive.length ? rightActive : rightTasks).map(task => task.dueDate || task.completedAt || '9999-12-31').sort()[0];
+      return String(leftDate).localeCompare(String(rightDate));
+    });
+    if(!entries.length) {
+      tabs.appendChild(el('span', 'foot-note', '표시할 프로젝트 업무가 없습니다.'));
+      panel.appendChild(el('div', 'empty compact-empty', '프로젝트에 연결된 업무를 추가하면 이곳에 표시됩니다.'));
+      return;
+    }
+    if(!entries.some(([key]) => key === selectedProjectKey)) selectedProjectKey = (entries.find(([, tasks]) => tasks.some(task => task.status !== 'done' && taskCoversDate(task, today))) || entries.find(([, tasks]) => tasks.some(task => task.status !== 'done')) || entries[0])[0];
+    entries.forEach(([projectId, tasks]) => {
+      const project = projects.find(item => item.id === projectId);
+      const code = project?.code || project?.name || '프로젝트';
+      const activeCount = tasks.filter(task => task.status !== 'done').length;
+      const todayCount = tasks.filter(task => task.status !== 'done' && taskCoversDate(task, today)).length;
+      const tab = button('', projectId === selectedProjectKey ? 'primary tiny' : 'ghost tiny', () => { selectedProjectKey = projectId; selectedPlatform = 'all'; draw(); });
+      tab.appendChild(el('strong', '', code));
+      if(isCompletedWorkProject(projectId, tasks)) tab.appendChild(el('em', 'completed-project-tab-mark', '완료'));
+      if(todayCount) tab.appendChild(el('em', '', `오늘 ${todayCount}`));
+      tabs.appendChild(tab);
+    });
+    const selected = entries.find(([key]) => key === selectedProjectKey);
+    const [projectId, tasks] = selected;
+    const project = projects.find(item => item.id === projectId);
+    const platformIds = [...new Set(tasks.map(task => task.platform).filter(Boolean))];
+    if(selectedPlatform !== 'all' && !platformIds.includes(selectedPlatform)) selectedPlatform = 'all';
+    if(platformIds.length === 1 && selectedPlatform === 'all') selectedPlatform = platformIds[0];
+    const visibleTasks = selectedPlatform === 'all' ? tasks : tasks.filter(task => task.platform === selectedPlatform);
+    const projectTasks = visibleTasks.filter(task => task.status !== 'done').sort((a, b) => String(a.dueDate || '9999').localeCompare(String(b.dueDate || '9999')));
+    const completedTasks = visibleTasks.filter(task => task.status === 'done').sort((a, b) => String(b.completedAt || b.dueDate || '').localeCompare(String(a.completedAt || a.dueDate || '')));
+    const panelHead = el('div', 'work-project-panel-head');
+    const name = project ? `${project.code || project.name}${project.name && project.code ? ` · ${project.name}` : ''}` : '프로젝트';
+    const activeCount = projectTasks.filter(task => task.status !== 'done').length;
+    const allProjectTasks = allTasks.filter(task => task.projectId === projectId);
+    const completedCount = allProjectTasks.filter(task => task.status === 'done').length;
+    const progress = allProjectTasks.length ? Math.round(allProjectTasks.reduce((sum, task) => sum + Number(task.progress || 0), 0) / allProjectTasks.length) : 0;
+    const panelCopy = el('div', '');
+    panelCopy.append(el('strong', '', name), el('span', '', `진행 ${activeCount}건 · 완료 ${completedCount}/${allProjectTasks.length} · 진척률 ${progress}%`));
+    const progressLine = el('div', 'work-project-progress');
+    const progressFill = el('span', ''); progressFill.style.width = `${progress}%`; progressLine.appendChild(progressFill);
+    panelCopy.appendChild(progressLine);
+    panelHead.appendChild(panelCopy);
+    const panelActions = el('div', 'work-project-panel-actions');
+    if(platformIds.length) {
+      const platformTabs = el('nav', 'work-platform-tabs');
+      const platformOptions = platformIds.length > 1 ? [['all', '전체'], ...platformIds.map(id => [id, platformName(id)])] : platformIds.map(id => [id, platformName(id)]);
+      platformOptions.forEach(([id, label]) => {
+        const filter = button(label, id === selectedPlatform ? 'primary tiny' : 'ghost tiny', () => { selectedPlatform = id; draw(); });
+        platformTabs.appendChild(filter);
+      });
+      panelActions.appendChild(platformTabs);
+    }
+    if(project) panelActions.appendChild(button('프로젝트 보기 →', 'tiny ghost', () => { activeView = 'projects'; selectedProjectId = project.id; projectDetailTab = 'tasks'; rerender(); }));
+    panelHead.appendChild(panelActions);
+    panel.appendChild(panelHead);
+    if(completedTasks.length) {
+      const completed = el('details', 'completed-task-group');
+      const summary = el('summary', '');
+      summary.append(el('strong', '', '완료 업무'), el('span', '', `${completedTasks.length}건`));
+      completed.appendChild(summary);
+      const completedList = el('div', 'task-list compact-task-list work-project-task-grid completed-task-list');
+      completedTasks.forEach(task => completedList.appendChild(taskRow(task, false, true)));
+      completed.appendChild(completedList);
+      panel.appendChild(completed);
+    }
+    const list = el('div', 'task-list compact-task-list work-project-task-grid');
+    if(projectTasks.length) projectTasks.forEach(task => list.appendChild(taskRow(task, false, true)));
+    else list.appendChild(el('div', 'empty compact-empty', '진행 중인 업무가 없습니다.'));
+    panel.appendChild(list);
+  };
+  completedProjectToggle.onclick = () => {
+    showCompletedProjects = !showCompletedProjects;
+    completedProjectToggle.textContent = showCompletedProjects ? '완료 프로젝트 숨기기' : '완료 프로젝트 보기';
+    completedProjectToggle.className = showCompletedProjects ? 'tiny primary completed-project-filter' : 'tiny ghost completed-project-filter';
+    draw();
+    showToast(showCompletedProjects ? '완료 프로젝트를 표시합니다.' : '완료 프로젝트를 숨겼습니다.');
+  };
+  draw();
+}
+
+function filterWorkTasksByPeriod(list, period){
+  if(period === 'all') return list;
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  let start = new Date(today), end = new Date(today);
+  if(period === 'week') { start = mondayOf(today); end = new Date(start); end.setDate(start.getDate() + 6); }
+  if(period === 'month') { start = new Date(today.getFullYear(), today.getMonth(), 1); end = new Date(today.getFullYear(), today.getMonth() + 1, 0); }
+  return list.filter(task => {
+    const taskStart = localDate(task.startDate || task.dueDate);
+    const taskEnd = localDate(task.dueDate || task.startDate);
+    if(!taskStart || !taskEnd) return false;
+    return taskStart <= end && taskEnd >= start;
+  });
+}
+
+function renderDueAlerts(main, list){
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const notices = list.filter(task => {
+    if(task.status === 'done' || !task.dueDate) return false;
+    const due = localDate(task.dueDate); const difference = Math.round((due - today) / 86400000);
+    return difference <= 3;
+  }).sort((a, b) => String(a.dueDate).localeCompare(String(b.dueDate)));
+  if(!notices.length) return;
+  const panel = el('section', 'due-alerts'); panel.append(el('strong', '', '마감 알림'));
+  notices.slice(0, 5).forEach(task => {
+    const due = localDate(task.dueDate); const difference = Math.round((due - today) / 86400000);
+    const label = difference < 0 ? `${Math.abs(difference)}일 지연` : difference === 0 ? '오늘 마감' : `${difference}일 남음`;
+    const item = el('button', `due-alert ${difference < 0 ? 'overdue' : ''}`, `${label} · ${task.title}`);
+    item.type = 'button'; item.onclick = () => canEditTask(task) && openTaskEditor(task); panel.appendChild(item);
+  });
+  main.appendChild(panel);
+}
+
+function renderWorkCalendar(main, list){
+  const nav = el('div', 'calendar-nav');
+  nav.appendChild(button('◀', 'tiny ghost', () => { workCalendarCursor.setMonth(workCalendarCursor.getMonth() - 1); rerender(); }));
+  nav.append(el('strong', '', `${workCalendarCursor.getFullYear()}년 ${workCalendarCursor.getMonth() + 1}월`));
+  nav.appendChild(button('▶', 'tiny ghost', () => { workCalendarCursor.setMonth(workCalendarCursor.getMonth() + 1); rerender(); }));
+  main.appendChild(nav);
+  const grid = el('section', 'work-calendar');
+  ['일', '월', '화', '수', '목', '금', '토'].forEach(label => grid.appendChild(el('div', 'work-calendar-dow', label)));
+  const year = workCalendarCursor.getFullYear(), month = workCalendarCursor.getMonth();
+  const firstDay = new Date(year, month, 1).getDay(), lastDate = new Date(year, month + 1, 0).getDate();
+  for(let index = 0; index < firstDay; index++) grid.appendChild(el('div', 'work-calendar-cell muted-cell'));
+  for(let day = 1; day <= lastDate; day++) {
+    const date = new Date(year, month, day); const cell = el('div', `work-calendar-cell ${isWeekday(date) ? '' : 'weekend-cell'}`);
+    cell.appendChild(el('span', 'calendar-date', String(day)));
+    list.filter(task => taskCoversDate(task, date)).slice(0, 4).forEach(task => {
+      const chip = el('button', `calendar-task ${task.status === 'done' ? 'done-task' : ''}`, task.title);
+      chip.type = 'button'; chip.title = `${userName(task.assigneeId)} · ${task.title}`; chip.onclick = () => canEditTask(task) && openTaskEditor(task);
+      cell.appendChild(chip);
+    });
+    const extra = list.filter(task => taskCoversDate(task, date)).length - 4;
+    if(extra > 0) cell.appendChild(el('span', 'calendar-more', `+${extra}건`));
+    grid.appendChild(cell);
+  }
+  main.appendChild(grid);
+}
+
+function mondayOf(date){
+  const result = new Date(date); const offset = (result.getDay() + 6) % 7; result.setDate(result.getDate() - offset); result.setHours(0, 0, 0, 0); return result;
+}
+function renderCapacity(main, list){
+  const monday = mondayOf(capacityWeekCursor);
+  const days = Array.from({ length: 5 }, (_, index) => { const date = new Date(monday); date.setDate(monday.getDate() + index); return date; });
+  const heading = el('section', 'panel'); const title = el('div', 'section-title-row'); title.append(el('h2', '', '주간 예상 업무량'));
+  const nav = el('div', 'calendar-nav');
+  nav.appendChild(button('◀', 'tiny ghost', () => { capacityWeekCursor.setDate(capacityWeekCursor.getDate() - 7); rerender(); }));
+  nav.append(el('strong', '', `${fmtDate(dateKey(days[0]))} ~ ${fmtDate(dateKey(days[4]))}`));
+  nav.appendChild(button('▶', 'tiny ghost', () => { capacityWeekCursor.setDate(capacityWeekCursor.getDate() + 7); rerender(); }));
+  title.appendChild(nav); heading.append(title);
+  heading.append(el('p', 'sub', '예상 작업일을 업무 기간의 평일에 균등 배분합니다. 1일 초과 배정은 경고로 표시됩니다.')); main.appendChild(heading);
+  const assignees = [...new Set(list.flatMap(task => task.assigneeIds || task.assignees?.map(item => item.userId) || [task.assigneeId]).filter(Boolean))];
+  const tableWrap = el('div', 'table-wrap panel'); const table = document.createElement('table');
+  const thead = document.createElement('thead'); const headRow = document.createElement('tr');
+  ['담당자', ...days.map(day => `${day.getMonth() + 1}/${day.getDate()}`), '합계'].forEach(label => headRow.appendChild(el('th', '', label))); thead.appendChild(headRow); table.appendChild(thead);
+  const tbody = document.createElement('tbody');
+  assignees.forEach(assigneeId => {
+    const row = document.createElement('tr'); row.appendChild(el('td', '', userName(assigneeId)));
+    let total = 0;
+    days.forEach(day => { const load = list.filter(task => taskAssignedToUser(task, assigneeId)).reduce((sum, task) => sum + taskDailyLoad(task, day, assigneeId), 0); total += load; const cell = el('td', load > 1 ? 'capacity-over' : '', `${load.toFixed(1)}일`); row.appendChild(cell); });
+    row.appendChild(el('td', total > 5 ? 'capacity-over' : '', `${total.toFixed(1)}일`)); tbody.appendChild(row);
+  });
+  table.appendChild(tbody); tableWrap.appendChild(table); main.appendChild(tableWrap);
+}
+
+function personProjectBadges(userId){
+  const related = projects.filter(project => tasksForProject(project.id).some(task => taskAssignedToUser(task, userId)));
+  const wrap = el('div', 'project-badges');
+  related.slice(0, 3).forEach(project => {
+    const active = tasksForProject(project.id).some(task => taskAssignedToUser(task, userId) && task.status !== 'done');
+    wrap.append(el('span', active ? 'project-badge active' : 'project-badge', project.code || project.name));
+  });
+  if(related.length > 3) wrap.append(el('span', 'project-badge', `+${related.length - 3}`));
+  return wrap;
+}
+
+function userWorkloadSummary(userId){
+  const monday = mondayOf(new Date());
+  const days = Array.from({ length: 5 }, (_, index) => { const date = new Date(monday); date.setDate(monday.getDate() + index); return date; });
+  const tasks = activeTasks().filter(task => taskAssignedToUser(task, userId) && task.status !== 'done');
+  const taskLoads = tasks.map(task => ({ task, load: days.reduce((sum, day) => sum + taskDailyLoad(task, day, userId), 0) })).filter(item => item.load > 0).sort((a, b) => b.load - a.load);
+  const assessment = assignmentAssessment(userId, { assigneeId: userId, startDate: dateKey(days[0]), dueDate: dateKey(days[4]), estimatedDays: 0, assessmentOnly: true });
+  return {
+    assessment, tasks,
+    riskCount: tasks.filter(task => taskIsOverdue(task) || task.status === 'blocked').length,
+    topTasks: taskLoads.slice(0, 2),
+    overflowDays: assessment.overflowDays || 0
+  };
+}
+
+function renderTeam(main){
+  const scopeUsers = activeUsers().filter(user => isPM() || isAdmin() || user.departmentId === currentProfile?.departmentId);
+  const scopedTasks = activeTasks().filter(task => scopeUsers.some(user => taskAssignedToUser(task, user.id)));
+  const metrics = el('div', 'metric-grid');
+  metrics.append(metric('오늘 마감', scopedTasks.filter(task => task.status !== 'done' && task.dueDate === dateKey(new Date())).length, 'warn'), metric('지연·차단', scopedTasks.filter(task => taskIsOverdue(task) || task.status === 'blocked').length, 'danger'), metric('과부하 인원', scopeUsers.filter(user => userWorkloadSummary(user.id).assessment.weeklyLoad > 100).length, 'warn'));
+  main.appendChild(metrics);
+  const tableWrap = el('section', 'table-wrap panel team-table'); const table = document.createElement('table');
+  const head = document.createElement('thead'); const headerRow = document.createElement('tr');
+  ['이름 / 직군', '프로젝트', '진행 업무', '이번 주 업무량 / 원인', '다음 가능일', '위험'].forEach(label => headerRow.appendChild(el('th', '', label))); head.appendChild(headerRow); table.appendChild(head);
+  const body = document.createElement('tbody');
+  scopeUsers.forEach(user => {
+    const userTasks = scopedTasks.filter(task => taskAssignedToUser(task, user.id) && task.status !== 'done');
+    const summary = userWorkloadSummary(user.id); const assessment = summary.assessment;
+    const dangerCount = summary.riskCount;
+    const row = document.createElement('tr');
+    const name = el('td', '', user.name || user.email); name.append(el('div', 'foot-note', departmentName(user.departmentId))); row.appendChild(name);
+    const projectCell = document.createElement('td'); projectCell.appendChild(personProjectBadges(user.id)); row.appendChild(projectCell);
+    row.appendChild(el('td', '', `${userTasks.length}건`));
+    const loadCell = el('td', assessment.weeklyLoad > 100 ? 'capacity-over' : '', `${assessment.weeklyLoad}% · ${assessment.weeklyLoad > 100 ? '과부하' : assessment.weeklyLoad >= 80 ? '주의' : '여유'}`);
+    if(summary.topTasks.length) loadCell.append(el('div', 'foot-note', `집중: ${summary.topTasks.map(item => `${item.task.title} ${item.load.toFixed(1)}일`).join(' · ')}`));
+    row.appendChild(loadCell);
+    row.appendChild(el('td', '', fmtDate(assessment.nextDate)));
+    row.appendChild(el('td', dangerCount || summary.overflowDays ? 'capacity-over' : '', dangerCount || summary.overflowDays ? `지연·차단 ${dangerCount} · 초과 ${summary.overflowDays}일` : '–'));
+    row.onclick = () => setView('people'); body.appendChild(row);
+  });
+  table.appendChild(body); tableWrap.appendChild(table); main.appendChild(tableWrap);
+}
+
+function renderPeople(main){
+  const scopeUsers = activeUsers().filter(user => isPM() || isAdmin() || user.departmentId === currentProfile?.departmentId);
+  const groups = { ok: 0, warn: 0, danger: 0 };
+  scopeUsers.forEach(user => { const level = userWorkloadSummary(user.id).assessment.level; groups[level] = (groups[level] || 0) + 1; });
+  const metrics = el('div', 'metric-grid'); metrics.append(metric('여유', groups.ok), metric('주의', groups.warn, 'warn'), metric('과부하', groups.danger, 'danger')); main.appendChild(metrics);
+  const toolbar = el('div', 'people-view-toolbar');
+  [['department', '직군별'], ['risk', '위험 업무'], ['available', '가용 인력'], ['all', '전체 인력']].forEach(([id, label]) => toolbar.appendChild(button(label, peopleView === id ? 'primary tiny' : 'ghost tiny', () => { peopleView = id; rerender(); })));
+  main.appendChild(toolbar);
+  let visible = scopeUsers.filter(user => {
+    const summary = userWorkloadSummary(user.id);
+    return peopleView === 'risk' ? summary.riskCount > 0 || summary.assessment.weeklyLoad >= 80 : peopleView === 'available' ? summary.assessment.weeklyLoad < 80 : true;
+  });
+  if(!scopeUsers.length) { main.appendChild(el('div', 'empty', '표시할 활성 인력이 없습니다.')); return; }
+
+  if(peopleView === 'department') {
+    const departmentOrder = ['development', 'ui', 'planning', 'qa', 'business', 'server', 'video', 'studio', 'pm'];
+    const orderedDepartments = [...new Set(visible.map(user => user.departmentId))].sort((a, b) => {
+      const aIndex = departmentOrder.indexOf(a); const bIndex = departmentOrder.indexOf(b);
+      return (aIndex < 0 ? 99 : aIndex) - (bIndex < 0 ? 99 : bIndex) || departmentName(a).localeCompare(departmentName(b));
+    });
+    const board = el('section', 'people-department-board');
+    orderedDepartments.forEach(departmentId => {
+      const members = visible.filter(user => user.departmentId === departmentId).sort((a, b) => userWorkloadSummary(b.id).assessment.weeklyLoad - userWorkloadSummary(a.id).assessment.weeklyLoad || String(a.name || '').localeCompare(String(b.name || '')));
+      const column = el('section', 'people-department-column');
+      const heading = el('div', 'people-department-column-head');
+      heading.append(el('h2', '', departmentName(departmentId)), el('span', '', `${members.length}명`));
+      const cards = el('div', 'people-mini-list');
+      members.forEach(user => {
+        const summary = userWorkloadSummary(user.id); const assessment = summary.assessment;
+        const currentTasks = activeTasks().filter(task => taskAssignedToUser(task, user.id) && task.status !== 'done').sort((a, b) => String(a.dueDate || '9999-12-31').localeCompare(String(b.dueDate || '9999-12-31')));
+        const nextTask = currentTasks[0];
+        const card = el('article', `people-mini-card ${assessment.level}`);
+        const cardHead = el('div', 'people-mini-card-head');
+        cardHead.append(el('strong', '', user.name || user.email), el('span', `tag ${assessment.level}`, assessment.weeklyLoad > 100 ? `과부하 ${assessment.weeklyLoad}%` : assessment.weeklyLoad >= 80 ? `주의 ${assessment.weeklyLoad}%` : `여유 ${assessment.weeklyLoad}%`));
+        const taskTitle = nextTask ? nextTask.title : '진행 중인 업무 없음';
+        const taskMeta = nextTask ? `${projectCode(nextTask)} · ${nextTask.dueDate ? `${fmtDate(nextTask.dueDate)}까지` : '일정 미정'}` : `다음 가능일 ${fmtDate(assessment.nextDate)}`;
+        card.append(cardHead, el('p', 'people-mini-task', taskTitle), el('p', 'people-mini-meta', taskMeta));
+        cards.appendChild(card);
+      });
+      column.append(heading, cards); board.appendChild(column);
+    });
+    main.appendChild(board);
+    return;
+  }
+
+  const list = el('section', 'people-list');
+  visible.sort((a, b) => userWorkloadSummary(b.id).assessment.weeklyLoad - userWorkloadSummary(a.id).assessment.weeklyLoad);
+  visible.forEach(user => {
+    const summary = userWorkloadSummary(user.id); const assessment = summary.assessment;
+    const card = el('article', `person-row ${assessment.level}`);
+    const identity = el('div', 'person-identity'); identity.append(el('strong', '', user.name || user.email), el('span', 'foot-note', `${departmentName(user.departmentId)} · ${userRoleLabel(user)}`));
+    const workload = el('div', 'person-workload'); workload.append(el('span', `tag ${assessment.level}`, assessment.weeklyLoad > 100 ? '과부하' : assessment.weeklyLoad >= 80 ? '주의' : '여유'), el('strong', '', `${assessment.weeklyLoad}%`), el('span', 'foot-note', `다음 가능일 ${fmtDate(assessment.nextDate)}`));
+    const currentTasks = activeTasks().filter(task => taskAssignedToUser(task, user.id) && task.status !== 'done').sort((a, b) => String(a.dueDate || '9999').localeCompare(String(b.dueDate || '9999')));
+    const reason = el('p', 'foot-note', currentTasks.length ? `현재 업무 · ${currentTasks.slice(0, 2).map(task => `${task.title} (${fmtDate(task.dueDate)}까지)`).join(' · ')}` : '진행 중인 업무가 없습니다.');
+    card.append(identity, personProjectBadges(user.id), workload, reason); list.appendChild(card);
+  });
+  main.appendChild(list);
+}
+
+function adminAccessPanel(){
+  const panel = el('section', 'panel admin-access-panel');
+  const title = el('div', 'section-title-row'); title.append(el('h2', '', '사용자 및 권한 관리'));
+  const managedUsers = visibleUsers.filter(user => isAdmin() || user.departmentId === currentProfile.departmentId);
+  const active = managedUsers.filter(user => user.active);
+  const inactive = managedUsers.filter(user => !user.active);
+  title.appendChild(el('span', 'foot-note', `${isAdmin() ? `승인 대기 ${accessRequests.length}명 · ` : ''}현재 사용자 ${active.length}명`));
+  panel.appendChild(title);
+  if(isAdmin() && accessRequests.length) {
+    panel.append(el('h3', 'small-heading', '승인 대기'));
+    accessRequests.forEach(request => {
+      const row = el('div', 'admin-user-row');
+      row.append(el('div', '', request.name || request.email || '이름 미지정'));
+      row.append(el('span', 'foot-note', request.email || '이메일 없음'));
+      row.appendChild(button('승인 및 배정', 'tiny primary', () => openApprovalEditor(request)));
+      panel.appendChild(row);
+    });
+  }
+  panel.append(el('h3', 'small-heading', '현재 사용자'));
+  active.forEach(user => {
+    const row = el('div', 'admin-user-row');
+    row.append(el('div', '', user.name || user.email));
+    row.append(el('span', 'foot-note', `${user.email || ''} · ${userRoleLabel(user)}${user.departmentId ? ' · ' + departmentName(user.departmentId) : ''}`));
+    if(isAdmin()) row.appendChild(button('권한 수정', 'tiny ghost', () => openUserRoleEditor(user)));
+    if(canManageOffboarding(user)) row.appendChild(button('퇴사 처리', 'tiny danger-button', () => openOffboardingEditor(user)));
+    panel.appendChild(row);
+  });
+  if(inactive.length) {
+    panel.append(el('h3', 'small-heading', '비활성 계정'));
+    inactive.forEach(user => panel.append(el('p', 'foot-note', `${user.name || user.email} · 과거 기록 보존`)));
+  }
+  return panel;
+}
+
+function openAdminManager(){
+  const { dialog } = openDialog('사용자 및 권한 관리');
+  const panel = adminAccessPanel();
+  panel.classList.add('admin-manager-panel');
+  dialog.appendChild(panel);
+}
+
+function renderAdmin(main){
+  main.appendChild(adminAccessPanel());
+}
+
+function openOffboardingEditor(user){
+  const { overlay, dialog } = openDialog(`${user.name || user.email} 퇴사 처리`);
+  const openTasks = unfinishedTasksForUser(user.id);
+  dialog.append(el('p', 'sub', '완료 업무는 그대로 보존됩니다. 진행 중·예정·차단 업무는 반드시 재배정, 미배정 또는 보관 중 하나로 처리해야 합니다.'));
+  const form = el('form', 'form-grid');
+  const decisions = [];
+  if(!openTasks.length) form.append(el('p', 'sub', '처리할 미완료 업무가 없습니다. 계정 로그인과 새 업무 배정만 중지합니다.'));
+  openTasks.forEach(task => {
+    const card = el('section', 'handover-task');
+    card.append(el('strong', '', task.title));
+    const project = projects.find(item => item.id === task.projectId);
+    card.append(el('p', 'foot-note', `${project?.code || '공통 업무'}${task.platform ? ` · ${platformName(task.platform)}` : ''} · ${TASK_STATUS[task.status] || '할 일'}`));
+    const candidates = activeUsers().filter(candidate => candidate.id !== user.id && (isAdmin() || candidate.departmentId === user.departmentId) && candidate.departmentId === task.departmentId);
+    const action = selectField('처리 방법', [
+      ['reassign', '다른 담당자에게 재배정'], ['unassign', '미배정으로 남기기'], ['archive', '업무 보관']
+    ]);
+    const replacement = selectField('새 담당자', [['', '담당자 선택'], ...candidates.map(candidate => [candidate.id, candidate.name || candidate.email])]);
+    if(!candidates.length) action.select.value = 'unassign';
+    const sync = () => { replacement.wrap.hidden = action.select.value !== 'reassign'; };
+    action.select.onchange = sync; sync();
+    card.append(action.wrap, replacement.wrap); form.appendChild(card);
+    decisions.push({ task, action, replacement });
+  });
+  const error = el('p', 'form-error'); error.hidden = true;
+  const submit = button('업무 처리 후 퇴사 확정', 'danger-button'); submit.type = 'submit';
+  const actions = el('div', 'form-actions'); actions.append(submit); form.append(error, actions);
+  form.onsubmit = async event => {
+    event.preventDefault(); error.hidden = true;
+    const input = decisions.map(item => ({ taskId: item.task.id, action: item.action.select.value, userId: item.replacement.select.value }));
+    const invalid = input.find(item => item.action === 'reassign' && !item.userId);
+    if(invalid) { error.textContent = '재배정 업무의 새 담당자를 선택해주세요.'; error.hidden = false; return; }
+    submit.disabled = true; submit.textContent = '퇴사 처리 중…';
+    try {
+      await offboardUser(user.id, input); overlay.remove(); showToast(`${user.name || user.email}님의 계정을 비활성화하고 업무 인수인계를 반영했습니다.`);
+    } catch(cause) {
+      error.textContent = cause.message || '퇴사 처리에 실패했습니다.'; error.hidden = false;
+    } finally { submit.disabled = false; submit.textContent = '업무 처리 후 퇴사 확정'; }
+  };
+  dialog.appendChild(form);
+}
+
+function inputField(label, placeholder, type = 'text'){
+  const wrap = el('label', 'field'); wrap.append(el('span', '', label));
+  const input = document.createElement('input'); input.type = type; input.placeholder = placeholder || ''; wrap.appendChild(input);
+  return { wrap, input };
+}
+function selectField(label, options){
+  const wrap = el('label', 'field'); wrap.append(el('span', '', label));
+  const select = document.createElement('select');
+  options.forEach(([value, labelText]) => { const option = new Option(labelText, value); select.add(option); });
+  wrap.appendChild(select); return { wrap, select };
+}
+function multiSelectField(label){
+  const wrap = el('label', 'field'); wrap.append(el('span', '', label));
+  const select = document.createElement('select'); select.multiple = true; select.size = 4;
+  wrap.appendChild(select); return { wrap, select };
+}
+
+function openDialog(title){
+  const overlay = el('div', 'modal-backdrop');
+  const dialog = el('section', 'modal panel');
+  const cleanup = [];
+  const close = () => { cleanup.splice(0).forEach(fn => fn()); overlay.remove(); };
+  const header = el('div', 'modal-header'); header.append(el('h2', '', title));
+  header.appendChild(button('×', 'tiny ghost', close));
+  dialog.appendChild(header); overlay.appendChild(dialog);
+  overlay.onclick = event => { if(event.target === overlay) close(); };
+  document.body.appendChild(overlay);
+  return { overlay, dialog, close, onClose: fn => cleanup.push(fn) };
+}
+
+function openQuickTaskEditor(){
+  const { dialog, close } = openDialog('빠른 개인 업무 추가');
+  dialog.append(el('p', 'sub', '프로젝트와 연결하지 않는 개인 실무를 바로 등록합니다. 프로젝트·마일스톤·지원 담당자가 필요하면 상세 업무 추가를 사용하세요.'));
+  const form = el('form', 'form-grid');
+  const title = inputField('업무명', '예: 회의 자료 정리');
+  const due = inputField('완료 예정일', '', 'date'); due.input.value = dateKey(new Date());
+  const estimate = selectField('예상 작업일', [['0.5', '반나절 (0.5일)'], ['1', '하루 (1일)'], ['2', '이틀 (2일)'], ['3', '사흘 (3일)']]);
+  const assessmentBox = el('section', 'assignment-assessment');
+  const confirmInput = document.createElement('input'); confirmInput.type = 'checkbox'; confirmInput.id = 'quick-capacity-confirm';
+  const confirmLabel = document.createElement('label'); confirmLabel.className = 'force-assignment'; confirmLabel.htmlFor = confirmInput.id;
+  confirmLabel.append(confirmInput, document.createTextNode('과부하 경고를 확인했고, 그래도 등록합니다.'));
+  let assessment = null;
+  const refreshAssessment = () => {
+    const candidate = { assigneeId: currentUser?.uid, startDate: due.input.value || null, dueDate: due.input.value || null, estimatedDays: Number(estimate.select.value || 0), status: 'todo' };
+    assessment = assignmentAssessment(currentUser?.uid, candidate);
+    assessmentBox.className = `assignment-assessment ${assessment.level}`;
+    assessmentBox.innerHTML = '';
+    assessmentBox.append(el('strong', '', assessment.level === 'danger' ? '오늘 과부하 예상' : assessment.level === 'warn' ? '업무량 주의' : assessment.level === 'ok' ? '등록 가능' : '계산 필요'));
+    assessmentBox.append(el('span', '', assessment.level === 'unknown' ? '예정일과 예상 작업일을 입력하면 계산합니다.' : `최대 주간 ${assessment.weeklyLoad}% · 다음 가능일 ${fmtDate(assessment.nextDate)}`));
+    assessmentBox.append(el('p', '', assessment.label));
+    confirmInput.checked = false; confirmLabel.hidden = assessment.level !== 'danger';
+  };
+  due.input.onchange = refreshAssessment; estimate.select.onchange = refreshAssessment; refreshAssessment();
+  const actions = el('div', 'form-actions'); actions.append(button('취소', 'ghost', close), button('개인 업무 등록', 'primary'));
+  form.append(title.wrap, due.wrap, estimate.wrap, assessmentBox, confirmLabel, actions);
+  form.onsubmit = async event => {
+    event.preventDefault();
+    try {
+      if(!title.input.value.trim()) throw new Error('업무명을 입력해주세요.');
+      if(assessment?.level === 'danger' && !confirmInput.checked) throw new Error('과부하 경고를 확인해주세요.');
+      await saveTask({
+        title: title.input.value, departmentId: currentProfile?.departmentId, assigneeId: currentUser?.uid,
+        projectId: null, platform: null, milestoneId: null, dependsOn: [], status: 'todo', progress: 0,
+        estimatedDays: Number(estimate.select.value), startDate: due.input.value, dueDate: due.input.value,
+        capacityConfirmed: confirmInput.checked
+      });
+      showToast('개인 업무를 등록했습니다.'); close();
+    } catch(error) { alert(error.message); }
+  };
+  dialog.appendChild(form);
+}
+
+function openProjectEditor(project){
+  const { overlay, dialog } = openDialog('프로젝트 정보 수정');
+  const form = el('form', 'form-grid');
+  const name = inputField('프로젝트명', ''); name.input.value = project.name || '';
+  const code = inputField('코드', ''); code.input.value = project.code || '';
+  const staffingTitle = el('h3', 'small-heading', '플랫폼별 직군 담당자');
+  const staffingBox = el('div', 'staffing-grid');
+  const staffingValues = new Map((project.staffing || []).map(item => [`${item.platform}:${item.departmentId}`, item.userId || '']));
+  (project.platforms || []).forEach(platform => {
+    const card = el('section', 'staffing-card'); card.append(el('strong', '', `${platformName(platform)} 담당자`));
+    TEMPLATE_DEPARTMENTS.forEach(departmentId => {
+      const people = visibleUsers.filter(user => user.active && user.departmentId === departmentId);
+      const field = selectField(departmentName(departmentId), [['', '나중에 배정'], ...people.map(user => [user.id, user.name || user.email])]);
+      field.select.value = staffingValues.get(`${platform}:${departmentId}`) || '';
+      field.select.onchange = () => staffingValues.set(`${platform}:${departmentId}`, field.select.value);
+      card.appendChild(field.wrap);
+    });
+    staffingBox.appendChild(card);
+  });
+  const submit = button('저장 및 업무에 반영', 'primary');
+  form.append(name.wrap, code.wrap, staffingTitle, staffingBox, submit);
+  form.onsubmit = async event => {
+    event.preventDefault();
+    try {
+      const staffing = [];
+      (project.platforms || []).forEach(platform => TEMPLATE_DEPARTMENTS.forEach(departmentId => staffing.push({ platform, departmentId, userId: staffingValues.get(`${platform}:${departmentId}`) || null })));
+      await saveProject({ ...project, name: name.input.value, code: code.input.value, staffing });
+      await syncProjectStaffing(project.id, staffing);
+      overlay.remove(); showToast('프로젝트 정보와 자동 업무 담당자를 반영했습니다.');
+    } catch(error) { alert(error.message); }
+  };
+  dialog.appendChild(form);
+}
+
+function openProjectCreator(){
+  const { dialog, close } = openDialog('자동 일정 프로젝트 만들기');
+  dialog.classList.add('project-create-dialog');
+  const form = el('form', 'form-grid project-create-form');
+  const name = inputField('프로젝트명', '예: 프로젝트 12');
+  const code = inputField('프로젝트 코드', '예: PC12');
+  const guide = el('p', 'sub', '고정 마일스톤과 플랫폼별 담당자를 설정하면 직군별 업무와 일정이 자동으로 생성됩니다. 담당자는 나중에 배정할 수 있습니다.');
+  const platformField = el('fieldset', 'platform-picker');
+  platformField.appendChild(el('legend', '', '적용 플랫폼'));
+  const platformChecks = PLATFORMS.map(platform => {
+    const label = el('label', 'check-option'); const input = document.createElement('input'); input.type = 'checkbox'; input.value = platform.id; input.checked = platform.id === 'pc';
+    label.append(input, el('span', '', platform.name)); platformField.appendChild(label); return input;
+  });
+  const milestonesTitle = el('h3', 'small-heading', '고정 마일스톤');
+  const milestoneDates = {};
+  const milestoneFields = DELIVERY_MILESTONES.map(definition => {
+    const field = inputField(definition.title, '', 'date'); milestoneDates[definition.key] = field; return field;
+  });
+  const staffingTitle = el('h3', 'small-heading', '플랫폼별 직군 담당자');
+  const staffingBox = el('div', 'staffing-grid');
+  const staffingValues = new Map();
+  const currentPlatforms = () => platformChecks.filter(input => input.checked).map(input => input.value);
+  const eligiblePeople = departmentId => visibleUsers.filter(user => user.active && user.departmentId === departmentId);
+  const renderStaffing = () => {
+    staffingBox.innerHTML = '';
+    currentPlatforms().forEach(platform => {
+      const card = el('section', 'staffing-card'); card.append(el('strong', '', `${platformName(platform)} 담당자`));
+      TEMPLATE_DEPARTMENTS.forEach(departmentId => {
+        const key = `${platform}:${departmentId}`;
+        const options = [['', '나중에 배정']].concat(eligiblePeople(departmentId).map(user => [user.id, user.name || user.email]));
+        const field = selectField(departmentName(departmentId), options); field.select.value = staffingValues.get(key) || '';
+        field.select.onchange = () => staffingValues.set(key, field.select.value);
+        card.appendChild(field.wrap);
+      });
+      staffingBox.appendChild(card);
+    });
+  };
+  platformChecks.forEach(input => { input.onchange = renderStaffing; });
+  renderStaffing();
+  const actions = el('div', 'form-actions project-create-actions');
+  const submit = button('일정 자동 생성', 'primary');
+  const error = el('p', 'form-error'); error.hidden = true;
+  const showFieldError = (field, message) => {
+    field.input.classList.toggle('input-invalid', !!message);
+    field.wrap.classList.toggle('field-invalid', !!message);
+    field.wrap.querySelector('.field-error')?.remove();
+    if(message) field.wrap.appendChild(el('span', 'field-error', message));
+  };
+  const clearError = field => { showFieldError(field, ''); error.hidden = true; };
+  name.input.oninput = () => clearError(name);
+  code.input.oninput = () => clearError(code);
+  actions.appendChild(submit);
+  form.append(guide, name.wrap, code.wrap, platformField, milestonesTitle, ...milestoneFields.map(field => field.wrap), staffingTitle, staffingBox, error, actions);
+  form.onsubmit = async event => {
+    event.preventDefault();
+    const missingName = !name.input.value.trim();
+    const missingCode = !code.input.value.trim();
+    const selectedPlatforms = currentPlatforms();
+    const missingMilestone = milestoneFields.find(field => !field.input.value);
+    showFieldError(name, missingName ? '프로젝트명을 입력해주세요.' : '');
+    showFieldError(code, missingCode ? '프로젝트 코드를 입력해주세요.' : '');
+    if(missingName || missingCode || !selectedPlatforms.length || missingMilestone) {
+      error.textContent = missingMilestone ? `${missingMilestone.wrap.querySelector('span')?.textContent || '고정 마일스톤'}을 입력해주세요.` : '프로젝트명, 코드와 적용 플랫폼을 확인해주세요.';
+      error.hidden = false;
+      (missingName ? name : missingCode ? code : missingMilestone).input.focus();
+      return;
+    }
+    submit.disabled = true; submit.textContent = '생성 중…';
+    try {
+      const staffing = [];
+      selectedPlatforms.forEach(platform => TEMPLATE_DEPARTMENTS.forEach(departmentId => {
+        const userId = staffingValues.get(`${platform}:${departmentId}`) || null;
+        staffing.push({ platform, departmentId, userId });
+      }));
+      await createScheduledProject({
+        name: name.input.value, code: code.input.value, platforms: selectedPlatforms, staffing,
+        milestoneDates: Object.fromEntries(DELIVERY_MILESTONES.map(definition => [definition.key, milestoneDates[definition.key].input.value]))
+      });
+      close();
+    } catch(cause) {
+      error.textContent = `일정을 생성하지 못했습니다. ${cause.message || '잠시 후 다시 시도해주세요.'}`;
+      error.hidden = false;
+    } finally {
+      submit.disabled = false; submit.textContent = '일정 자동 생성';
+    }
+  };
+  dialog.appendChild(form);
+}
+
+function importHeaderKey(value){ return String(value || '').replace(/\s|\n|\r|\(|\)|\[|\]|_|\-/g, '').toLowerCase(); }
+function importColumn(headers, aliases){
+  const normalized = headers.map(importHeaderKey);
+  for(const alias of aliases) { const index = normalized.indexOf(importHeaderKey(alias)); if(index >= 0) return index; }
+  return -1;
+}
+function importDate(value){
+  if(!value) return '';
+  if(value instanceof Date && !Number.isNaN(value.getTime())) return dateKey(value);
+  if(typeof value === 'number' && window.XLSX?.SSF) {
     const parsed = XLSX.SSF.parse_date_code(value); if(parsed) return `${parsed.y}-${String(parsed.m).padStart(2, '0')}-${String(parsed.d).padStart(2, '0')}`;
   }
   const text = String(value).trim().replace(/\./g, '-').replace(/\//g, '-');
@@ -1052,4 +1808,3 @@ function rerender(){
 
 // state.js의 인증·Firestore 콜백에서도 항상 같은 렌더러를 호출할 수 있게 노출합니다.
 window.renderScheduleApp = rerender;
-
