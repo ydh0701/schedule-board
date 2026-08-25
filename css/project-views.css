@@ -90,8 +90,8 @@
 .project-compact-header .project-staff-chip { font-size: 9px; }
 
 @media (min-width: 901px) {
-  .project-month-schedule .project-schedule-layout { grid-template-columns: minmax(600px, 1.35fr) minmax(350px, .65fr); min-height: 430px; height: calc(100dvh - 250px); }
-  .project-month-schedule .project-month-calendar { grid-auto-rows: 1fr; }
+  .project-month-schedule .project-schedule-layout { grid-template-columns: minmax(600px, 1.35fr) minmax(350px, .65fr); min-height: 430px; height: calc(100dvh - 250px); align-items: stretch; }
+  .project-month-schedule .project-month-calendar { height: 100%; grid-auto-rows: auto; }
   .project-month-schedule .project-month-cell { min-height: 0; }
   .project-month-schedule .project-schedule-detail { min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
 }
@@ -104,7 +104,7 @@
   .project-dashboard-grid { grid-template-columns: minmax(560px, 1.2fr) minmax(480px, .8fr); height: calc(100dvh - 150px); margin-top: 10px; align-items: stretch; }
   .project-milestone-panel, .project-dashboard-projects { min-height: 0; height: 100%; }
   .project-milestone-panel { display: flex; flex-direction: column; }
-  .project-milestone-calendar { flex: 1; grid-auto-rows: 1fr; }
+  .project-milestone-calendar { flex: 1; height: 100%; grid-auto-rows: auto; }
   .project-milestone-cell { min-height: 0; }
   .project-dashboard-projects { display: flex; flex-direction: column; overflow: hidden; }
   .project-dashboard-project-scroll { display: grid; flex: 1; min-height: 0; align-content: start; gap: 10px; overflow-y: auto; padding-right: 3px; overscroll-behavior: contain; }
@@ -131,7 +131,7 @@
   .work-dashboard-grid { height: calc(100dvh - 188px); min-height: 0; align-items: stretch; }
   .work-availability-panel, .work-dashboard-projects { min-height: 0; height: 100%; }
   .work-availability-panel { display: flex; flex-direction: column; }
-  .work-availability-panel .availability-calendar { flex: 1 1 auto; grid-auto-rows: minmax(74px, 1fr); }
+  .work-availability-panel .availability-calendar { flex: 1 1 auto; height: 100%; grid-auto-rows: auto; }
   .work-dashboard-projects .work-project-panel > .task-list:last-child { flex: 1 1 auto; min-height: 0; }
   .work-dashboard-projects .work-project-panel > .task-list:last-child { overflow-y: auto; overscroll-behavior: contain; }
 }
