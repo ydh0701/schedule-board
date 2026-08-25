@@ -81,6 +81,9 @@ let importPreview = null;
 let profileUnsubscribe = null;
 let dataUnsubscribers = [];
 let scopedProjectUnsubscribers = [];
+let memberScopeKey = '';
+let memberScopeOwnTasks = [];
+let memberScopePublish = null;
 
 function setAppStatus(message){
   const el = document.getElementById('appStatus');
@@ -98,6 +101,9 @@ function resetDataSubscriptions(){
   scopedProjectUnsubscribers.forEach(unsub => unsub());
   dataUnsubscribers = [];
   scopedProjectUnsubscribers = [];
+  memberScopeKey = '';
+  memberScopeOwnTasks = [];
+  memberScopePublish = null;
   projects = [];
   tasks = [];
   milestones = [];
@@ -352,39 +358,58 @@ function subscribeCollection(query, apply, label){
 }
 
 function subscribeProjectScopeForMember(ownTasks){
+  const projectIds = [...new Set(ownTasks.map(task => task.projectId).filter(Boolean))].sort();
+  const nextScopeKey = projectIds.join('|');
+  memberScopeOwnTasks = ownTasks;
+  // 업무 내용만 바뀌고 참여 프로젝트가 같으면 기존 구독을 유지합니다.
+  if(memberScopeKey === nextScopeKey && memberScopePublish) {
+    memberScopePublish();
+    return;
+  }
   scopedProjectUnsubscribers.forEach(unsub => unsub());
   scopedProjectUnsubscribers = [];
-  const projectIds = [...new Set(ownTasks.map(task => task.projectId).filter(Boolean))];
+  memberScopeKey = nextScopeKey;
   const scopedProjects = new Map();
   const scopedTasks = new Map();
   const scopedMilestones = new Map();
   const scopedUpdates = new Map();
+  const taskIdsByProject = new Map();
+  const milestoneIdsByProject = new Map();
+  const updateIdsByProject = new Map();
 
   const publish = () => {
     projects = [...scopedProjects.values()].sort((a, b) => String(a.code || a.name).localeCompare(String(b.code || b.name)));
-    const own = ownTasks.map(task => [task.id, task]);
+    const own = memberScopeOwnTasks.map(task => [task.id, task]);
     tasks = [...new Map([...own, ...scopedTasks]).values()];
     milestones = [...scopedMilestones.values()];
     projectUpdates = [...scopedUpdates.values()];
     rerenderSafely();
   };
+  memberScopePublish = publish;
 
   projectIds.forEach(projectId => {
     scopedProjectUnsubscribers.push(db.collection('projects').doc(projectId).onSnapshot(doc => {
       if(doc.exists) scopedProjects.set(doc.id, docToObject(doc));
+      else scopedProjects.delete(projectId);
       publish();
     }, error => console.error('프로젝트 구독 실패:', error)));
     // Firestore 규칙은 projectMembers/{projectId_uid} 존재 여부를 검사해 이 쿼리를 허용합니다.
     scopedProjectUnsubscribers.push(db.collection('tasks').where('projectId', '==', projectId).onSnapshot(snapshot => {
-      snapshot.docs.forEach(doc => scopedTasks.set(doc.id, docToObject(doc)));
+      (taskIdsByProject.get(projectId) || []).forEach(id => scopedTasks.delete(id));
+      const ids = snapshot.docs.map(doc => { scopedTasks.set(doc.id, docToObject(doc)); return doc.id; });
+      taskIdsByProject.set(projectId, ids);
       publish();
     }, error => console.error('프로젝트 업무 구독 실패:', error)));
     scopedProjectUnsubscribers.push(db.collection('milestones').where('projectId', '==', projectId).onSnapshot(snapshot => {
-      snapshot.docs.forEach(doc => scopedMilestones.set(doc.id, docToObject(doc)));
+      (milestoneIdsByProject.get(projectId) || []).forEach(id => scopedMilestones.delete(id));
+      const ids = snapshot.docs.map(doc => { scopedMilestones.set(doc.id, docToObject(doc)); return doc.id; });
+      milestoneIdsByProject.set(projectId, ids);
       publish();
     }, error => console.error('프로젝트 마일스톤 구독 실패:', error)));
     scopedProjectUnsubscribers.push(db.collection('projectUpdates').where('projectId', '==', projectId).onSnapshot(snapshot => {
-      snapshot.docs.forEach(doc => scopedUpdates.set(doc.id, docToObject(doc)));
+      (updateIdsByProject.get(projectId) || []).forEach(id => scopedUpdates.delete(id));
+      const ids = snapshot.docs.map(doc => { scopedUpdates.set(doc.id, docToObject(doc)); return doc.id; });
+      updateIdsByProject.set(projectId, ids);
       publish();
     }, error => console.error('프로젝트 업데이트 구독 실패:', error)));
   });
@@ -1022,4 +1047,3 @@ async function offboardUser(userId, decisions){
   });
   await batch.commit();
 }
-
