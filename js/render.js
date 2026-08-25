@@ -206,9 +206,6 @@ function renderProjects(main){
     main.appendChild(el('div', 'empty', '등록된 프로젝트가 없습니다. 관리자가 첫 프로젝트를 만들어주세요.'));
     return;
   }
-  const grid = el('div', 'proj-card-grid');
-  activeProjects.forEach(project => grid.appendChild(projectCard(project)));
-  main.appendChild(grid);
   if(completedProjects.length) {
     const completed = el('details', 'completed-project-group');
     const summary = el('summary', ''); summary.append(el('strong', '', '완료 프로젝트 보기'), el('span', '', `${completedProjects.length}건`));
@@ -217,6 +214,70 @@ function renderProjects(main){
     completedProjects.sort((a, b) => String(projectFinalReleaseDate(b) || '').localeCompare(String(projectFinalReleaseDate(a) || ''))).forEach(project => completedGrid.appendChild(projectCard(project)));
     completed.appendChild(completedGrid); main.appendChild(completed);
   }
+  const dashboard = el('div', 'project-dashboard-grid');
+  const calendarPanel = el('section', 'project-milestone-panel');
+  renderProjectMilestoneCalendar(calendarPanel, activeProjects);
+  const projectPanel = el('section', 'project-dashboard-projects');
+  const projectHead = el('div', 'project-dashboard-projects-head');
+  projectHead.append(el('h2', '', '진행 프로젝트'), el('span', 'foot-note', `${activeProjects.length}건`));
+  const grid = el('div', 'proj-card-grid');
+  activeProjects.forEach(project => grid.appendChild(projectCard(project)));
+  projectPanel.append(projectHead, grid);
+  dashboard.append(calendarPanel, projectPanel);
+  main.appendChild(dashboard);
+}
+
+function projectKeyMilestones(project){
+  const majorPattern = /(데모|완전판|정식|full).{0,12}(출시|런칭|빌드)|(출시|런칭|빌드).{0,12}(데모|완전판|정식|full)/i;
+  const selected = milestonesForProject(project.id).filter(item => item.dueDate && (DELIVERY_MILESTONES.some(definition => definition.key === item.anchorKey) || majorPattern.test(String(item.title || ''))));
+  const known = new Set(selected.map(item => `${item.title}|${item.dueDate}`));
+  const releaseDate = projectFinalReleaseDate(project);
+  if(releaseDate && ![...known].some(key => key.endsWith(`|${releaseDate}`))) selected.push({ id: `release-${project.id}`, projectId: project.id, title: '완전판 출시', dueDate: releaseDate, anchorKey: 'full_release' });
+  return selected.map(item => ({ project, milestone: item, date: item.dueDate }));
+}
+
+function openProjectMilestonePopover(anchor, date, entries){
+  document.querySelectorAll('.project-milestone-popover').forEach(node => node.remove());
+  const popover = el('section', 'project-milestone-popover');
+  const weekday = ['일', '월', '화', '수', '목', '금', '토'][date.getDay()];
+  const head = el('div', 'project-milestone-popover-head');
+  const close = button('×', 'tiny ghost', () => popover.remove()); close.setAttribute('aria-label', '닫기');
+  head.append(el('strong', '', `${dateKey(date)} (${weekday})`), close); popover.appendChild(head);
+  const list = el('div', 'project-milestone-popover-list');
+  if(!entries.length) list.appendChild(el('p', 'foot-note', '등록된 주요 프로젝트 일정이 없습니다.'));
+  entries.forEach(entry => {
+    const item = button('', 'project-milestone-popover-item', () => { popover.remove(); activeView = 'projects'; selectedProjectId = entry.project.id; projectDetailTab = 'milestones'; rerender(); });
+    item.append(el('strong', '', `${entry.project.code || entry.project.name} · ${entry.milestone.title}`), el('span', '', entry.project.name || '프로젝트'));
+    list.appendChild(item);
+  });
+  popover.appendChild(list); document.body.appendChild(popover);
+  const rect = anchor.getBoundingClientRect(), width = Math.min(340, window.innerWidth - 24);
+  popover.style.left = `${Math.max(12, Math.min(rect.left, window.innerWidth - width - 12))}px`;
+  popover.style.top = `${rect.bottom + 8 + popover.offsetHeight > window.innerHeight ? Math.max(12, rect.top - popover.offsetHeight - 8) : rect.bottom + 8}px`;
+  const closeOutside = event => { if(!popover.contains(event.target) && event.target !== anchor && !anchor.contains(event.target)) { popover.remove(); document.removeEventListener('pointerdown', closeOutside, true); } };
+  setTimeout(() => document.addEventListener('pointerdown', closeOutside, true), 0);
+}
+
+function renderProjectMilestoneCalendar(panel, activeProjects){
+  const year = projectPortfolioCursor.getFullYear(), month = projectPortfolioCursor.getMonth();
+  const firstDay = new Date(year, month, 1).getDay(), lastDate = new Date(year, month + 1, 0).getDate();
+  const entries = activeProjects.flatMap(projectKeyMilestones);
+  const head = el('div', 'project-milestone-heading');
+  const controls = el('div', 'availability-controls');
+  controls.append(button('◀', 'tiny ghost', () => { projectPortfolioCursor.setMonth(projectPortfolioCursor.getMonth() - 1); rerender(); }), el('strong', '', `${year}년 ${month + 1}월`), button('▶', 'tiny ghost', () => { projectPortfolioCursor.setMonth(projectPortfolioCursor.getMonth() + 1); rerender(); }));
+  head.append(el('h2', '', '프로젝트 주요 일정'), controls); panel.appendChild(head);
+  const grid = el('div', 'project-milestone-calendar');
+  ['일', '월', '화', '수', '목', '금', '토'].forEach(label => grid.appendChild(el('div', 'project-milestone-dow', label)));
+  for(let index = 0; index < firstDay; index++) grid.appendChild(el('div', 'project-milestone-cell muted-cell'));
+  for(let day = 1; day <= lastDate; day++) {
+    const date = new Date(year, month, day), key = dateKey(date), items = entries.filter(entry => entry.date === key);
+    const cell = button('', `project-milestone-cell ${key === dateKey(todayDate()) ? 'today' : ''} ${isHoliday(date) ? 'holiday' : ''}`, () => openProjectMilestonePopover(cell, date, items));
+    cell.appendChild(el('strong', 'project-milestone-date', String(day)));
+    items.slice(0, 2).forEach(entry => cell.appendChild(el('span', `project-milestone-chip ${entry.milestone.anchorKey || ''}`, `${entry.project.code || entry.project.name} · ${entry.milestone.title}`)));
+    if(items.length > 2) cell.appendChild(el('span', 'project-milestone-more', `+${items.length - 2}`));
+    grid.appendChild(cell);
+  }
+  panel.appendChild(grid);
 }
 
 function taskRow(task, showProject, mineCompact = false){
