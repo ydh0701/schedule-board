@@ -97,7 +97,9 @@
 /* 프로젝트 현황: 달력은 넓게, 프로젝트 목록은 두 행만 보여주고 내부에서 스크롤한다. */
 @media (min-width: 901px) {
   body:has(.project-dashboard-grid), .app:has(.project-dashboard-grid), #main:has(.project-dashboard-grid) { overflow: hidden; }
-  .project-dashboard-grid { grid-template-columns: minmax(560px, 1.2fr) minmax(480px, .8fr); height: calc(100dvh - 108px); margin-top: 14px; align-items: stretch; }
+  .app:has(.project-dashboard-grid) { padding-top: 12px; padding-bottom: 20px; }
+  .app:has(.project-dashboard-grid) .topbar { top: 8px; margin-bottom: 14px; }
+  .project-dashboard-grid { grid-template-columns: minmax(560px, 1.2fr) minmax(480px, .8fr); height: calc(100dvh - 150px); margin-top: 10px; align-items: stretch; }
   .project-milestone-panel, .project-dashboard-projects { min-height: 0; height: 100%; }
   .project-milestone-panel { display: flex; flex-direction: column; }
   .project-milestone-calendar { flex: 1; grid-auto-rows: 1fr; }
