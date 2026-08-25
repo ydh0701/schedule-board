@@ -738,6 +738,7 @@ function renderProjectGroupedWork(main, allTasks, options = {}){
   section.append(panel); main.appendChild(section);
   let selectedProjectKey = null;
   let selectedPlatform = 'all';
+  let selectedPhase = null;
   let showCompletedProjects = false;
   const draw = () => {
     tabs.innerHTML = ''; panel.innerHTML = '';
@@ -774,7 +775,7 @@ function renderProjectGroupedWork(main, allTasks, options = {}){
       const code = project?.code || project?.name || '프로젝트';
       const activeCount = tasks.filter(task => task.status !== 'done').length;
       const todayCount = tasks.filter(task => task.status !== 'done' && taskCoversDate(task, today)).length;
-      const tab = button('', projectId === selectedProjectKey ? 'primary tiny' : 'ghost tiny', () => { selectedProjectKey = projectId; selectedPlatform = 'all'; draw(); });
+      const tab = button('', projectId === selectedProjectKey ? 'primary tiny' : 'ghost tiny', () => { selectedProjectKey = projectId; selectedPlatform = 'all'; selectedPhase = null; draw(); });
       tab.appendChild(el('strong', '', code));
       if(isCompletedWorkProject(projectId, tasks)) tab.appendChild(el('em', 'completed-project-tab-mark', '완료'));
       if(todayCount) tab.appendChild(el('em', '', `오늘 ${todayCount}`));
@@ -787,8 +788,11 @@ function renderProjectGroupedWork(main, allTasks, options = {}){
     if(selectedPlatform !== 'all' && !platformIds.includes(selectedPlatform)) selectedPlatform = 'all';
     if(platformIds.length === 1 && selectedPlatform === 'all') selectedPlatform = platformIds[0];
     const visibleTasks = selectedPlatform === 'all' ? tasks : tasks.filter(task => task.platform === selectedPlatform);
-    const projectTasks = visibleTasks.filter(task => task.status !== 'done').sort((a, b) => String(a.dueDate || '9999').localeCompare(String(b.dueDate || '9999')));
-    const completedTasks = visibleTasks.filter(task => task.status === 'done').sort((a, b) => String(b.completedAt || b.dueDate || '').localeCompare(String(a.completedAt || a.dueDate || '')));
+    const phaseIds = PROJECT_TASK_PHASES.map(phase => phase.id).filter(phaseId => visibleTasks.some(task => projectTaskPhase(task).id === phaseId));
+    const firstActivePhase = phaseIds.find(phaseId => visibleTasks.some(task => projectTaskPhase(task).id === phaseId && task.status !== 'done'));
+    if(!phaseIds.includes(selectedPhase)) selectedPhase = firstActivePhase || phaseIds[0] || 'other';
+    const projectTasks = visibleTasks.filter(task => task.status !== 'done' && projectTaskPhase(task).id === selectedPhase).sort((a, b) => String(a.dueDate || '9999').localeCompare(String(b.dueDate || '9999')));
+    const completedTasks = visibleTasks.filter(task => task.status === 'done' && projectTaskPhase(task).id === selectedPhase).sort((a, b) => String(b.completedAt || b.dueDate || '').localeCompare(String(a.completedAt || a.dueDate || '')));
     const panelHead = el('div', 'work-project-panel-head');
     const name = project ? `${project.code || project.name}${project.name && project.code ? ` · ${project.name}` : ''}` : '프로젝트';
     const activeCount = projectTasks.filter(task => task.status !== 'done').length;
@@ -806,7 +810,7 @@ function renderProjectGroupedWork(main, allTasks, options = {}){
       const platformTabs = el('nav', 'work-platform-tabs');
       const platformOptions = platformIds.length > 1 ? [['all', '전체'], ...platformIds.map(id => [id, platformName(id)])] : platformIds.map(id => [id, platformName(id)]);
       platformOptions.forEach(([id, label]) => {
-        const filter = button(label, id === selectedPlatform ? 'primary tiny' : 'ghost tiny', () => { selectedPlatform = id; draw(); });
+        const filter = button(label, id === selectedPlatform ? 'primary tiny' : 'ghost tiny', () => { selectedPlatform = id; selectedPhase = null; draw(); });
         platformTabs.appendChild(filter);
       });
       panelActions.appendChild(platformTabs);
@@ -814,6 +818,13 @@ function renderProjectGroupedWork(main, allTasks, options = {}){
     if(project) panelActions.appendChild(button('프로젝트 보기 →', 'tiny ghost', () => { activeView = 'projects'; selectedProjectId = project.id; projectDetailTab = 'tasks'; rerender(); }));
     panelHead.appendChild(panelActions);
     panel.appendChild(panelHead);
+    const phaseTabs = el('nav', 'work-phase-tabs');
+    phaseIds.forEach(phaseId => {
+      const phase = PROJECT_TASK_PHASES.find(item => item.id === phaseId);
+      const count = visibleTasks.filter(task => task.status !== 'done' && projectTaskPhase(task).id === phaseId).length;
+      phaseTabs.appendChild(button(`${phase.title} ${count}`, phaseId === selectedPhase ? 'primary tiny' : 'ghost tiny', () => { selectedPhase = phaseId; draw(); }));
+    });
+    panel.appendChild(phaseTabs);
     if(completedTasks.length) {
       const completed = el('details', 'completed-task-group');
       const summary = el('summary', '');
