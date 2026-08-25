@@ -248,10 +248,10 @@ function renderProjects(main){
   }
   const activeProjects = projects.filter(project => project.status !== 'archived' && !projectIsCompleted(project));
   const completedProjects = projects.filter(project => project.status !== 'archived' && projectIsCompleted(project));
+  let projectActions = null;
   if(canManageProjects()) {
-    const actions = el('div', 'project-list-actions');
-    actions.append(button('엑셀 이관', 'tiny ghost', openImportEditor), button('+ 프로젝트 추가', 'primary', () => openProjectCreator()));
-    main.appendChild(actions);
+    projectActions = el('div', 'project-list-actions');
+    projectActions.append(button('엑셀 이관', 'tiny ghost', openImportEditor), button('+ 프로젝트 추가', 'primary', () => openProjectCreator()));
   }
   if(!projects.length) {
     main.appendChild(el('div', 'empty', '등록된 프로젝트가 없습니다. 관리자가 첫 프로젝트를 만들어주세요.'));
@@ -272,6 +272,7 @@ function renderProjects(main){
   const projectPanel = el('section', 'project-dashboard-projects');
   const projectHead = el('div', 'project-dashboard-projects-head');
   projectHead.append(el('h2', '', '프로젝트 현황'));
+  if(projectActions) projectHead.appendChild(projectActions);
   const ongoingHead = el('div', 'project-status-subhead');
   ongoingHead.append(el('strong', '', '진행 프로젝트'), el('span', '', `${activeProjects.length}건`));
   const grid = el('div', 'proj-card-grid');
