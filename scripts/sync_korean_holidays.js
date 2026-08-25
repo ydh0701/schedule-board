@@ -24,6 +24,14 @@ function required(name) {
   return value;
 }
 
+// 공공데이터포털은 Encoding/Decoding 인증키를 모두 보여줍니다.
+// 어느 쪽을 시크릿에 넣어도 URLSearchParams에서 정확히 한 번만 인코딩되게 통일합니다.
+function normalizeApiKey(value) {
+  const trimmed = String(value || '').trim();
+  try { return decodeURIComponent(trimmed); }
+  catch { return trimmed; }
+}
+
 function base64Url(value) {
   return Buffer.from(value).toString('base64url');
 }
@@ -146,7 +154,7 @@ async function upsertHoliday(projectId, token, holiday) {
 }
 
 async function main() {
-  const apiKey = required('KASI_HOLIDAY_API_KEY');
+  const apiKey = normalizeApiKey(required('KASI_HOLIDAY_API_KEY'));
   const serviceAccount = parseServiceAccount();
   if (!serviceAccount.project_id || !serviceAccount.client_email || !serviceAccount.private_key) throw new Error('서비스 계정 JSON에 필수 값이 없습니다.');
   const holidays = (await Promise.all(yearsToSync().map(year => fetchYearHolidays(year, apiKey)))).flat();
