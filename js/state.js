@@ -37,13 +37,13 @@ const DELIVERY_MILESTONES = [
 // 업무 화면은 직군이 아니라 이 실행 단위로 먼저 묶습니다. 새 업무는 phaseId를
 // 명시적으로 저장하고, 기존 엑셀 업무는 taskGroup 텍스트로 안전하게 추론합니다.
 const PROJECT_TASK_PHASES = [
+  { id: 'idea', title: '아이디어' },
+  { id: 'preparation', title: '준비' },
   { id: 'detail_planning', title: '세부 기획' },
+  { id: 'demo', title: '데모' },
+  { id: 'full', title: '완전판' },
   { id: 'field_visit', title: '현장 방문' },
   { id: 'resource_review', title: '리소스 검수' },
-  { id: 'demo_prepare', title: '데모 준비' },
-  { id: 'demo_launch', title: '데모 런칭' },
-  { id: 'full_prepare', title: '완전판 준비' },
-  { id: 'full_launch', title: '완전판 런칭' },
   { id: 'other', title: '기타 업무' }
 ];
 const TEMPLATE_DEPARTMENTS = ['planning', 'ui', 'development', 'qa'];
@@ -51,15 +51,15 @@ const TEMPLATE_DEPARTMENTS = ['planning', 'ui', 'development', 'qa'];
 // 실제 운영 중 평균 작업일은 템플릿 관리 화면에서 계속 조정할 수 있게 확장합니다.
 const PROJECT_WORK_TEMPLATE = [
   { key: 'demo-plan', phaseId: 'detail_planning', departmentId: 'planning', title: '데모 기능·화면 기획 확정', anchorKey: 'demo_build', dueOffset: -18, estimatedDays: 3 },
-  { key: 'demo-ui-design', phaseId: 'demo_prepare', departmentId: 'ui', title: '데모 UI 디자인', anchorKey: 'demo_build', dueOffset: -15, estimatedDays: 4, dependsOnKey: 'demo-plan' },
-  { key: 'demo-ui-prefab', phaseId: 'demo_prepare', departmentId: 'ui', title: '데모 UI 프리팹·연출', anchorKey: 'demo_build', dueOffset: -9, estimatedDays: 3, dependsOnKey: 'demo-ui-design' },
-  { key: 'demo-dev', phaseId: 'demo_prepare', departmentId: 'development', title: '데모 기능 구현·연동', anchorKey: 'demo_build', dueOffset: -10, estimatedDays: 5, dependsOnKey: 'demo-plan' },
-  { key: 'demo-qa', phaseId: 'demo_prepare', departmentId: 'qa', title: '데모 QA·수정 확인', anchorKey: 'demo_build', dueOffset: -4, estimatedDays: 3, dependsOnKey: 'demo-ui-prefab' },
-  { key: 'full-plan', phaseId: 'full_prepare', departmentId: 'planning', title: '완전판 기능·화면 기획 확정', anchorKey: 'full_build', dueOffset: -28, estimatedDays: 4 },
-  { key: 'full-ui-design', phaseId: 'full_prepare', departmentId: 'ui', title: '완전판 UI 디자인', anchorKey: 'full_build', dueOffset: -22, estimatedDays: 5, dependsOnKey: 'full-plan' },
-  { key: 'full-ui-prefab', phaseId: 'full_prepare', departmentId: 'ui', title: '완전판 UI 프리팹·연출', anchorKey: 'full_build', dueOffset: -14, estimatedDays: 4, dependsOnKey: 'full-ui-design' },
-  { key: 'full-dev', phaseId: 'full_prepare', departmentId: 'development', title: '완전판 기능 구현·연동', anchorKey: 'full_build', dueOffset: -15, estimatedDays: 7, dependsOnKey: 'full-plan' },
-  { key: 'full-qa', phaseId: 'full_prepare', departmentId: 'qa', title: '완전판 QA·수정 확인', anchorKey: 'full_build', dueOffset: -6, estimatedDays: 4, dependsOnKey: 'full-ui-prefab' }
+  { key: 'demo-ui-design', phaseId: 'demo', departmentId: 'ui', title: '데모 UI 디자인', anchorKey: 'demo_build', dueOffset: -15, estimatedDays: 4, dependsOnKey: 'demo-plan' },
+  { key: 'demo-ui-prefab', phaseId: 'demo', departmentId: 'ui', title: '데모 UI 프리팹·연출', anchorKey: 'demo_build', dueOffset: -9, estimatedDays: 3, dependsOnKey: 'demo-ui-design' },
+  { key: 'demo-dev', phaseId: 'demo', departmentId: 'development', title: '데모 기능 구현·연동', anchorKey: 'demo_build', dueOffset: -10, estimatedDays: 5, dependsOnKey: 'demo-plan' },
+  { key: 'demo-qa', phaseId: 'demo', departmentId: 'qa', title: '데모 QA·수정 확인', anchorKey: 'demo_build', dueOffset: -4, estimatedDays: 3, dependsOnKey: 'demo-ui-prefab' },
+  { key: 'full-plan', phaseId: 'full', departmentId: 'planning', title: '완전판 기능·화면 기획 확정', anchorKey: 'full_build', dueOffset: -28, estimatedDays: 4 },
+  { key: 'full-ui-design', phaseId: 'full', departmentId: 'ui', title: '완전판 UI 디자인', anchorKey: 'full_build', dueOffset: -22, estimatedDays: 5, dependsOnKey: 'full-plan' },
+  { key: 'full-ui-prefab', phaseId: 'full', departmentId: 'ui', title: '완전판 UI 프리팹·연출', anchorKey: 'full_build', dueOffset: -14, estimatedDays: 4, dependsOnKey: 'full-ui-design' },
+  { key: 'full-dev', phaseId: 'full', departmentId: 'development', title: '완전판 기능 구현·연동', anchorKey: 'full_build', dueOffset: -15, estimatedDays: 7, dependsOnKey: 'full-plan' },
+  { key: 'full-qa', phaseId: 'full', departmentId: 'qa', title: '완전판 QA·수정 확인', anchorKey: 'full_build', dueOffset: -6, estimatedDays: 4, dependsOnKey: 'full-ui-prefab' }
 ];
 
 let currentUser = null;
@@ -241,16 +241,17 @@ function staffingFor(project, platform, departmentId){
 }
 function templateTaskKey(platform, templateKey){ return `${platform}:${templateKey}`; }
 function projectTaskPhase(task){
-  const explicit = PROJECT_TASK_PHASES.find(phase => phase.id === task?.phaseId);
+  const legacyPhase = { demo_prepare: 'demo', demo_launch: 'demo', full_prepare: 'full', full_launch: 'full' }[task?.phaseId] || task?.phaseId;
+  const explicit = PROJECT_TASK_PHASES.find(phase => phase.id === legacyPhase);
   if(explicit) return explicit;
   const text = `${task?.taskGroup || ''} ${task?.title || ''}`.replace(/\s/g, '').toLowerCase();
   if(/현장.?방문|로케이션/.test(text)) return PROJECT_TASK_PHASES.find(phase => phase.id === 'field_visit');
   if(/리소스|자료.?검수|에셋.?검수/.test(text)) return PROJECT_TASK_PHASES.find(phase => phase.id === 'resource_review');
-  if(/데모.*(런칭|출시)|데모.*심사/.test(text) || task?.scheduleRule?.anchorKey === 'demo_release') return PROJECT_TASK_PHASES.find(phase => phase.id === 'demo_launch');
-  if(/완전판.*(런칭|출시)|정식.*(런칭|출시)/.test(text) || task?.scheduleRule?.anchorKey === 'full_release') return PROJECT_TASK_PHASES.find(phase => phase.id === 'full_launch');
-  if(/데모/.test(text) || task?.scheduleRule?.anchorKey === 'demo_build') return PROJECT_TASK_PHASES.find(phase => phase.id === 'demo_prepare');
-  if(/완전판|정식/.test(text) || task?.scheduleRule?.anchorKey === 'full_build') return PROJECT_TASK_PHASES.find(phase => phase.id === 'full_prepare');
-  if(/세부.?기획|아이디어|기획/.test(text)) return PROJECT_TASK_PHASES.find(phase => phase.id === 'detail_planning');
+  if(/데모/.test(text) || ['demo_build', 'demo_release'].includes(task?.scheduleRule?.anchorKey)) return PROJECT_TASK_PHASES.find(phase => phase.id === 'demo');
+  if(/완전판|정식/.test(text) || ['full_build', 'full_release'].includes(task?.scheduleRule?.anchorKey)) return PROJECT_TASK_PHASES.find(phase => phase.id === 'full');
+  if(/아이디어|브레인스토밍|컨셉/.test(text)) return PROJECT_TASK_PHASES.find(phase => phase.id === 'idea');
+  if(/준비|사전/.test(text)) return PROJECT_TASK_PHASES.find(phase => phase.id === 'preparation');
+  if(/세부.?기획|기획/.test(text)) return PROJECT_TASK_PHASES.find(phase => phase.id === 'detail_planning');
   return PROJECT_TASK_PHASES.find(phase => phase.id === 'other');
 }
 function taskCoversDate(task, date){
