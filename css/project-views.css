@@ -74,6 +74,17 @@
   .work-dashboard-grid { grid-template-columns: minmax(400px, 1.15fr) minmax(330px, .85fr); }
 }
 
+/* 내 업무 대시보드는 페이지가 아니라 오른쪽 업무 목록만 스크롤합니다. */
+@media (min-width: 901px) {
+  body:has(.work-dashboard-grid), .app:has(.work-dashboard-grid), #main:has(.work-dashboard-grid) { overflow: hidden; }
+  .work-dashboard-grid { height: calc(100dvh - 190px); min-height: 0; align-items: stretch; }
+  .work-availability-panel, .work-dashboard-projects { min-height: 0; height: 100%; }
+  .work-availability-panel { display: flex; flex-direction: column; }
+  .work-availability-panel .availability-calendar { flex: 1 1 auto; grid-auto-rows: minmax(74px, 1fr); }
+  .work-dashboard-projects .work-project-panel > .task-list:last-child { flex: 1 1 auto; min-height: 0; }
+  .work-dashboard-projects .work-project-panel > .task-list:last-child { overflow-y: auto; overscroll-behavior: contain; }
+}
+
 .people-department-board { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; align-items: start; }
 .people-department-column { min-width: 0; padding: 11px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
 .people-department-column-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 1px 8px; border-bottom: 1px solid var(--line); }
