@@ -62,8 +62,9 @@ function yearsToSync() {
     .map(value => Number(value.trim()))
     .filter(value => Number.isInteger(value) && value >= 2000 && value <= 2100);
   if (configured.length) return [...new Set(configured)];
-  const year = new Date().getFullYear();
-  return [year, year + 1];
+  // 특일 API는 아직 확정·공개되지 않은 다음 연도 요청에 403을 돌려줄 수 있습니다.
+  // 기본값은 현재 연도만 동기화하고, 새해부터 해당 연도 데이터를 자동 반영합니다.
+  return [new Date().getFullYear()];
 }
 
 function toDateKey(locdate) {
@@ -131,3 +132,4 @@ main().catch(error => {
   console.error(`공휴일 동기화 실패: ${error.message}`);
   process.exit(1);
 });
+
