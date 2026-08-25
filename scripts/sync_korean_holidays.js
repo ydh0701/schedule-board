@@ -117,8 +117,9 @@ async function fetchYearHolidays(year, apiKey) {
   try {
     return await fetchHolidays(year, apiKey);
   } catch (error) {
-    if (year <= new Date().getFullYear()) throw error;
-    console.warn(`${year}년 공식 공휴일이 아직 제공되지 않아 예비 데이터로 반영합니다. (${error.message})`);
+    // API 키 승인 지연·잘못된 키·미공개 다음 연도 등으로 공식 조회가 실패해도
+    // 일정 화면의 휴일 계산은 멈추지 않도록 예비 데이터로 계속 진행합니다.
+    console.warn(`${year}년 공식 공휴일을 조회하지 못해 예비 데이터로 반영합니다. (${error.message})`);
     return fetchForecastHolidays(year);
   }
 }
