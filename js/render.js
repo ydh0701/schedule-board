@@ -1306,9 +1306,9 @@ function openAssignmentEditor(task){
   const candidates = [...new Map([
     ...(currentProfile?.active ? [[currentUser.uid, { id: currentUser.uid, ...currentProfile }]] : []),
     ...activeUsers().map(user => [user.id, user])
-  ]).values()].filter(user => isAdmin() || isPM() || isLead() ? (!isLead() || user.departmentId === currentProfile.departmentId) : true);
-  const assignee = selectField('새 주 담당자', candidates.map(user => [user.id, `${user.name || user.email} · ${departmentName(user.departmentId)}`]));
-  assignee.select.value = task.assigneeId || '';
+  ]).values()].filter(user => user.departmentId === task.departmentId);
+  const assignee = selectField('새 주 담당자', candidates.length ? candidates.map(user => [user.id, user.name || user.email]) : [['', '해당 부서에 배정 가능한 인원이 없습니다']]);
+  assignee.select.value = candidates.some(user => user.id === task.assigneeId) ? task.assigneeId : '';
   const result = el('div', 'assignment-assessment');
   const update = () => {
     const assessment = assignmentAssessment(assignee.select.value, task);
@@ -1333,6 +1333,7 @@ function openAssignmentEditor(task){
   form.onsubmit = async event => {
     event.preventDefault();
     try {
+      if(!assignee.select.value) throw new Error('해당 부서의 담당자를 선택해주세요.');
       const assessment = await reassignTask(task.id, assignee.select.value, force.checked);
       showToast(`${personName(assignee.select.value)}님에게 업무를 ${isOwnHandover ? '이관했습니다' : '배정했습니다'}.${assessment.level === 'danger' ? ' 과부하 경고가 기록되었습니다.' : ''}`);
       close();
