@@ -731,8 +731,6 @@ async function completeProject(projectId){
   if(!requirePermission(canManageProjects(), '프로젝트 완료 처리는 관리자 또는 PM만 실행할 수 있습니다.')) return;
   const project = projects.find(item => item.id === projectId);
   if(!project) throw new Error('프로젝트를 찾을 수 없습니다.');
-  const unfinished = tasksForProject(projectId).filter(task => task.status !== 'done' && !task.archivedAt);
-  if(unfinished.length) throw new Error(`미완료 업무가 ${unfinished.length}건 있습니다. 완료·이관·보관 처리 후 프로젝트를 완료해주세요.`);
   await db.collection('projects').doc(projectId).update({
     status: 'completed', completedAt: firebase.firestore.FieldValue.serverTimestamp(), completedBy: currentUser.uid,
     updatedAt: firebase.firestore.FieldValue.serverTimestamp(), updatedBy: currentUser.uid
