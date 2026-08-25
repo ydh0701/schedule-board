@@ -288,9 +288,11 @@ function renderProjects(main){
   ongoingHead.append(el('strong', '', '진행 프로젝트'), el('span', '', `${activeProjects.length}건`));
   const grid = el('div', 'proj-card-grid');
   activeProjects.sort((a, b) => String(a.code || a.name || '').localeCompare(String(b.code || b.name || ''), undefined, { numeric: true })).forEach(project => grid.appendChild(projectCard(project)));
+  const projectScroll = el('div', 'project-dashboard-project-scroll');
+  if(completed) projectScroll.appendChild(completed);
+  projectScroll.append(ongoingHead, grid);
   projectPanel.append(projectHead);
-  if(completed) projectPanel.appendChild(completed);
-  projectPanel.append(ongoingHead, grid);
+  projectPanel.appendChild(projectScroll);
   dashboard.append(calendarPanel, projectPanel);
   main.appendChild(dashboard);
 }
