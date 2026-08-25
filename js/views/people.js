@@ -4,15 +4,23 @@ function renderPeople(main){
   const scopeUsers = activeUsers().filter(user => isPM() || isAdmin() || user.departmentId === currentProfile?.departmentId);
   const groups = { ok: 0, warn: 0, danger: 0 };
   scopeUsers.forEach(user => { const level = userWorkloadSummary(user.id).assessment.level; groups[level] = (groups[level] || 0) + 1; });
-  const metrics = el('div', 'metric-grid'); metrics.append(metric('여유', groups.ok), metric('주의', groups.warn, 'warn'), metric('과부하', groups.danger, 'danger')); main.appendChild(metrics);
+  const layout = el('section', 'people-layout');
+  const sidebar = el('aside', 'people-summary-panel');
+  sidebar.appendChild(el('h2', '', '인력 요약'));
+  const summary = el('div', 'people-summary-list');
+  [[`전체 인원`, `${scopeUsers.length}명`, ''], ['여유 인력', `${groups.ok}명`, 'ok'], ['주의', `${groups.warn}명`, 'warn'], ['과부하', `${groups.danger}명`, 'danger']].forEach(([label, value, tone]) => {
+    const row = el('div', `people-summary-row ${tone}`); row.append(el('span', '', label), el('strong', '', value)); summary.appendChild(row);
+  });
+  sidebar.appendChild(summary);
   const toolbar = el('div', 'people-view-toolbar');
   [['department', '직군별'], ['risk', '위험 업무'], ['available', '가용 인력'], ['all', '전체 인력']].forEach(([id, label]) => toolbar.appendChild(button(label, peopleView === id ? 'primary tiny' : 'ghost tiny', () => { peopleView = id; rerender(); })));
-  main.appendChild(toolbar);
+  sidebar.appendChild(toolbar);
+  const content = el('section', 'people-content'); layout.append(sidebar, content); main.appendChild(layout);
   const visible = scopeUsers.filter(user => {
     const summary = userWorkloadSummary(user.id);
     return peopleView === 'risk' ? summary.riskCount > 0 || summary.assessment.weeklyLoad >= 80 : peopleView === 'available' ? summary.assessment.weeklyLoad < 80 : true;
   });
-  if(!scopeUsers.length) { main.appendChild(el('div', 'empty', '표시할 활성 인력이 없습니다.')); return; }
+  if(!scopeUsers.length) { content.appendChild(el('div', 'empty', '표시할 활성 인력이 없습니다.')); return; }
 
   if(peopleView === 'department') {
     const departmentOrder = ['development', 'ui', 'planning', 'qa', 'business', 'server', 'video', 'studio', 'pm'];
@@ -41,7 +49,7 @@ function renderPeople(main){
       });
       column.append(heading, cards); board.appendChild(column);
     });
-    main.appendChild(board);
+    content.appendChild(board);
     return;
   }
 
@@ -56,6 +64,5 @@ function renderPeople(main){
     const reason = el('p', 'foot-note', currentTasks.length ? `현재 업무 · ${currentTasks.slice(0, 2).map(task => `${task.title} (${fmtDate(task.dueDate)}까지)`).join(' · ')}` : '진행 중인 업무가 없습니다.');
     card.append(identity, personProjectBadges(user.id), workload, reason); list.appendChild(card);
   });
-  main.appendChild(list);
+  content.appendChild(list);
 }
-
