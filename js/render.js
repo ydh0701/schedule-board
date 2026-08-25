@@ -52,8 +52,8 @@ function renderPrimaryNavigation(){
   nav.innerHTML = '';
   if(!currentProfile) return;
   const entries = [{ id: 'my-work', label: '내 업무' }];
-  if(isLead() || isPM() || isAdmin()) entries.push({ id: 'team', label: '팀 현황' });
   entries.push({ id: 'projects', label: '프로젝트' });
+  if(isLead() || isPM() || isAdmin()) entries.push({ id: 'team', label: '팀 현황' });
   if(isLead() || isPM() || isAdmin()) entries.push({ id: 'people', label: '인력 현황' });
   entries.forEach(entry => nav.appendChild(button(entry.label, activeView === entry.id ? 'nav-link active' : 'nav-link', () => setView(entry.id))));
 }
@@ -136,6 +136,21 @@ function progressBlock(progress){
   return wrap;
 }
 
+function projectFinalReleaseDate(project){
+  const anchored = milestonesForProject(project.id).find(item => item.anchorKey === 'full_release' && item.dueDate);
+  if(anchored) return anchored.dueDate;
+  const releasePattern = /(완전판|정식|full).{0,12}(출시|런칭|release)|(출시|런칭|release).{0,12}(완전판|정식|full)/i;
+  const milestone = milestonesForProject(project.id).find(item => item.dueDate && releasePattern.test(String(item.title || '')));
+  if(milestone) return milestone.dueDate;
+  const releaseTask = tasksForProject(project.id).find(item => item.dueDate && releasePattern.test(String(item.title || '')));
+  return releaseTask?.dueDate || project.releaseDate || null;
+}
+
+function projectIsCompleted(project){
+  const releaseDate = projectFinalReleaseDate(project);
+  return project.status === 'completed' || Boolean(releaseDate && releaseDate < dateKey(todayDate()));
+}
+
 function projectCard(project){
   const list = tasksForProject(project.id);
   const done = list.filter(task => task.status === 'done').length;
@@ -149,7 +164,7 @@ function projectCard(project){
   card.onkeydown = event => { if(event.key === 'Enter' || event.key === ' ') open(); };
   const cardHead = el('div', 'project-card-head');
   const title = el('div', 'proj-card-code', project.code || project.name);
-  cardHead.append(title, project.status === 'completed' ? el('span', 'tag ok', '완료') : el('span', `tag ${healthClass(project.health)}`, healthLabel(project.health)));
+  cardHead.append(title, projectIsCompleted(project) ? el('span', 'tag ok', '완료') : el('span', `tag ${healthClass(project.health)}`, healthLabel(project.health)));
   card.append(cardHead);
   if(project.code) card.append(el('div', 'proj-card-name', project.name));
   const progressHead = el('div', 'proj-progress-head'); progressHead.append(el('span', '', '진행률'), el('strong', '', `${projectProgressValue}%`));
@@ -165,18 +180,22 @@ function projectCard(project){
   return card;
 }
 
-function metric(label, value, tone){ const node = el('div', `metric-card ${tone || ''}`); node.append(el('span', 'metric-label', label), el('strong', 'metric-value', String(value))); return node; }
+function metric(label, value, tone){ const node = el('div', `metric-card ${tone || ''}`); const valueNode = el('strong', `metric-value ${String(value).length > 11 ? 'metric-value-copy' : ''}`, String(value)); node.append(el('span', 'metric-label', label), valueNode); return node; }
 
 function renderProjects(main){
   if(selectedProjectId) {
     renderProjectDetail(main, projects.find(project => project.id === selectedProjectId));
     return;
   }
-  const activeProjects = projects.filter(project => project.status !== 'archived' && project.status !== 'completed');
-  const completedProjects = projects.filter(project => project.status === 'completed');
-  const atRisk = activeProjects.filter(project => ['at_risk', 'off_track'].includes(project.health)).length;
-  const overdue = activeTasks().filter(taskIsOverdue).length;
-  const metrics = el('div', 'metric-grid'); metrics.append(metric('진행 중 프로젝트', activeProjects.length), metric('완료 프로젝트', completedProjects.length), metric('지연 업무', overdue, overdue ? 'danger' : ''));
+  const activeProjects = projects.filter(project => project.status !== 'archived' && !projectIsCompleted(project));
+  const completedProjects = projects.filter(project => project.status !== 'archived' && projectIsCompleted(project));
+  const riskProjects = activeProjects.filter(project => ['at_risk', 'off_track'].includes(project.health) || tasksForProject(project.id).some(task => taskIsOverdue(task) || task.status === 'blocked' || !task.assigneeId));
+  const nextRelease = activeProjects.map(project => ({ project, date: projectFinalReleaseDate(project) })).filter(item => item.date && item.date >= dateKey(todayDate())).sort((a, b) => String(a.date).localeCompare(String(b.date)))[0];
+  const metrics = el('div', 'metric-grid'); metrics.append(
+    metric('주의 필요 프로젝트', riskProjects.length, riskProjects.length ? 'danger' : ''),
+    metric('다음 출시', nextRelease ? `${nextRelease.project.code || nextRelease.project.name} · ${fmtDate(nextRelease.date)}` : '등록된 출시일 없음'),
+    metric('진행 중 프로젝트', activeProjects.length)
+  );
   main.appendChild(metrics);
   if(canManageProjects()) {
     const actions = el('div', 'project-list-actions');
@@ -192,10 +211,10 @@ function renderProjects(main){
   main.appendChild(grid);
   if(completedProjects.length) {
     const completed = el('details', 'completed-project-group');
-    const summary = el('summary', ''); summary.append(el('strong', '', '완료 프로젝트'), el('span', '', `${completedProjects.length}건`));
+    const summary = el('summary', ''); summary.append(el('strong', '', '완료 프로젝트 보기'), el('span', '', `${completedProjects.length}건`));
     completed.appendChild(summary);
     const completedGrid = el('div', 'proj-card-grid completed-project-grid');
-    completedProjects.sort((a, b) => String(b.completedAt?.toDate?.() || b.completedAt || '').localeCompare(String(a.completedAt?.toDate?.() || a.completedAt || ''))).forEach(project => completedGrid.appendChild(projectCard(project)));
+    completedProjects.sort((a, b) => String(projectFinalReleaseDate(b) || '').localeCompare(String(projectFinalReleaseDate(a) || ''))).forEach(project => completedGrid.appendChild(projectCard(project)));
     completed.appendChild(completedGrid); main.appendChild(completed);
   }
 }
