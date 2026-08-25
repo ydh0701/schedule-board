@@ -42,8 +42,6 @@ const PROJECT_TASK_PHASES = [
   { id: 'detail_planning', title: '세부 기획' },
   { id: 'demo', title: '데모' },
   { id: 'full', title: '완전판' },
-  { id: 'field_visit', title: '현장 방문' },
-  { id: 'resource_review', title: '리소스 검수' },
   { id: 'other', title: '기타 업무' }
 ];
 const TEMPLATE_DEPARTMENTS = ['planning', 'ui', 'development', 'qa'];
@@ -245,8 +243,7 @@ function projectTaskPhase(task){
   const explicit = PROJECT_TASK_PHASES.find(phase => phase.id === legacyPhase);
   if(explicit) return explicit;
   const text = `${task?.taskGroup || ''} ${task?.title || ''}`.replace(/\s/g, '').toLowerCase();
-  if(/현장.?방문|로케이션/.test(text)) return PROJECT_TASK_PHASES.find(phase => phase.id === 'field_visit');
-  if(/리소스|자료.?검수|에셋.?검수/.test(text)) return PROJECT_TASK_PHASES.find(phase => phase.id === 'resource_review');
+  if(/현장.?방문|로케이션|리소스|자료.?검수|에셋.?검수/.test(text)) return PROJECT_TASK_PHASES.find(phase => phase.id === 'other');
   if(/데모/.test(text) || ['demo_build', 'demo_release'].includes(task?.scheduleRule?.anchorKey)) return PROJECT_TASK_PHASES.find(phase => phase.id === 'demo');
   if(/완전판|정식/.test(text) || ['full_build', 'full_release'].includes(task?.scheduleRule?.anchorKey)) return PROJECT_TASK_PHASES.find(phase => phase.id === 'full');
   if(/아이디어|브레인스토밍|컨셉/.test(text)) return PROJECT_TASK_PHASES.find(phase => phase.id === 'idea');
