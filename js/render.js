@@ -568,35 +568,36 @@ function renderProjectGroupedWork(main, allTasks, options = {}){
   const draw = () => {
     tabs.innerHTML = ''; panel.innerHTML = '';
     const byProject = new Map();
-    // 개인 업무는 언제나 첫 탭으로 남깁니다.
-    byProject.set('__personal__', []);
-    allTasks.forEach(task => {
-      const key = task.projectId || '__personal__';
+    // 개인 업무는 달력·내 업무 요약에서만 다루고, 프로젝트 영역에는 표시하지 않습니다.
+    allTasks.filter(task => task.projectId).forEach(task => {
+      const key = task.projectId;
       if(!byProject.has(key)) byProject.set(key, []);
       byProject.get(key).push(task);
     });
     // 프로젝트 자체가 완료되었거나, 현재 사용자에게 남은 업무가 전혀 없으면
     // 내 업무 화면에서는 완료 프로젝트로 취급합니다. (기존 이관 프로젝트 호환)
     const isCompletedWorkProject = (projectId, projectTasks) => {
-      if(projectId === '__personal__') return false;
       const project = projects.find(item => item.id === projectId);
       return project?.status === 'completed' || (projectTasks.length > 0 && projectTasks.every(task => task.status === 'done'));
     };
     const entries = [...byProject.entries()]
-      .filter(([projectId, projectTasks]) => projectId === '__personal__' || showCompletedProjects || !isCompletedWorkProject(projectId, projectTasks))
+      .filter(([projectId, projectTasks]) => showCompletedProjects || !isCompletedWorkProject(projectId, projectTasks))
       .sort(([leftId, leftTasks], [rightId, rightTasks]) => {
-      if(leftId === '__personal__') return -1;
-      if(rightId === '__personal__') return 1;
       const leftActive = leftTasks.filter(task => task.status !== 'done');
       const rightActive = rightTasks.filter(task => task.status !== 'done');
       const leftDate = (leftActive.length ? leftActive : leftTasks).map(task => task.dueDate || task.completedAt || '9999-12-31').sort()[0];
       const rightDate = (rightActive.length ? rightActive : rightTasks).map(task => task.dueDate || task.completedAt || '9999-12-31').sort()[0];
       return String(leftDate).localeCompare(String(rightDate));
     });
-    if(!entries.some(([key]) => key === selectedProjectKey)) selectedProjectKey = (entries.find(([key, tasks]) => key !== '__personal__' && tasks.some(task => task.status !== 'done' && taskCoversDate(task, today))) || entries.find(([, tasks]) => tasks.some(task => task.status !== 'done')) || entries[0])[0];
+    if(!entries.length) {
+      tabs.appendChild(el('span', 'foot-note', '표시할 프로젝트 업무가 없습니다.'));
+      panel.appendChild(el('div', 'empty compact-empty', '프로젝트에 연결된 업무를 추가하면 이곳에 표시됩니다.'));
+      return;
+    }
+    if(!entries.some(([key]) => key === selectedProjectKey)) selectedProjectKey = (entries.find(([, tasks]) => tasks.some(task => task.status !== 'done' && taskCoversDate(task, today))) || entries.find(([, tasks]) => tasks.some(task => task.status !== 'done')) || entries[0])[0];
     entries.forEach(([projectId, tasks]) => {
       const project = projects.find(item => item.id === projectId);
-      const code = project?.code || project?.name || '개인 업무';
+      const code = project?.code || project?.name || '프로젝트';
       const activeCount = tasks.filter(task => task.status !== 'done').length;
       const todayCount = tasks.filter(task => task.status !== 'done' && taskCoversDate(task, today)).length;
       const tab = button('', projectId === selectedProjectKey ? 'primary tiny' : 'ghost tiny', () => { selectedProjectKey = projectId; draw(); });
@@ -611,9 +612,9 @@ function renderProjectGroupedWork(main, allTasks, options = {}){
     const projectTasks = tasks.filter(task => task.status !== 'done').sort((a, b) => String(a.dueDate || '9999').localeCompare(String(b.dueDate || '9999')));
     const completedTasks = tasks.filter(task => task.status === 'done').sort((a, b) => String(b.completedAt || b.dueDate || '').localeCompare(String(a.completedAt || a.dueDate || '')));
     const panelHead = el('div', 'work-project-panel-head');
-    const name = project ? `${project.code || project.name}${project.name && project.code ? ` · ${project.name}` : ''}` : '개인 업무';
+    const name = project ? `${project.code || project.name}${project.name && project.code ? ` · ${project.name}` : ''}` : '프로젝트';
     const activeCount = projectTasks.filter(task => task.status !== 'done').length;
-    const allProjectTasks = allTasks.filter(task => (task.projectId || '__personal__') === projectId);
+    const allProjectTasks = allTasks.filter(task => task.projectId === projectId);
     const completedCount = allProjectTasks.filter(task => task.status === 'done').length;
     const progress = allProjectTasks.length ? Math.round(allProjectTasks.reduce((sum, task) => sum + Number(task.progress || 0), 0) / allProjectTasks.length) : 0;
     const panelCopy = el('div', '');
