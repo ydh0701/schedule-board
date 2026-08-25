@@ -5,7 +5,7 @@ const path = require('path');
 const { execFileSync } = require('child_process');
 
 const root = path.resolve(__dirname, '..');
-const required = ['index.html', 'js/state.js', 'js/render.js', 'js/main.js', 'css/style.css'];
+const coreRequired = ['index.html'];
 const brokenMarkers = ['Warning: truncated output', 'Total output lines:', 'Script running with cell ID'];
 let failed = false;
 
@@ -23,6 +23,10 @@ function read(relativePath) {
   return fs.readFileSync(fullPath, 'utf8');
 }
 
+const html = read('index.html');
+const referencedAssets = [...html.matchAll(/(?:src|href)="((?:js|css)\/[^"?]+)(?:\?[^\"]*)?"/g)].map(match => match[1]);
+const required = [...new Set([...coreRequired, ...referencedAssets])];
+
 for (const relativePath of required) {
   const content = read(relativePath);
   if (!content) continue;
@@ -35,11 +39,6 @@ for (const relativePath of required) {
       fail(`${relativePath} 문법 검사 실패: ${error.stderr?.toString().trim() || error.message}`);
     }
   }
-}
-
-const html = read('index.html');
-for (const asset of [...html.matchAll(/(?:src|href)="((?:js|css)\/[^"?]+)(?:\?[^\"]*)?"/g)].map(match => match[1])) {
-  if (!fs.existsSync(path.join(root, asset))) fail(`index.html이 참조하지만 없는 자산: ${asset}`);
 }
 
 if (!failed) {
