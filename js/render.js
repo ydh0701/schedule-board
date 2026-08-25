@@ -189,14 +189,6 @@ function renderProjects(main){
   }
   const activeProjects = projects.filter(project => project.status !== 'archived' && !projectIsCompleted(project));
   const completedProjects = projects.filter(project => project.status !== 'archived' && projectIsCompleted(project));
-  const riskProjects = activeProjects.filter(project => ['at_risk', 'off_track'].includes(project.health) || tasksForProject(project.id).some(task => taskIsOverdue(task) || task.status === 'blocked' || !task.assigneeId));
-  const nextRelease = activeProjects.map(project => ({ project, date: projectFinalReleaseDate(project) })).filter(item => item.date && item.date >= dateKey(todayDate())).sort((a, b) => String(a.date).localeCompare(String(b.date)))[0];
-  const metrics = el('div', 'metric-grid'); metrics.append(
-    metric('주의 필요 프로젝트', riskProjects.length, riskProjects.length ? 'danger' : ''),
-    metric('다음 출시', nextRelease ? `${nextRelease.project.code || nextRelease.project.name} · ${fmtDate(nextRelease.date)}` : '등록된 출시일 없음'),
-    metric('진행 중 프로젝트', activeProjects.length)
-  );
-  main.appendChild(metrics);
   if(canManageProjects()) {
     const actions = el('div', 'project-list-actions');
     actions.append(button('엑셀 이관', 'tiny ghost', openImportEditor), button('+ 프로젝트 추가', 'primary', () => openProjectCreator()));
@@ -206,23 +198,28 @@ function renderProjects(main){
     main.appendChild(el('div', 'empty', '등록된 프로젝트가 없습니다. 관리자가 첫 프로젝트를 만들어주세요.'));
     return;
   }
+  let completed = null;
   if(completedProjects.length) {
-    const completed = el('details', 'completed-project-group');
+    completed = el('details', 'completed-project-group');
     const summary = el('summary', ''); summary.append(el('strong', '', '완료 프로젝트 보기'), el('span', '', `${completedProjects.length}건`));
     completed.appendChild(summary);
     const completedGrid = el('div', 'proj-card-grid completed-project-grid');
     completedProjects.sort((a, b) => String(projectFinalReleaseDate(b) || '').localeCompare(String(projectFinalReleaseDate(a) || ''))).forEach(project => completedGrid.appendChild(projectCard(project)));
-    completed.appendChild(completedGrid); main.appendChild(completed);
+    completed.appendChild(completedGrid);
   }
   const dashboard = el('div', 'project-dashboard-grid');
   const calendarPanel = el('section', 'project-milestone-panel');
   renderProjectMilestoneCalendar(calendarPanel, activeProjects);
   const projectPanel = el('section', 'project-dashboard-projects');
   const projectHead = el('div', 'project-dashboard-projects-head');
-  projectHead.append(el('h2', '', '진행 프로젝트'), el('span', 'foot-note', `${activeProjects.length}건`));
+  projectHead.append(el('h2', '', '프로젝트 현황'));
+  const ongoingHead = el('div', 'project-status-subhead');
+  ongoingHead.append(el('strong', '', '진행 프로젝트'), el('span', '', `${activeProjects.length}건`));
   const grid = el('div', 'proj-card-grid');
   activeProjects.forEach(project => grid.appendChild(projectCard(project)));
-  projectPanel.append(projectHead, grid);
+  projectPanel.append(projectHead);
+  if(completed) projectPanel.appendChild(completed);
+  projectPanel.append(ongoingHead, grid);
   dashboard.append(calendarPanel, projectPanel);
   main.appendChild(dashboard);
 }
@@ -262,10 +259,10 @@ function renderProjectMilestoneCalendar(panel, activeProjects){
   const year = projectPortfolioCursor.getFullYear(), month = projectPortfolioCursor.getMonth();
   const firstDay = new Date(year, month, 1).getDay(), lastDate = new Date(year, month + 1, 0).getDate();
   const entries = activeProjects.flatMap(projectKeyMilestones);
-  const head = el('div', 'project-milestone-heading');
+  const head = el('div', 'project-milestone-month-bar');
   const controls = el('div', 'availability-controls');
   controls.append(button('◀', 'tiny ghost', () => { projectPortfolioCursor.setMonth(projectPortfolioCursor.getMonth() - 1); rerender(); }), el('strong', '', `${year}년 ${month + 1}월`), button('▶', 'tiny ghost', () => { projectPortfolioCursor.setMonth(projectPortfolioCursor.getMonth() + 1); rerender(); }));
-  head.append(el('h2', '', '프로젝트 주요 일정'), controls); panel.appendChild(head);
+  head.appendChild(controls); panel.appendChild(head);
   const grid = el('div', 'project-milestone-calendar');
   ['일', '월', '화', '수', '목', '금', '토'].forEach(label => grid.appendChild(el('div', 'project-milestone-dow', label)));
   for(let index = 0; index < firstDay; index++) grid.appendChild(el('div', 'project-milestone-cell muted-cell'));
