@@ -191,3 +191,71 @@
   .project-task-layout { grid-template-columns: 1fr; }
   .project-task-board, .people-department-board { grid-template-columns: 1fr; }
 }
+
+/* Design system refresh: 높은 대비와 낮은 시각적 잡음으로 모든 업무 화면을 통일합니다. */
+:root {
+  --bg: #f6f7fb;
+  --surface: #ffffff;
+  --surface-soft: #f3f5f9;
+  --surface-strong: #e8edf5;
+  --text: #172033;
+  --muted: #56627a;
+  --line: #dbe2ec;
+  --accent: #4f46e5;
+  --accent-strong: #4338ca;
+  --accent-soft: #eeefff;
+  --ok: #087a58;
+  --ok-soft: #e7f7f0;
+  --warn: #9a6100;
+  --warn-soft: #fff4dc;
+  --danger: #bd3944;
+  --danger-soft: #ffebed;
+  --radius: 12px;
+  --shadow: 0 1px 2px rgba(20, 31, 51, .05), 0 10px 28px rgba(20, 31, 51, .055);
+}
+
+body { color: var(--text); font-family: var(--font-body); line-height: 1.45; text-rendering: optimizeLegibility; }
+button, input, select, textarea { font: inherit; }
+button { font-weight: 700; letter-spacing: -.012em; }
+button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, summary:focus-visible { outline: 3px solid color-mix(in srgb, var(--accent) 28%, transparent); outline-offset: 2px; }
+input:focus, select:focus, textarea:focus { border-color: var(--accent); background: var(--surface); box-shadow: 0 0 0 3px var(--accent-soft); outline: 0; }
+
+.topbar { border-color: color-mix(in srgb, var(--line) 92%, transparent); border-radius: 14px; box-shadow: 0 1px 2px rgba(20, 31, 51, .04), 0 8px 22px rgba(20, 31, 51, .045); }
+.topbar h1 { font-size: 18px; font-weight: 750; }
+.nav-link { font-weight: 700; }
+.nav-link.active::after { height: 3px; }
+
+.panel, .project-milestone-panel, .project-dashboard-projects, .work-availability-panel, .work-dashboard-projects, .people-department-column, .people-summary-panel { border-color: var(--line); box-shadow: var(--shadow); }
+.project-dashboard-projects, .work-dashboard-projects, .project-milestone-panel, .work-availability-panel { border-radius: 12px; }
+.section-title-row h2, .project-dashboard-projects-head h2, .availability-heading h3, .work-section-head h3 { letter-spacing: -.04em; }
+
+.primary { background: var(--accent); box-shadow: 0 4px 10px color-mix(in srgb, var(--accent) 22%, transparent); }
+.primary:hover:not(:disabled) { background: var(--accent-strong); transform: translateY(-1px); }
+.ghost, .tiny.ghost { border-color: var(--line); background: var(--surface); color: var(--muted); box-shadow: none; }
+.ghost:hover:not(:disabled), .tiny.ghost:hover:not(:disabled) { border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); background: var(--accent-soft); color: var(--accent); transform: none; }
+.tag { font-weight: 800; }
+
+.proj-card, .task-row, .people-mini-card, .project-task-board-card, .project-day-task, .availability-day-task { border-color: var(--line); box-shadow: none; }
+.proj-card:hover, .task-row:hover, .people-mini-card:hover, .project-task-board-card:hover { border-color: color-mix(in srgb, var(--accent) 42%, var(--line)); box-shadow: 0 6px 16px rgba(32, 43, 72, .07); }
+.proj-card { border-radius: 12px; }
+.task-row { border-radius: 9px; }
+.task-meta, .project-task-board-card-meta, .people-mini-meta { color: var(--muted); }
+
+.work-summary-bar, .availability-month-summary { border-color: var(--line); box-shadow: 0 1px 2px rgba(20, 31, 51, .035); }
+.work-summary-item { padding-top: 10px; padding-bottom: 10px; }
+.work-summary-item > span, .metric-label { color: var(--muted); font-weight: 650; }
+.work-summary-item strong, .metric-value { color: var(--text); }
+
+.project-month-calendar, .project-milestone-calendar, .availability-calendar, .project-task-calendar-grid { border-color: var(--line); background: var(--line); }
+.project-month-dow, .project-milestone-dow, .availability-dow, .project-task-calendar-dow { color: var(--muted); font-weight: 800; }
+.project-month-cell.today, .project-milestone-cell.today, .availability-cell.today, .project-task-calendar-cell.today { box-shadow: inset 0 3px var(--accent); }
+
+th { color: var(--muted); font-weight: 800; }
+tbody tr:hover { background: color-mix(in srgb, var(--accent-soft) 42%, var(--surface)); }
+.modal { border-radius: 16px; box-shadow: 0 24px 60px rgba(15, 23, 42, .2); }
+
+@media (max-width: 720px) {
+  .topbar { border-radius: 11px; }
+  .work-summary-bar { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .work-summary-item.today-work { grid-column: 1 / -1; border-right: 0; border-bottom: 1px solid var(--line); }
+}
