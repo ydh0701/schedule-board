@@ -2135,6 +2135,7 @@ function rerender(){
   const main = document.getElementById('main');
   if(!main || !authResolved) return;
   try {
+    if(currentUser&&currentProfile&&isApproved()&&typeof window.prepareMilestoneNavigation==='function')window.prepareMilestoneNavigation();
     main.innerHTML = '';
     renderAccountActions();
     renderPrimaryNavigation();
@@ -2156,6 +2157,8 @@ function rerender(){
     const panel = el('section', 'panel render-error');
     panel.append(el('p', 'eyebrow', 'SCREEN ERROR'), el('h2', '', '화면을 표시하지 못했습니다.'), el('p', 'sub', '오류 정보를 확인해 수정 중입니다.'), el('code', 'render-error-code', error?.message || String(error)));
     main.appendChild(panel);
+  } finally {
+    if(currentUser&&currentProfile&&isApproved()&&typeof window.syncMilestoneNavigation==='function')window.syncMilestoneNavigation();
   }
 }
 

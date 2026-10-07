@@ -12,7 +12,7 @@ authResolved=true;
 workDataReadiness={tasks:true,holidays:true};
 function testIdentity(id){
   currentUser={uid:id};currentProfile=visibleUsers.find(user=>user.id===id);
-  activeView='projects';selectedProjectId=null;rerender();
+  activeView='home';selectedProjectId=null;rerender();
 }
 window.refreshTestData=()=>{
   const load=collection=>[...window.testStore.entries()].filter(([key])=>key.split('/').length===2&&key.startsWith(collection+'/')).map(([key,value])=>({...value,id:key.split('/')[1]}));
@@ -22,4 +22,4 @@ window.refreshTestData=()=>{
 };
 document.getElementById('testIdentity').onchange=event=>testIdentity(event.target.value);
 document.getElementById('testCreate').onclick=openProjectCreator;
-testIdentity('admin');window.refreshTestData();
+window.refreshTestData();testIdentity('admin');
