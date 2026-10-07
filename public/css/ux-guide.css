@@ -54,7 +54,7 @@ body.milestone-ui .app{width:100%;margin:0;padding:0;display:grid;grid-template-
 .milestone-ui .guide-project-card-head{display:flex;align-items:center;border-bottom:var(--ui-border-module) solid var(--line);}
 .milestone-ui .guide-project-card-head>.guide-project-toggle{flex:1;min-width:0;width:auto;}
 .milestone-ui .guide-project-detail-link{flex-shrink:0;white-space:nowrap;margin-right:16px;}
-.milestone-ui .guide-project-detail-tools{display:flex;flex-direction:column;align-items:stretch;gap:8px;}
+.milestone-ui .guide-project-detail-tools{display:flex;flex-direction:row;align-items:center;gap:8px;}
 .milestone-ui .guide-project-detail-tools>.guide-period{justify-content:flex-end;}
 .milestone-ui .guide-project-detail-heading{flex-wrap:wrap;gap:10px;margin-top:10px;}
 .milestone-ui .guide-project-toggle{display:flex;align-items:center;width:100%;padding:17px 20px;gap:14px;background:var(--surface)!important;color:var(--text)!important;border:0;text-align:left;}
@@ -82,9 +82,9 @@ body.milestone-ui .app{width:100%;margin:0;padding:0;display:grid;grid-template-
 .milestone-ui .guide-completed summary{cursor:pointer;color:var(--muted);padding:12px 0;}.milestone-ui .guide-completed article{margin:12px 0;}
 .milestone-ui .guide-detail-heading{display:flex;align-items:center;gap:12px;margin:0 0 16px;}.milestone-ui .guide-detail-heading h2{font-size:var(--ui-font-section-title);margin:0;}.milestone-ui .guide-detail-heading button{margin-left:auto;}
 .milestone-ui .guide-project-code{font-size:var(--ui-font-caption);color:var(--muted);}
-.milestone-ui .guide-detail-tools{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:16px;}
+.milestone-ui .guide-detail-tools{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-bottom:16px;}
 .milestone-ui .guide-detail-filters,.milestone-ui .guide-period{display:flex;flex-wrap:wrap;align-items:center;gap:8px;}
-.milestone-ui .guide-detail-filters{flex:1 1 100%;}.milestone-ui .guide-period{margin-left:auto;}
+.milestone-ui .guide-detail-filters{flex:1 1 auto;}.milestone-ui .guide-period{margin-left:auto;}
 .milestone-ui .guide-project-detail-tools .guide-search{flex:1 1 180px;min-width:160px;max-width:240px;}
 .milestone-ui .guide-filter{flex:0 1 auto;min-width:95px;}.milestone-ui .guide-filter>span{position:absolute;clip-path:inset(50%);height:1px;width:1px;overflow:hidden;}
 .milestone-ui .guide-filter select{max-width:190px;padding:7px 10px;min-height:36px;font-size:var(--ui-font-caption);}
@@ -445,3 +445,35 @@ body.milestone-ui{--sidebar-rail:72px;}
 .milestone-ui .sidebar-group>summary:after{grid-column:2;grid-row:1;justify-self:end;margin:0 16px 0 0;}
 .milestone-ui .sidebar-group>summary>span{padding-right:32px;}
 @media(max-width:600px){body.milestone-ui{--sidebar-rail:64px;}body.milestone-ui.sidebar-collapsed{--sidebar-width:64px;}.milestone-ui .sidebar-section{visibility:hidden;}}
+/* Unified schedule controls and date headers, approved 2026-10-07. */
+.milestone-ui .guide-detail-tools .guide-detail-filters{flex:0 1 auto;}
+.milestone-ui .guide-detail-tools .guide-search,.milestone-ui .guide-team-tools .guide-search{min-width:140px;width:clamp(140px,12vw,220px);}
+.milestone-ui .guide-period{flex-wrap:nowrap;white-space:nowrap;}
+.milestone-ui .guide-period-label{white-space:nowrap;}
+.milestone-ui .guide-timeline-bar{color:var(--text)!important;text-align:left;padding:0 4px;}
+.milestone-ui .guide-gantt-head .guide-gantt-info{align-items:end;padding-bottom:12px;}
+.milestone-ui .guide-team-gantt .guide-gantt-head .guide-gantt-info{grid-template-columns:1fr;}
+.milestone-ui .guide-gantt-dates{grid-template-rows:40px 42px;}
+.milestone-ui .guide-gantt-days .sunday small{color:inherit;}
+.milestone-ui .guide-gantt-days .saturday small{color:inherit;}
+.milestone-ui .guide-today-marker{bottom:0;line-height:14px;}
+.milestone-ui .guide-dashboard-week,.milestone-ui .guide-dashboard-week:has(.guide-dashboard-more){height:var(--calendar-week-height,80px);min-height:0;overflow:hidden;}
+.milestone-ui .guide-dashboard-more{position:absolute;bottom:1px;left:4px;grid-row:auto;border:0;background:var(--surface);color:var(--accent);height:12px;min-height:12px;line-height:12px;padding:0 3px;pointer-events:auto;font-size:var(--ui-font-micro);}
+.milestone-ui .guide-dashboard-event[hidden],.milestone-ui .guide-dashboard-more[hidden]{display:none;}
+.milestone-ui .guide-dashboard-events{height:100%;box-sizing:border-box;align-content:start;}
+.milestone-ui .guide-dashboard-sidebar{overflow:auto;min-height:0;}
+.milestone-ui .guide-dashboard-sidebar>.guide-dashboard-major{display:flex;flex-direction:column;max-height:42%;flex-shrink:0;}
+.milestone-ui .guide-dashboard-major .guide-dashboard-scroll{flex:1;min-height:0;}
+.milestone-ui .guide-dashboard-sidebar>.guide-dashboard-panel:not(.guide-dashboard-major):not(.guide-dashboard-projects){display:flex;flex-direction:column;flex:1;min-height:180px;}
+.milestone-ui .guide-dashboard-work-scroll{flex:1;min-height:0;}
+.milestone-ui .guide-dashboard-sidebar .guide-dashboard-panel-head,.milestone-ui .guide-dashboard-major>h2,.milestone-ui .guide-dashboard-major-footer,.milestone-ui .guide-dashboard-undated,.milestone-ui .guide-dashboard-projects{flex-shrink:0;}
+.milestone-ui .guide-dashboard-undated[open]{max-height:45%;overflow:auto;}
+.milestone-ui .guide-dashboard-timeline{min-height:0;padding-bottom:12px;}
+.milestone-ui .guide-dashboard-timeline-markers{height:34px;min-height:34px;}
+.milestone-ui .guide-dashboard-date-marker{top:3px;min-height:24px;max-height:24px;font-size:var(--ui-font-caption);display:flex;gap:4px;}
+.milestone-ui .guide-dashboard-date-marker>span{min-width:0;overflow:hidden;text-overflow:ellipsis;}
+.milestone-ui .guide-dashboard-date-marker>b{flex-shrink:0;}
+.milestone-ui .guide-dashboard-timeline-months span,.milestone-ui .guide-dashboard-marker-empty{font-size:var(--ui-font-caption);}
+.milestone-ui .guide-dashboard-project-period strong,.milestone-ui .guide-dashboard-short-label strong{font-size:var(--ui-font-body);}
+.milestone-ui .guide-dashboard-project-period small,.milestone-ui .guide-dashboard-short-label small{font-size:var(--ui-font-caption);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+@media(max-width:600px){.milestone-ui .guide-dashboard-sidebar{height:auto!important;overflow:visible;}.milestone-ui .guide-dashboard-sidebar>.guide-dashboard-major{max-height:none;}.milestone-ui .guide-period{flex-wrap:wrap;}.milestone-ui .guide-period-label{width:auto;}}

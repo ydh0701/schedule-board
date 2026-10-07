@@ -62,8 +62,19 @@ function guideFitScrollAreas(){
   document.querySelectorAll('#main .guide-dashboard-calendar').forEach(target=>{
     const weeks=target.querySelectorAll('.guide-dashboard-week').length;if(!weeks)return;
     const header=target.querySelector('.guide-dashboard-weekdays').getBoundingClientRect().height;
-    const available=window.innerHeight-target.getBoundingClientRect().top-window.scrollY-header-64;
-    target.style.setProperty('--calendar-week-height',`${Math.max(80,available/weeks)}px`);
+    const available=window.innerHeight-target.getBoundingClientRect().top-window.scrollY-header-40;
+    const height=Math.max(56,Math.floor(available/weeks));
+    target.style.setProperty('--calendar-week-height',`${height}px`);
+    target.querySelectorAll('.guide-dashboard-week').forEach(row=>{
+      const capacity=Math.max(0,Math.min(3,Math.floor((height-38)/(target.classList.contains('show-dates')?49:36))));
+      const bars=[...row.querySelectorAll('.guide-dashboard-event')];let hidden=0;
+      bars.forEach(bar=>{bar.hidden=Number(bar.style.gridRow)>capacity;if(bar.hidden)hidden++;});
+      const more=row.querySelector('.guide-dashboard-more');if(more){more.hidden=!hidden;more.textContent=`+${hidden}건 더 보기`;}
+    });
+  });
+  document.querySelectorAll('#main .guide-dashboard-layout:not(.guide-lead-dashboard) .guide-dashboard-sidebar').forEach(sidebar=>{
+    if(window.innerWidth<=600){sidebar.style.removeProperty('height');return;}
+    sidebar.style.height=`${Math.max(300,window.innerHeight-sidebar.getBoundingClientRect().top-window.scrollY-40)}px`;
   });
 }
 /* Tool dialogs float over content instead of inserting rows above the calendar. */
@@ -80,4 +91,5 @@ if(typeof document!=='undefined')document.addEventListener('DOMContentLoaded',()
   const schedule=()=>{if(scheduled)return;scheduled=true;requestAnimationFrame(()=>{scheduled=false;guideFitScrollAreas();});};
   new MutationObserver(schedule).observe(main,{childList:true,subtree:true});
   window.addEventListener('resize',schedule);schedule();
+  document.fonts?.ready.then(schedule);
 });

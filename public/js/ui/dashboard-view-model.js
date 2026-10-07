@@ -6,11 +6,11 @@
     statuses:[['all','완료 포함'],['active','미완료'],['done','완료']],
     sorts:[['start','시작일순'],['due','종료일순'],['title','이름순']],
     fields:[['project','프로젝트명'],['title','일정명'],['dates','날짜']],
-    timelineMonths:16,timelineMoveMonths:6,timelineInlineLabelMinPx:140,timelineMarkerLabelPx:150
+    timelineMonths:3,timelineMoveMonths:3,timelineInlineLabelMinPx:140,timelineMarkerLabelPx:230
   };
   function majorDateMarkers(events,startDate,endDate){
     const groups=new Map(),start=Date.parse(startDate+'T00:00:00Z'),length=Date.parse(endDate+'T00:00:00Z')+86400000-start;
-    events.filter(event=>(event.kind!=='task'||event.task?.datePolicy==='anchor')&&event.dueDate>=startDate&&event.dueDate<=endDate).forEach(event=>{
+    events.filter(event=>event.kind!=='task'&&event.dueDate>=startDate&&event.dueDate<=endDate).forEach(event=>{
       if(!groups.has(event.dueDate))groups.set(event.dueDate,[]);groups.get(event.dueDate).push(event);
     });
     return [...groups].sort(([a],[b])=>a.localeCompare(b)).map(([date,items])=>({date,events:items,left:(Date.parse(date+'T00:00:00Z')-start)/length*100}));
@@ -21,6 +21,15 @@
       let lane=slots.findIndex(end=>end<=left);if(lane===-1)lane=slots.length;slots[lane]=left+size;
       return {...marker,labelLeft:left,lane};
     });
+  }
+  // Adjacent labels share one clickable group; every underlying event is retained.
+  function markerGroups(markers,width,labelWidth=VIEW_OPTIONS.timelineMarkerLabelPx){
+    const groups=[];
+    markers.forEach(marker=>{
+      const left=Math.min(Math.max(marker.left/100*width,0),Math.max(width-labelWidth,0)),last=groups.at(-1);
+      if(last && left<last.labelLeft+Math.min(labelWidth,width)+8){last.events.push(...marker.events);last.dates.push(marker.date);}
+      else groups.push({...marker,labelLeft:left,events:[...marker.events],dates:[marker.date]});
+    });return groups;
   }
   function eventStatus(event){return event.task?.status||event.source?.status||'todo';}
   function upcomingMajorEvents(events,today){
@@ -141,6 +150,6 @@
     return [['overdue','지연 업무'],['review','일정 변경 확인 필요'],['undated','날짜 미정 업무']]
       .map(([id,label])=>({id,label,tasks:issues[id]||[]})).filter(item=>item.tasks.length);
   }
-  const api={DISPLAY_POLICY,VIEW_OPTIONS,summary,participation,events,calendarWeeks,completionDate,shortDates,filterEvents,timeline,eventStatus,upcomingMajorEvents,personalMajorCandidates,selectedMajorTasks,readMajorSelection,writeMajorSelection,majorDateMarkers,markerLayout,teamOverview,teamIssueItems};
+  const api={DISPLAY_POLICY,VIEW_OPTIONS,summary,participation,events,calendarWeeks,completionDate,shortDates,filterEvents,timeline,eventStatus,upcomingMajorEvents,personalMajorCandidates,selectedMajorTasks,readMajorSelection,writeMajorSelection,majorDateMarkers,markerLayout,markerGroups,teamOverview,teamIssueItems};
   if(typeof module==='object'&&module.exports) module.exports=api;else root.MilestoneDashboardModel=api;
 })(typeof window!=='undefined'?window:globalThis);

@@ -37,8 +37,8 @@
       return {...group,scheduled,undated,expanded:full,visible:full?scheduled:scheduled.slice(0,DISPLAY_POLICY.previewLimit)};
     }).sort((a,b)=>String(a.project?.code||a.project?.name).localeCompare(String(b.project?.code||b.project?.name),undefined,{numeric:true}) || a.platform.localeCompare(b.platform));
   }
-  function syncToday(state,today,monday){
-    if(state.today!==today && state.followToday!==false) state.start=monday;
+  function syncToday(state,today){
+    if(!state.start || (state.today!==today && state.followToday!==false)) state.start=today;
     state.today=today;return state;
   }
   const api={DISPLAY_POLICY,assigned,viewers,personalTasks,groups,hasSchedule,syncToday};

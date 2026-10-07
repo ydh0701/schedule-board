@@ -67,8 +67,8 @@
     const format=value=>(showYear?value:value.slice(5)).replaceAll('-','.');
     return start===end?format(start):`${format(start)} ~ ${format(end)}`;
   }
-  function syncToday(state,today,monday){
-    if(!state.start || (state.today!==today && state.followToday!==false)) state.start=monday;
+  function syncToday(state,today){
+    if(!state.start || (state.today!==today && state.followToday!==false)) state.start=today;
     state.today=today;
     return state;
   }

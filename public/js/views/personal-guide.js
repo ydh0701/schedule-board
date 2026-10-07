@@ -38,7 +38,7 @@ function guideProjectColorScope(order=[],registry=guideProjectColorRegistry()){
 }
 function guidePersonalState(userId){
   if(!guidePersonalView.states.has(userId)) guidePersonalView.states.set(userId,{project:'',platform:'',status:'active',query:'',weeks:MilestonePersonalModel.DISPLAY_POLICY.defaultWeeks,expanded:new Set(),closed:new Set(),followToday:true});
-  return MilestonePersonalModel.syncToday(guidePersonalView.states.get(userId),dateKey(todayDate()),dateKey(mondayOf(todayDate())));
+  return MilestonePersonalModel.syncToday(guidePersonalView.states.get(userId),dateKey(todayDate()));
 }
 function renderGuidePersonal(main){
   const allowed=MilestonePersonalModel.viewers(activeUsers(),{...currentProfile,id:currentUser.uid},{all:isAdmin()||isPM(),team:isLead()});
@@ -56,7 +56,7 @@ function renderGuidePersonal(main){
     guideSelect('일정 상태',[['active','진행 중 · 예정'],['review','일정 재확인'],['all','완료 포함']],state.status,value=>{state.status=value;refresh();}),
     guideSearch('업무 검색',state.query,value=>{state.query=value;draw();}));
   function move(days){const date=localDate(state.start);date.setDate(date.getDate()+days);state.start=dateKey(date);state.followToday=false;refresh();}
-  period.append(button('‹ 이전','ghost tiny',()=>move(-state.weeks*7)),button('오늘','ghost tiny',()=>{state.followToday=true;state.start=dateKey(mondayOf(todayDate()));refresh();}),button('다음 ›','ghost tiny',()=>move(state.weeks*7)),
+  period.append(button('‹ 이전','ghost tiny',()=>move(-state.weeks*7)),button('오늘','ghost tiny',()=>{state.followToday=true;state.start=dateKey(todayDate());refresh();}),button('다음 ›','ghost tiny',()=>move(state.weeks*7)),
     guideSelect('표시 기간',[[4,'4주'],[8,'8주'],[12,'12주']],String(state.weeks),value=>{state.weeks=Number(value);refresh();}));
   const end=localDate(state.start);end.setDate(end.getDate()+state.weeks*7-1);period.appendChild(el('span','guide-period-label',`${state.start} ~ ${dateKey(end)}`));
   const person=allowed.find(user=>user.id===owner)||currentProfile;
@@ -86,7 +86,7 @@ function renderGuidePersonal(main){
         const row=el('div','guide-gantt-row guide-preview-row');row.append(button(group.expanded?'핵심 업무만 보기':`전체 펼치기 · ${group.scheduled.length-group.visible.length}건 더 보기`,'guide-group-toggle',()=>{group.expanded?state.expanded.delete(group.key):state.expanded.add(group.key);draw();}),guideTimelineCell(null,state));table.appendChild(row);
       }
     });
-    if(groups.some(group=>group.scheduled.length)){target.appendChild(table);guideContinuousTodayLine(table,state);}
+    if(groups.some(group=>group.scheduled.length)){target.appendChild(table);}
     else target.appendChild(el('p','guide-empty','날짜가 설정된 업무가 없습니다. 아래 일정 미정 업무에서 날짜를 설정할 수 있습니다.'));
     const undatedCount=groups.reduce((total,group)=>total+group.undated.length,0);
     if(undatedCount){

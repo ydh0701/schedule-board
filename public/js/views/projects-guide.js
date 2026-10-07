@@ -3,7 +3,7 @@ const guideProjectView={query:'',platform:'',list:'active',originProject:null,ex
 function guideRoleName(project,id){return project.roleSnapshots?.find(role=>role.id===id)?.name || departmentName(id);}
 function guideDetailState(projectId){
   if(!guideProjectView.detail.has(projectId)) guideProjectView.detail.set(projectId,{platform:'',department:'',assignee:'',stage:'',status:projectIsCompleted(projects.find(project=>project.id===projectId)||{})?'all':'active',query:'',weeks:4,followToday:true,closed:new Set()});
-  return MilestoneProjectModel.syncToday(guideProjectView.detail.get(projectId),dateKey(todayDate()),dateKey(mondayOf(todayDate())));
+  return MilestoneProjectModel.syncToday(guideProjectView.detail.get(projectId),dateKey(todayDate()));
 }
 function guideSelect(label,options,value,onChange){
   const field=selectField(label,options);field.wrap.classList.add('guide-filter');field.select.value=value;
@@ -102,7 +102,7 @@ function renderGuideProjectDetail(main,project){
   const search=guideSearch('업무 검색',state.query,value=>{state.query=value;draw();});secondary.appendChild(search);
   if(project.stageSnapshots?.length) secondary.appendChild(guideSelect('단계',[['','전체 단계'],...project.stageSnapshots.map(s=>[s.id,s.name])],state.stage,value=>{state.stage=value;refresh();}));
   function move(days){const date=localDate(state.start);date.setDate(date.getDate()+days);state.start=dateKey(date);state.followToday=false;refresh();}
-  period.append(button('‹ 이전','ghost tiny',()=>move(-state.weeks*7)),button('오늘','ghost tiny',()=>{state.start=dateKey(mondayOf(todayDate()));state.followToday=true;refresh();}),button('다음 ›','ghost tiny',()=>move(state.weeks*7)),
+  period.append(button('‹ 이전','ghost tiny',()=>move(-state.weeks*7)),button('오늘','ghost tiny',()=>{state.start=dateKey(todayDate());state.followToday=true;refresh();}),button('다음 ›','ghost tiny',()=>move(state.weeks*7)),
     guideSelect('표시 기간',[[4,'4주'],[8,'8주'],[12,'12주']],String(state.weeks),value=>{state.weeks=Number(value);refresh();}));
   const end=localDate(state.start);end.setDate(end.getDate()+state.weeks*7-1);period.appendChild(el('span','guide-period-label',`${state.start} ~ ${dateKey(end)}`));
   if(canManageProjects()) period.appendChild(button('+ 업무 추가','primary tiny',()=>openTaskEditor(null,{projectId:project.id,platform:state.platform||project.platforms?.[0]})));
@@ -133,7 +133,7 @@ function renderGuideProjectDetail(main,project){
         const more=el('div','guide-gantt-row guide-preview-row');more.append(button(group.expanded?'핵심 업무만 보기':`전체 펼치기 · ${group.scheduled.length-group.visible.length}건 더 보기`,'guide-group-toggle',()=>{group.expanded?state.expanded.delete(id):state.expanded.add(id);draw();}),guideTimelineCell(null,state));table.appendChild(more);
       }
     });
-    if(groups.some(group=>group.scheduled.length)){target.appendChild(table);guideContinuousTodayLine(table,state);}
+    if(groups.some(group=>group.scheduled.length)){target.appendChild(table);}
     else target.appendChild(el('p','guide-empty','날짜가 설정된 업무가 없습니다. 아래 일정 미정 업무를 확인해주세요.'));
     const undatedCount=groups.reduce((total,group)=>total+group.undated.length,0);
     if(undatedCount){
@@ -148,10 +148,10 @@ function guideTimelineCell(task,state){
   const days=state.weeks*7;
   for(let i=0;i<days;i++){
     const date=localDate(state.start);date.setDate(date.getDate()+i);
-    if(date.getDay()===0||date.getDay()===6){const shade=el('span','guide-weekend');shade.style.left=`${i/days*100}%`;shade.style.width=`${100/days}%`;cell.appendChild(shade);}
+    if(date.getDay()===0||date.getDay()===6||isHoliday(date)){const shade=el('span','guide-weekend');shade.style.left=`${i/days*100}%`;shade.style.width=`${100/days}%`;cell.appendChild(shade);}
   }
   const position=task&&MilestoneProjectModel.timelinePosition(task,state.start,days);
-  if(position){const bar=button('','guide-timeline-bar '+(task.status==='done'?'done':task.scheduleReview?'review':''),()=>openTaskEditor(task));bar.disabled=!canEditTask(task);bar.style.left=`${position.left}%`;bar.style.width=`${position.width}%`;bar.setAttribute('aria-label',`${task.title} ${task.startDate}부터 ${task.dueDate}까지`);bar.title=`${task.title} · ${task.startDate} ~ ${task.dueDate}`;cell.appendChild(bar);}
+  if(position){const bar=button(task.startDate<state.start?'‹':'','guide-timeline-bar '+(task.status==='done'?'done':task.scheduleReview?'review':''),()=>openTaskEditor(task));bar.disabled=!canEditTask(task);bar.style.left=`${position.left}%`;bar.style.width=`${position.width}%`;bar.setAttribute('aria-label',`${task.title} ${task.startDate}부터 ${task.dueDate}까지`);bar.title=`${task.title} · ${task.startDate} ~ ${task.dueDate}`;cell.appendChild(bar);}
   return cell;
 }
 function guideTimelineHeader(state,labels){
@@ -164,7 +164,7 @@ function guideTimelineHeader(state,labels){
   const days=el('div','guide-gantt-days');
   for(let i=0;i<state.weeks*7;i++){
     const date=localDate(state.start);date.setDate(date.getDate()+i);
-    const cell=el('span',date.getDay()===0?'sunday':date.getDay()===6?'saturday':'');cell.append(el('b','',String(date.getDate())),el('small','',['일','월','화','수','목','금','토'][date.getDay()]));days.appendChild(cell);
+    const cell=el('span',date.getDay()===0||isHoliday(date)?'sunday':date.getDay()===6?'saturday':'');cell.append(el('b','',String(date.getDate())),el('small','',['일','월','화','수','목','금','토'][date.getDay()]));cell.title=dateKey(date)+(isHoliday(date)?' 공휴일':'');days.appendChild(cell);
   }
   dates.appendChild(days);guideTodayMarker(dates,state);row.append(info,dates);return row;
 }
@@ -172,24 +172,6 @@ function guideTodayMarker(target,state){
   const today=dateKey(todayDate()),position=MilestoneProjectModel.timelinePosition({startDate:today,dueDate:today},state.start,state.weeks*7);
   if(!position)return;
   const label=el('span','guide-today-marker','오늘');label.style.left=`min(${position.left}%, calc(100% - 28px))`;label.title=today;target.appendChild(label);
-}
-// One overlay spans all body rows, including their borders. The identity columns
-// stay above it while horizontally scrolling; it never intercepts task clicks.
-function guideContinuousTodayLine(table,state){
-  const today=dateKey(todayDate()),position=MilestoneProjectModel.timelinePosition({startDate:today,dueDate:today},state.start,state.weeks*7);
-  if(!position)return;
-  const head=table.querySelector('.guide-gantt-head'),dates=head?.children[1];if(!dates)return;
-  const overlay=el('div','guide-today-overlay'),line=el('span','guide-today-line');
-  overlay.setAttribute('aria-hidden','true');line.style.left=`${position.left}%`;line.title=`오늘 ${today}`;overlay.appendChild(line);table.appendChild(overlay);
-  let observer;
-  const update=()=>{
-    if(!table.isConnected){observer?.disconnect();return;}
-    overlay.style.left=`${dates.offsetLeft}px`;overlay.style.width=`${dates.offsetWidth}px`;overlay.style.top=`${head.offsetHeight}px`;
-  };
-  requestAnimationFrame(()=>{
-    update();if(!table.isConnected)return;
-    if(typeof ResizeObserver!=='undefined'){observer=new ResizeObserver(update);observer.observe(table);observer.observe(head);observer.observe(dates);}
-  });
 }
 function refreshGuideProjectToday(){
   if(activeView!=='projects'||!selectedProjectId)return;
