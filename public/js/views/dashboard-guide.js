@@ -27,7 +27,8 @@ function openGuideDashboardMilestone(ownTasks){
       const row=el('label','guide-major-picker-row'),input=document.createElement('input');input.type='checkbox';input.checked=draft.has(task.id);input.setAttribute('aria-label',task.title);
       input.onchange=()=>{if(input.checked)draft.add(task.id);else draft.delete(task.id);updateCount();};
       const content=el('span','guide-major-picker-content'),project=projects.find(item=>item.id===task.projectId);
-      content.append(el('small','',`${project?.code||project?.name||'개인 일정'} · ${platformName(task.platform)}`),el('strong','',task.title));
+      const projectLabel=el('small','',`${project?.code||project?.name||'개인 일정'} · ${platformName(task.platform)}`),title=el('strong','',task.title);
+      projectLabel.title=projectLabel.textContent;title.title=task.title;content.append(projectLabel,title);
       row.append(input,content,el('small','guide-major-picker-date',MilestoneDashboardModel.shortDates(task.startDate,task.dueDate,dateKey(todayDate()))));list.appendChild(row);
     });
     if(!found.length)list.appendChild(el('p','guide-empty',candidates.length?'검색 결과가 없습니다.':'본인에게 배정된 미완료 일정이 없습니다.'));

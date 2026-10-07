@@ -201,9 +201,10 @@ body.milestone-ui .app{width:100%;margin:0;padding:0;display:grid;grid-template-
 .milestone-ui .guide-dashboard-add{display:inline-flex;align-items:center;justify-content:center;padding:0;line-height:1;width:38px;height:38px;min-height:38px!important;border:0;border-radius:50%;background:#f0f0f0;color:var(--muted);font-size:var(--ui-font-heading-5);}
 .milestone-ui .guide-dashboard-add svg{display:block;width:18px;height:18px;flex-shrink:0;}
 .milestone-ui .guide-major-picker-list{max-height:360px;overflow-y:auto;}
-.milestone-ui .modal.guide-major-picker-dialog{width:min(520px,100%);}
+.milestone-ui .modal.guide-major-picker-dialog{width:min(440px,100%);}
 .milestone-ui .guide-major-picker-row{display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:var(--ui-border-module) solid var(--line);cursor:pointer;}
-.milestone-ui .guide-major-picker-content{display:flex;flex-direction:column;gap:4px;flex:1;min-width:0;overflow-wrap:anywhere;}
+.milestone-ui .guide-major-picker-content{display:flex;flex-direction:column;gap:4px;flex:1;min-width:0;}
+.milestone-ui .guide-major-picker-content>strong,.milestone-ui .guide-major-picker-content>small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .milestone-ui .guide-major-picker-content small,.milestone-ui .guide-major-picker-date{color:var(--muted);font-size:var(--ui-font-micro);}
 .milestone-ui .guide-major-picker-date{flex-shrink:0;}
 .milestone-ui .guide-dashboard-work-scroll h3{font-size:var(--ui-font-caption);font-weight:var(--ui-font-weight-regular);background:#f5f7fa;padding:9px 16px;margin:0;}.milestone-ui .guide-dashboard-work-scroll>.guide-team-link{padding:8px 16px;}
