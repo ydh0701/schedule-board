@@ -15,6 +15,7 @@ function guideDashboardMajorSelection(){
 }
 function openGuideDashboardMilestone(ownTasks){
   const {dialog,close}=openDialog('주요 일정 선택 · 내 일정');
+  dialog.classList.add('guide-major-picker-dialog');
   const candidates=MilestoneDashboardModel.personalMajorCandidates(ownTasks),draft=new Set(guideDashboardMajorSelection());
   const form=el('div','guide-major-picker'),list=el('div','guide-major-picker-list'),note=el('p','guide-footnote');
   note.textContent='담당·지원 중인 미완료 일정입니다. 선택한 일정은 내 주요 일정에만 추가됩니다. 이 브라우저에 저장됩니다.';
