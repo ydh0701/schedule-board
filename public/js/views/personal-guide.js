@@ -99,7 +99,7 @@ function renderGuidePersonal(main){
       });target.appendChild(details);
     }
   }
-  draw();main.appendChild(el('p','guide-footnote','날짜가 있는 업무는 프로젝트별로 현재·지연·예정 순으로 최대 3개 표시합니다. 일정 미정 업무는 별도로 펼쳐 확인하고, 완료 업무는 ‘완료 포함’에서 확인합니다.'));
+  draw();
 }
 // Refresh today-following timelines after midnight or when returning to this tab.
 function refreshGuidePersonalToday(){

@@ -72,7 +72,7 @@ function renderGuideTeam(main,options={}){
       row.append(person,timeline);table.appendChild(row);
     });target.appendChild(table);guideContinuousTodayLine(table,state);
   }
-  draw();main.appendChild(el('p','guide-footnote','막대는 등록된 업무 날짜를 바탕으로 묶은 프로젝트·플랫폼별 배치 기간입니다. 빈 구간은 등록된 일정이 없는 기간이며, 실제 여유 여부는 개인 일정과 미정 업무를 함께 확인해주세요.'));
+  draw();
 }
 function renderGuideTeamCompactTools(main,state,options,endKey,move,draw){
   const tools=el('div','guide-dashboard-month-controls guide-team-compact-tools');

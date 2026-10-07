@@ -141,7 +141,6 @@ function renderGuideProjectDetail(main,project){
         group.undated.forEach(task=>{const row=el('div','guide-undated-row'),title=button(`${task.title} · ${taskAssigneeName(task)}`,'guide-task-title',()=>openTaskEditor(task));title.disabled=!canEditTask(task);const status=MilestoneProjectModel.taskPresentation(task,dateKey(todayDate()));row.append(title,el('small','',task.startDate&&task.dueDate?'날짜 확인 필요':'일정 미정'),el('span',`guide-status ${status.key}`,status.label));section.appendChild(row);});details.appendChild(section);});target.appendChild(details);
     }
   };draw();
-  main.appendChild(el('p','guide-footnote','직군별 날짜가 있는 업무를 현재·지연·예정 순으로 최대 3개 먼저 표시합니다. 나머지는 펼쳐 확인하고, 일정 미정 업무는 별도로 표시합니다. 검색·재확인·완료 포함에서는 일치하는 전체 업무를 표시합니다.'));
 }
 function guideTimelineCell(task,state){
   const cell=el('div','guide-timeline-cell');

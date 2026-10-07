@@ -121,7 +121,7 @@ function guideDashboardSchedule(calendar,allEvents,state,today,options={}){
     const hidden=week.segments.filter(event=>event.lane>=MilestoneDashboardModel.DISPLAY_POLICY.calendarLanes);
     if(hidden.length){const more=el('div','guide-dashboard-more');more.textContent=`겹치는 일정 ${hidden.length}건 더 있음 · 날짜를 눌러 전체 확인`;bars.appendChild(more);}
     row.append(days,bars);grid.appendChild(row);
-  });grid.classList.toggle('show-dates',state.fields.dates);content.append(grid,el('p','guide-footnote',options.footnote||'내 업무 기간과 참여 프로젝트의 등록된 주요 일정을 함께 표시합니다. 날짜를 누르면 겹치는 일정 전체를 확인할 수 있습니다.'));
+  });grid.classList.toggle('show-dates',state.fields.dates);content.appendChild(grid);
   }draw();
 }
 function openGuideDashboardTools(mode,events,state,displayOptions={},anchor){
@@ -155,7 +155,7 @@ function renderGuideDashboardTimeline(content,data,state,today,colors=guideProje
     const label=button('','guide-dashboard-short-label',()=>setView('projects',row.project.id));label.setAttribute('aria-label',bar.title);label.title=bar.title;
     if(state.fields.project)label.appendChild(el('strong','',row.project.code||row.project.name));if(state.fields.title)label.appendChild(el('small','',row.project.name));if(state.fields.dates)label.appendChild(el('small','',MilestoneDashboardModel.shortDates(row.startDate,row.dueDate,today)));
     track.append(bar,label);timeline.appendChild(track);labelRows.push({track,bar,label});});
-  if(!data.rows.length)timeline.appendChild(el('p','guide-dashboard-empty','선택한 기간과 조건에 맞는 프로젝트 일정이 없습니다.'));scroll.appendChild(timeline);content.append(scroll,el('p','guide-footnote','상단 주요 날짜는 마일스톤 목표일·기준 업무 마감일입니다. 막대는 조회 가능한 내 업무·주요 일정의 시작~종료 범위이며, 프로젝트 전체 공식 기간이나 연속 업무 배정 기간을 뜻하지 않습니다. 프로젝트를 누르면 세부 일정을 확인합니다.'));
+  if(!data.rows.length)timeline.appendChild(el('p','guide-dashboard-empty','선택한 기간과 조건에 맞는 프로젝트 일정이 없습니다.'));scroll.appendChild(timeline);content.appendChild(scroll);
   const updateLabels=()=>{labelRows.forEach(({track,bar,label})=>{const short=bar.clientWidth<MilestoneDashboardModel.VIEW_OPTIONS.timelineInlineLabelMinPx;track.classList.toggle('short-period',short);if(short)track.style.setProperty('--short-label-height',`${label.offsetHeight}px`);});
     const markers=MilestoneDashboardModel.markerLayout(data.markers,timeline.clientWidth);markers.forEach((marker,index)=>{markerNodes[index].style.left=`${marker.labelLeft}px`;markerNodes[index].style.top=`${marker.lane*26}px`;markerNodes[index].style.width=`${Math.min(timeline.clientWidth,MilestoneDashboardModel.VIEW_OPTIONS.timelineMarkerLabelPx)}px`;markerNodes[index].style.setProperty('--date-offset',`${marker.left/100*timeline.clientWidth-marker.labelLeft}px`);});markerRow.style.height=`${markers.length?(Math.max(...markers.map(marker=>marker.lane))+1)*26+6:30}px`;
   };
