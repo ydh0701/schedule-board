@@ -9,6 +9,11 @@ body.milestone-ui {
   --ui-color-primary-hover:#04204b;
   --ui-color-module-shade:#04204b;
   --ui-color-divider:#e3e3e3;
+  /* User-approved hierarchy; these are not original guide HEX values. */
+  --ui-color-region-border:#c9d1de;
+  --ui-color-group-border:#d3dce8;
+  --ui-color-control-border:#a5b3c9;
+  --ui-color-selection-soft:#edf2fa;
   --ui-color-button-text:#ffffff;
   --ui-color-on-strong:#ffffff;
   --ui-color-button-disabled:#e0e0e0;

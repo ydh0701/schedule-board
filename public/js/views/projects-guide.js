@@ -7,7 +7,8 @@ function guideDetailState(projectId){
 }
 function guideSelect(label,options,value,onChange){
   const field=selectField(label,options);field.wrap.classList.add('guide-filter');field.select.value=value;
-  field.select.onchange=()=>onChange(field.select.value);return field.wrap;
+  const updateSelection=()=>field.wrap.classList.toggle('has-selection',field.select.value!==String(options[0]?.[0]??''));
+  updateSelection();field.select.onchange=()=>{updateSelection();onChange(field.select.value);};return field.wrap;
 }
 function guideSearch(label,value,onChange){
   const wrap=el('label','guide-search');wrap.appendChild(milestoneIcon('search'));

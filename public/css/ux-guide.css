@@ -385,3 +385,38 @@ body.milestone-ui.sidebar-collapsed{--sidebar-width:72px;}.sidebar-collapsed .si
 .assignment-transfer-conflict span:last-child{flex-shrink:0;color:var(--muted);}
 .assignment-transfer-note summary{cursor:pointer;}
 @media(max-width:480px){.assignment-transfer-task-main,.assignment-transfer-conflict{flex-direction:column;gap:2px;}.assignment-transfer-warning summary{text-align:left;}}
+
+/* Region > group > internal-grid hierarchy. Keep spacing, guide divider and project palette unchanged. */
+.milestone-ui .guide-project-card,
+.milestone-ui .guide-dashboard-panel,
+.milestone-ui .guide-gantt-scroll,
+.milestone-ui .guide-dashboard-calendar,
+.milestone-ui .guide-dashboard-timeline-scroll,
+.milestone-ui .modal{border-color:var(--ui-color-region-border);}
+.milestone-ui .guide-dashboard-panel-head,
+.milestone-ui .guide-dashboard-panel>h2,
+.milestone-ui .guide-dashboard-projects>summary,
+.milestone-ui .guide-mentions-panel>summary,
+.milestone-ui .guide-dashboard-weekdays,
+.milestone-ui .guide-management-table th{background:var(--surface-soft);border-bottom-color:var(--ui-color-group-border);}
+.milestone-ui .guide-dashboard-work-scroll h3{color:var(--text);font-weight:var(--ui-font-weight-semibold);}
+.milestone-ui .guide-gantt-group{border-top:1px solid var(--ui-color-group-border);border-bottom-color:var(--ui-color-group-border);}
+.milestone-ui .guide-team-row{border-bottom-color:var(--ui-color-group-border);}
+.milestone-ui .guide-gantt-info,
+.milestone-ui .guide-group-toggle,
+.milestone-ui .guide-team-person,
+.milestone-ui .guide-team-person-head{border-right-color:var(--ui-color-region-border);}
+.milestone-ui .guide-group-toggle{background:var(--ui-color-selection-soft)!important;color:var(--text)!important;}
+.milestone-ui .guide-page-tabs button.active{background:var(--ui-color-selection-soft)!important;box-shadow:inset 0 -2px var(--accent);}
+.milestone-ui .guide-filter select,
+.milestone-ui .guide-search,
+.milestone-ui button.ghost,
+.milestone-ui .guide-action-menu summary{border-color:var(--ui-color-control-border)!important;}
+.milestone-ui .guide-filter.has-selection select{background:var(--ui-color-selection-soft);border-color:var(--accent)!important;color:var(--accent);font-weight:var(--ui-font-weight-bold);}
+.milestone-ui .guide-chevron{color:var(--accent);}
+.milestone-ui .guide-dashboard-tool{border:1px solid var(--ui-color-control-border);background:var(--surface);color:var(--accent);}
+.milestone-ui .guide-dashboard-tool:hover,
+.milestone-ui button.ghost:hover:not(:disabled){background:var(--ui-color-selection-soft)!important;border-color:var(--accent)!important;}
+.milestone-ui .guide-team-link{text-decoration:underline;text-decoration-color:var(--ui-color-control-border);text-underline-offset:3px;}
+.milestone-ui .guide-team-link:hover{ text-decoration-color:var(--accent); }
+.milestone-ui .guide-action-menu summary{color:var(--accent);}
