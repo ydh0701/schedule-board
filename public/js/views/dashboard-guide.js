@@ -8,6 +8,7 @@ function guideDashboardTask(task,colors=guideProjectColorScope()){
   const project=projects.find(project=>project.id===task.projectId);if(project)colors.apply(item,project);
   const meta=el('div','guide-dashboard-task-meta');meta.append(el('span','guide-dashboard-project-label',`${projectCode(task)} ${platformName(task.platform)}`),el('small',`guide-dashboard-status ${status.key}`,status.label));
   const detail=el('div','guide-dashboard-task-detail');detail.append(el('strong','',task.title),el('small','',MilestoneDashboardModel.shortDates(task.startDate,task.dueDate,today)));
+  meta.firstElementChild.title=meta.firstElementChild.textContent;detail.firstElementChild.title=task.title;
   item.append(meta,detail);return item;
 }
 function guideDashboardMajorSelection(){
@@ -59,6 +60,7 @@ function renderGuideDashboard(main){
   const selectedTasks=MilestoneDashboardModel.selectedMajorTasks(own,guideDashboardMajorSelection()).filter(task=>!automaticTaskIds.has(task.id));
   const majorList=el('div','guide-dashboard-scroll');
   majorItems.forEach(event=>{const item=button('','guide-dashboard-task',()=>{setView('projects',event.project.id);});colors.apply(item,event.project);const meta=el('div','guide-dashboard-task-meta');meta.appendChild(el('span','guide-dashboard-project-label',`${event.project.code||event.project.name}${event.task?.platform?' '+platformName(event.task.platform):''}`));const detail=el('div','guide-dashboard-task-detail');detail.append(el('strong','',event.title),el('small','',MilestoneDashboardModel.shortDates(event.startDate,event.dueDate,today)));item.append(meta,detail);majorList.appendChild(item);});
+  majorList.querySelectorAll('.guide-dashboard-project-label,.guide-dashboard-task-detail strong').forEach(label=>{label.title=label.textContent;});
   selectedTasks.forEach(task=>majorList.appendChild(guideDashboardTask(task,colors)));
   if(!majorItems.length&&!selectedTasks.length)majorList.appendChild(el('p','guide-dashboard-empty','표시할 주요 일정이 없습니다. +에서 내 일정을 선택하세요.'));
   major.appendChild(majorList);

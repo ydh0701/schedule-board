@@ -172,6 +172,15 @@ body.milestone-ui .app{width:100%;margin:0;padding:0;display:grid;grid-template-
 .milestone-ui .guide-lead-content .guide-team-gantt .guide-gantt-row{grid-template-columns:230px minmax(var(--timeline-min),1fr);}
 .milestone-ui .guide-lead-content .guide-team-weeks strong{font-size:var(--ui-font-caption);}
 .milestone-ui .guide-dashboard-sidebar{display:flex;flex-direction:column;gap:16px;}
+/* User-approved readable sidebar scale; calendar and other views retain their roles. */
+.milestone-ui .guide-dashboard-sidebar{--dashboard-task-font:var(--ui-font-body);--dashboard-meta-font:var(--ui-font-caption);}
+.milestone-ui .guide-dashboard-sidebar .guide-dashboard-task-detail strong{flex:1;min-width:0;font-size:var(--dashboard-task-font);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.milestone-ui .guide-dashboard-sidebar .guide-dashboard-task-meta,.milestone-ui .guide-dashboard-sidebar .guide-dashboard-task-detail small,.milestone-ui .guide-dashboard-sidebar .guide-dashboard-status{font-size:var(--dashboard-meta-font);line-height:1.5;}
+.milestone-ui .guide-dashboard-sidebar .guide-dashboard-project-label{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.milestone-ui .guide-dashboard-sidebar .guide-dashboard-status{flex-shrink:0;}
+.milestone-ui .guide-dashboard-sidebar .guide-dashboard-task-detail small{white-space:nowrap;}
+.milestone-ui .guide-dashboard-sidebar .guide-dashboard-project p,.milestone-ui .guide-dashboard-sidebar .guide-dashboard-project>.guide-team-link{font-size:var(--dashboard-task-font);}
+.milestone-ui .guide-dashboard-sidebar .guide-dashboard-project small{font-size:var(--dashboard-meta-font);}
 .milestone-ui .guide-dashboard-panel{border:var(--ui-border-module) solid var(--line);border-radius:var(--ui-radius-module);background:var(--surface);overflow:hidden;}
 .milestone-ui .guide-dashboard-panel h2,.milestone-ui .guide-dashboard-projects>summary{font-size:var(--ui-font-panel-title);padding:15px 17px;margin:0;border-bottom:var(--ui-border-module) solid var(--line);}
 .milestone-ui .guide-dashboard-projects>summary{cursor:pointer;font-weight:var(--ui-font-weight-bold);}
