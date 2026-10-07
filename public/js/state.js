@@ -1,0 +1,1336 @@
+/*
+ * state.js — 인증, 권한, Firestore 실시간 상태와 업무 데이터 공용 함수.
+ * 화면은 render.js, 초기 구동은 main.js가 맡습니다.
+ */
+
+const db = firebase.firestore();
+const auth = firebase.auth();
+const googleProvider = new firebase.auth.GoogleAuthProvider();
+
+const DEPARTMENTS = [
+  { id: 'planning', name: '기획' },
+  { id: 'ui', name: 'UI' },
+  { id: 'development', name: '개발' },
+  { id: 'business', name: '글비' },
+  { id: 'server', name: '서버' },
+  { id: 'qa', name: 'QA' },
+  { id: 'video', name: '영상' },
+  { id: 'video_partner', name: '영상 파트너' },
+  { id: 'studio', name: '제작실' },
+  { id: 'pm', name: 'PM' }
+];
+const TASK_STATUS = {
+  todo: '미착수', in_progress: '진행 중', blocked: '차단됨', done: '완료'
+};
+// 프로젝트의 "고정 일정"과 실제 실무 업무를 분리합니다. 고정 일정만 바뀌면
+// scheduleRule을 가진 자동 생성 업무는 같은 규칙으로 다시 계산할 수 있습니다.
+const PLATFORMS = [
+  { id: 'pc', name: 'PC' },
+  { id: 'mobile', name: '모바일' },
+  { id: 'console', name: '콘솔' }
+];
+const DELIVERY_MILESTONES = [
+  { key: 'demo_build', title: '데모 빌드 마감' },
+  { key: 'demo_release', title: '데모 출시' },
+  { key: 'full_build', title: '완전판 빌드 마감' },
+  { key: 'full_release', title: '완전판 출시' }
+];
+// 업무 화면은 직군이 아니라 이 실행 단위로 먼저 묶습니다. 새 업무는 phaseId를
+// 명시적으로 저장하고, 기존 엑셀 업무는 taskGroup 텍스트로 안전하게 추론합니다.
+const PROJECT_TASK_PHASES = [
+  { id: 'idea', title: '아이디어' },
+  { id: 'preparation', title: '준비' },
+  { id: 'detail_planning', title: '세부 기획' },
+  { id: 'demo', title: '데모' },
+  { id: 'full', title: '완전판' },
+  { id: 'other', title: '기타 업무' }
+];
+const TEMPLATE_DEPARTMENTS = ['planning', 'ui', 'development', 'qa'];
+// 현재 전달받은 기획·UI 마일스톤에서 반복되는 흐름을 기준으로 한 첫 템플릿입니다.
+// 실제 운영 중 평균 작업일은 템플릿 관리 화면에서 계속 조정할 수 있게 확장합니다.
+const PROJECT_WORK_TEMPLATE = [
+  { key: 'demo-plan', phaseId: 'detail_planning', departmentId: 'planning', title: '데모 기능·화면 기획 확정', anchorKey: 'demo_build', dueOffset: -18, estimatedDays: 3 },
+  { key: 'demo-ui-design', phaseId: 'demo', departmentId: 'ui', title: '데모 UI 디자인', anchorKey: 'demo_build', dueOffset: -15, estimatedDays: 4, dependsOnKey: 'demo-plan' },
+  { key: 'demo-ui-prefab', phaseId: 'demo', departmentId: 'ui', title: '데모 UI 프리팹·연출', anchorKey: 'demo_build', dueOffset: -9, estimatedDays: 3, dependsOnKey: 'demo-ui-design' },
+  { key: 'demo-dev', phaseId: 'demo', departmentId: 'development', title: '데모 기능 구현·연동', anchorKey: 'demo_build', dueOffset: -10, estimatedDays: 5, dependsOnKey: 'demo-plan' },
+  { key: 'demo-qa', phaseId: 'demo', departmentId: 'qa', title: '데모 QA·수정 확인', anchorKey: 'demo_build', dueOffset: -4, estimatedDays: 3, dependsOnKey: 'demo-ui-prefab' },
+  { key: 'full-plan', phaseId: 'full', departmentId: 'planning', title: '완전판 기능·화면 기획 확정', anchorKey: 'full_build', dueOffset: -28, estimatedDays: 4 },
+  { key: 'full-ui-design', phaseId: 'full', departmentId: 'ui', title: '완전판 UI 디자인', anchorKey: 'full_build', dueOffset: -22, estimatedDays: 5, dependsOnKey: 'full-plan' },
+  { key: 'full-ui-prefab', phaseId: 'full', departmentId: 'ui', title: '완전판 UI 프리팹·연출', anchorKey: 'full_build', dueOffset: -14, estimatedDays: 4, dependsOnKey: 'full-ui-design' },
+  { key: 'full-dev', phaseId: 'full', departmentId: 'development', title: '완전판 기능 구현·연동', anchorKey: 'full_build', dueOffset: -15, estimatedDays: 7, dependsOnKey: 'full-plan' },
+  { key: 'full-qa', phaseId: 'full', departmentId: 'qa', title: '완전판 QA·수정 확인', anchorKey: 'full_build', dueOffset: -6, estimatedDays: 4, dependsOnKey: 'full-ui-prefab' }
+];
+
+let projectTemplateCatalogPromise = null;
+
+function loadProjectTemplateCatalog(){
+  if(!window.ProjectTemplateEngine) return Promise.reject(new Error('프로젝트 템플릿 엔진을 불러오지 못했습니다.'));
+  if(!projectTemplateCatalogPromise) {
+    projectTemplateCatalogPromise = fetch('docs/project-template-tables.json', { cache: 'no-store' })
+      .then(response => {
+        if(!response.ok) throw new Error(`템플릿 데이터를 불러오지 못했습니다. (${response.status})`);
+        return response.json();
+      })
+      .then(catalog => {
+        window.ProjectTemplateEngine.assertValidCatalog(catalog);
+        return catalog;
+      })
+      .catch(error => {
+        projectTemplateCatalogPromise = null;
+        throw error;
+      });
+  }
+  return projectTemplateCatalogPromise;
+}
+
+let currentUser = null;
+let currentProfile = null;
+let authResolved = false;
+let activeView = 'home';
+let selectedProjectId = null;
+let projectDetailTab = 'schedule';
+const projectTaskViewStates = new Map();
+const personalTaskViewStates = new Map();
+let projectTimelineFilter = 'all';
+let projectScheduleCursor = null;
+let projectScheduleSelectedDate = null;
+let projectPortfolioCursor = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+let workViewMode = 'list';
+let workPeriod = 'today';
+let peopleView = 'department';
+let workCalendarCursor = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+let capacityWeekCursor = new Date();
+let projects = [];
+let tasks = [];
+let milestones = [];
+let projectUpdates = [];
+let assignmentHistory = [];
+let holidays = [];
+let visibleUsers = [];
+let accessRequests = [];
+// 업무량·가용 시간은 업무와 공휴일 데이터를 모두 받은 뒤에만 확정합니다.
+let workDataReadiness = { tasks: false, holidays: false };
+let profileLookup = { status: 'idle', uid: '', message: '' };
+let importPreview = null;
+
+let profileUnsubscribe = null;
+let dataUnsubscribers = [];
+let scopedProjectUnsubscribers = [];
+let memberScopeKey = '';
+let memberScopeOwnTasks = [];
+let memberScopePublish = null;
+
+function setAppStatus(message){
+  const el = document.getElementById('appStatus');
+  if(el) el.textContent = message;
+}
+
+function rerenderSafely(){
+  // 브라우저가 스크립트 전역을 분리해 해석하는 경우에도 화면 모듈을 확실히 호출합니다.
+  const renderApp = window.renderScheduleApp || (typeof rerender === 'function' ? rerender : null);
+  if(typeof renderApp === 'function') renderApp();
+}
+
+function resetDataSubscriptions(){
+  dataUnsubscribers.forEach(unsub => unsub());
+  scopedProjectUnsubscribers.forEach(unsub => unsub());
+  dataUnsubscribers = [];
+  scopedProjectUnsubscribers = [];
+  memberScopeKey = '';
+  memberScopeOwnTasks = [];
+  memberScopePublish = null;
+  projects = [];
+  tasks = [];
+  milestones = [];
+  projectUpdates = [];
+  assignmentHistory = [];
+  holidays = [];
+  visibleUsers = [];
+  accessRequests = [];
+  workDataReadiness = { tasks: false, holidays: false };
+}
+
+function isWorkDataReady(){ return workDataReadiness.tasks && workDataReadiness.holidays; }
+
+function docToObject(doc){ return { id: doc.id, ...doc.data() }; }
+function workRole(profile = currentProfile){ return profile?.role === 'admin' ? 'pm' : profile?.role || 'member'; }
+// 관리자 권한은 시스템 관리 권한이고, PM은 프로젝트 운영 역할입니다.
+// 이전 role: admin 문서는 전환 기간 동안 관리자 권한으로 취급합니다.
+function isAdmin(){ return currentProfile?.isAdmin === true || currentProfile?.role === 'admin'; }
+function isPM(){ return workRole() === 'pm'; }
+function isLead(){ return workRole() === 'lead'; }
+function isMember(){ return workRole() === 'member'; }
+function isApproved(){ return !!currentProfile?.active; }
+function userRoleLabel(profile){
+  const title = workRole(profile) === 'pm' ? 'PM' : workRole(profile) === 'lead' ? '팀장' : '팀원';
+  return profile?.isAdmin === true || profile?.role === 'admin' ? `관리자 · ${title}` : title;
+}
+function departmentName(id){ return DEPARTMENTS.find(x => x.id === id)?.name || id || '미지정'; }
+function platformName(id){ return PLATFORMS.find(item => item.id === id)?.name || id || '공통'; }
+function dateOnly(value){
+  if(!value) return '';
+  if(value?.toDate) return dateKey(value.toDate());
+  return String(value).slice(0, 10);
+}
+function activeUsers(){ return visibleUsers.filter(user => user.active); }
+function personName(userId){
+  if(userId === currentUser?.uid) return currentProfile?.name || currentUser?.displayName || currentUser?.email || '이름 미지정';
+  const user = visibleUsers.find(item => item.id === userId);
+  return user?.name || user?.email || '담당자 미확인';
+}
+
+function normalizeTask(input){
+  const task = { ...input };
+  task.status = Object.hasOwn(TASK_STATUS, task.status) ? task.status : 'todo';
+  task.progress = Number(task.progress || 0);
+  if(task.status === 'todo') task.progress = 0;
+  if(task.status === 'done') task.progress = 100;
+  if(task.status === 'in_progress') task.progress = Math.min(99, Math.max(1, task.progress || 1));
+  task.progress = Math.min(100, Math.max(0, task.progress));
+  task.archivedAt = task.archivedAt || null;
+  task.dependsOn = Array.isArray(task.dependsOn) ? [...new Set(task.dependsOn.filter(Boolean))] : (task.dependsOn ? [task.dependsOn] : []);
+  task.milestoneId = task.milestoneId || null;
+  task.platform = task.platform || null;
+  task.generated = task.generated === true;
+  task.estimatedDays = Math.max(0, Number(task.estimatedDays || 0));
+  const rawAssignees = Array.isArray(task.assignees) && task.assignees.length ? task.assignees : (task.assigneeId ? [{ userId: task.assigneeId, share: 1, role: 'primary' }] : (task.assigneeIds || []).map((userId, index) => ({ userId, share: 1, role: index === 0 ? 'primary' : 'co' })));
+  const uniqueAssignees = [...new Map(rawAssignees.filter(item => item?.userId).map(item => [item.userId, item])).values()];
+  const primaryIndex = Math.max(0, uniqueAssignees.findIndex(item => item.userId === task.assigneeId || item.role === 'primary'));
+  const orderedAssignees = uniqueAssignees.length ? [uniqueAssignees[primaryIndex], ...uniqueAssignees.filter((_, index) => index !== primaryIndex)] : [];
+  const totalShare = orderedAssignees.reduce((sum, item) => sum + Number(item.share || 0), 0);
+  task.assignees = orderedAssignees.map((item, index) => ({ userId: item.userId, share: totalShare ? Number(item.share || 0) / totalShare : 1 / orderedAssignees.length, role: index === 0 ? 'primary' : 'co' }));
+  task.assigneeId = task.assignees[0]?.userId || null;
+  task.assigneeIds = task.assignees.map(item => item.userId);
+  return task;
+}
+
+function primaryAssignmentFields(userId, name = null){
+  return {
+    assigneeId: userId || null,
+    assigneeName: userId ? (name || personName(userId)) : '담당자 미배정',
+    assignees: userId ? [{ userId, share: 1, role: 'primary' }] : [],
+    assigneeIds: userId ? [userId] : [],
+    needsAssignment: !userId
+  };
+}
+
+function activeTasks(){ return tasks.filter(task => !task.archivedAt); }
+function taskIsOverdue(task){
+  return !task.archivedAt && task.status !== 'done' && !!task.dueDate && dateOnly(task.dueDate) < new Date().toISOString().slice(0, 10);
+}
+function timestampMillis(value){ return value?.toMillis ? value.toMillis() : 0; }
+function updatesForProject(projectId){ return projectUpdates.filter(update => update.projectId === projectId).sort((a, b) => timestampMillis(b.createdAt) - timestampMillis(a.createdAt)); }
+function tasksForProject(projectId){ return activeTasks().filter(task => task.projectId === projectId); }
+function milestonesForProject(projectId){ return milestones.filter(milestone => milestone.projectId === projectId && !milestone.archivedAt); }
+function tasksForMilestone(milestoneId){ return activeTasks().filter(task => task.milestoneId === milestoneId); }
+function milestoneProgress(milestoneId){
+  const list = tasksForMilestone(milestoneId);
+  if(!list.length) return null;
+  return Math.round(list.reduce((sum, task) => sum + task.progress, 0) / list.length);
+}
+function taskDependencies(task){ return (task?.dependsOn || []).map(id => tasks.find(item => item.id === id)).filter(Boolean); }
+function taskHasUnfinishedDependencies(task){ return taskDependencies(task).some(dependency => dependency.status !== 'done'); }
+function localDate(value){
+  if(!value) return null;
+  const [year, month, day] = String(value).slice(0, 10).split('-').map(Number);
+  const result = new Date(year, month - 1, day); return isNaN(result) ? null : result;
+}
+function dateKey(date){ return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`; }
+function isHoliday(date){ return holidays.some(item => item.id === dateKey(date) || item.date === dateKey(date)); }
+function isWeekday(date){ return date.getDay() !== 0 && date.getDay() !== 6 && !isHoliday(date); }
+function addBusinessDays(value, amount){
+  const date = localDate(value);
+  if(!date) return null;
+  const direction = amount < 0 ? -1 : 1;
+  let remaining = Math.abs(Number(amount || 0));
+  while(remaining > 0) {
+    date.setDate(date.getDate() + direction);
+    if(isWeekday(date)) remaining--;
+  }
+  return dateKey(date);
+}
+function scheduledDates(anchorDate, dueOffset, estimatedDays){
+  if(!anchorDate) return { startDate: null, dueDate: null };
+  const dueDate = addBusinessDays(anchorDate, dueOffset);
+  return { dueDate, startDate: addBusinessDays(dueDate, -(Math.max(1, Number(estimatedDays || 1)) - 1)) };
+}
+function projectMilestoneMap(projectId, overrides = {}){
+  const result = { ...overrides };
+  milestonesForProject(projectId).forEach(item => { if(item.anchorKey && !result[item.anchorKey]) result[item.anchorKey] = item.dueDate; });
+  return result;
+}
+function staffingFor(project, platform, departmentId){
+  return (project?.staffing || []).find(item => item.platform === platform && item.departmentId === departmentId) || null;
+}
+function templateTaskKey(platform, templateKey){ return `${platform}:${templateKey}`; }
+function projectTaskPhase(task){
+  const stage = projects.find(item => item.id === task?.projectId)?.stageSnapshots?.find(item => item.id === (task.stageId || task.phaseId));
+  if(stage) return { ...stage, title: stage.name };
+  const legacyPhase = { demo_prepare: 'demo', demo_launch: 'demo', full_prepare: 'full', full_launch: 'full' }[task?.phaseId] || task?.phaseId;
+  const explicit = PROJECT_TASK_PHASES.find(phase => phase.id === legacyPhase);
+  if(explicit) return explicit;
+  const text = `${task?.taskGroup || ''} ${task?.title || ''}`.replace(/\s/g, '').toLowerCase();
+  if(/현장.?방문|로케이션|리소스|자료.?검수|에셋.?검수/.test(text)) return PROJECT_TASK_PHASES.find(phase => phase.id === 'other');
+  if(/데모/.test(text) || ['demo_build', 'demo_release'].includes(task?.scheduleRule?.anchorKey)) return PROJECT_TASK_PHASES.find(phase => phase.id === 'demo');
+  if(/완전판|정식/.test(text) || ['full_build', 'full_release'].includes(task?.scheduleRule?.anchorKey)) return PROJECT_TASK_PHASES.find(phase => phase.id === 'full');
+  if(/아이디어|브레인스토밍|컨셉/.test(text)) return PROJECT_TASK_PHASES.find(phase => phase.id === 'idea');
+  if(/준비|사전/.test(text)) return PROJECT_TASK_PHASES.find(phase => phase.id === 'preparation');
+  if(/세부.?기획|기획/.test(text)) return PROJECT_TASK_PHASES.find(phase => phase.id === 'detail_planning');
+  return PROJECT_TASK_PHASES.find(phase => phase.id === 'other');
+}
+function taskCoversDate(task, date){
+  const start = localDate(task.startDate || task.dueDate); const end = localDate(task.dueDate || task.startDate);
+  if(!start || !end) return false;
+  return date >= start && date <= end;
+}
+function assignmentShareFor(task, userId){
+  const item = (task.assignees || []).find(assignee => assignee.userId === userId);
+  return item ? Number(item.share || 0) : (task.assigneeId === userId ? 1 : 0);
+}
+function taskDailyLoad(task, date, userId = task.assigneeId){
+  if(task.status === 'done' || !task.estimatedDays || !taskCoversDate(task, date) || !isWeekday(date)) return 0;
+  const start = localDate(task.startDate || task.dueDate); const end = localDate(task.dueDate || task.startDate);
+  let workingDays = 0;
+  for(let cursor = new Date(start); cursor <= end; cursor.setDate(cursor.getDate() + 1)) if(isWeekday(cursor)) workingDays++;
+  return workingDays ? (task.estimatedDays / workingDays) * assignmentShareFor(task, userId) : 0;
+}
+function userWeeklyCapacity(userId){
+  const user = userId === currentUser?.uid ? currentProfile : visibleUsers.find(item => item.id === userId);
+  return Math.max(1, Number(user?.weeklyCapacity || 5));
+}
+function userDailyCapacity(userId){ return userWeeklyCapacity(userId) / 5; }
+function scheduleWeekKey(date){
+  const monday = new Date(date);
+  monday.setHours(0, 0, 0, 0);
+  monday.setDate(monday.getDate() - ((monday.getDay() + 6) % 7));
+  return dateKey(monday);
+}
+function taskLoadForUserOnDate(userId, date, extraTask = null){
+  const list = activeTasks().filter(task => assignmentShareFor(task, userId) > 0 && task.status !== 'done' && task.id !== extraTask?.id);
+  if(extraTask) list.push(extraTask);
+  return list.reduce((sum, task) => sum + taskDailyLoad(task, date, userId), 0);
+}
+function nextAvailableDate(userId, extraTask = null){
+  const cursor = new Date(); cursor.setHours(0, 0, 0, 0);
+  for(let index = 0; index < 90; index++) {
+    if(isWeekday(cursor) && taskLoadForUserOnDate(userId, cursor, extraTask) < userDailyCapacity(userId) * .8) return dateKey(cursor);
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  return null;
+}
+function assignmentAssessment(userId, task, keepSharedAssignees = false){
+  if(!userId || !task) return { level: 'unknown', label: '담당자를 선택해주세요.', weeklyLoad: 0, nextDate: null, overflowDays: 0 };
+  const candidate = normalizeTask({ ...task, assigneeId: keepSharedAssignees ? task.assigneeId : userId, assignees: keepSharedAssignees ? task.assignees : [{ userId, share: 1, role: 'primary' }], status: task.status || 'todo' });
+  const missingDates = !candidate.startDate || !candidate.dueDate || (!candidate.assessmentOnly && !candidate.estimatedDays);
+  const start = localDate(candidate.startDate || dateKey(new Date()));
+  const end = localDate(candidate.dueDate || candidate.startDate || dateKey(new Date()));
+  const weeklyLoads = new Map();
+  let overflowDays = 0;
+  for(let cursor = new Date(start); cursor <= end; cursor.setDate(cursor.getDate() + 1)) {
+    if(!isWeekday(cursor)) continue;
+    const load = taskLoadForUserOnDate(userId, cursor, candidate);
+    const week = scheduleWeekKey(cursor);
+    weeklyLoads.set(week, (weeklyLoads.get(week) || 0) + load);
+    if(load > userDailyCapacity(userId)) overflowDays++;
+  }
+  const peakWeeklyLoad = Math.max(0, ...weeklyLoads.values());
+  const weeklyLoad = Math.round((peakWeeklyLoad / userWeeklyCapacity(userId)) * 100);
+  const nextDate = nextAvailableDate(userId, candidate);
+  if(missingDates) return { level: 'unknown', label: '기간과 예상 작업일을 입력하면 가용성을 계산할 수 있습니다.', weeklyLoad, nextDate, overflowDays };
+  if(overflowDays > 0 || weeklyLoad > 100) return { level: 'danger', label: `기존 업무와 ${overflowDays || 1}일 겹쳐 과부하가 예상됩니다.`, weeklyLoad, nextDate, overflowDays };
+  if(weeklyLoad >= 80) return { level: 'warn', label: '업무량이 높은 편입니다. 마감일까지 완료 가능 여부를 확인해주세요.', weeklyLoad, nextDate, overflowDays };
+  return { level: 'ok', label: '마감일 내 완료 가능한 여유가 있습니다.', weeklyLoad, nextDate, overflowDays };
+}
+function wouldCreateDependencyCycle(taskId, candidateId){
+  if(!taskId || !candidateId) return false;
+  const visit = (id, visited = new Set()) => {
+    if(id === taskId) return true;
+    if(visited.has(id)) return false;
+    visited.add(id);
+    const task = tasks.find(item => item.id === id);
+    return !!task && (task.dependsOn || []).some(parentId => visit(parentId, visited));
+  };
+  return visit(candidateId);
+}
+function projectProgress(projectId){
+  const list = tasksForProject(projectId);
+  if(!list.length) return null;
+  return Math.round(list.reduce((sum, task) => sum + task.progress, 0) / list.length);
+}
+function canEditTask(task){
+  if(!currentProfile || !task || !isApproved()) return false;
+  if(isAdmin() || isPM()) return true;
+  if(isLead()) return task.departmentId === currentProfile.departmentId;
+  return task.assigneeId === currentUser?.uid;
+}
+function canManageTaskAssignment(task){
+  // 담당자는 본인 업무를 다른 활성 구성원에게 이관할 수 있습니다.
+  // 팀장·PM·관리자는 기존처럼 업무 배정 전반을 관리합니다.
+  return !!task && isApproved() && (isAdmin() || isPM() || (isLead() && task.departmentId === currentProfile.departmentId) || task.assigneeId === currentUser?.uid);
+}
+function canCreateTask(departmentId, assigneeId = currentUser?.uid){
+  return isApproved() && (isAdmin() || isPM() || (isLead() && currentProfile.departmentId === departmentId) || assigneeId === currentUser?.uid);
+}
+function canManageProjects(){ return isApproved() && (isAdmin() || isPM()); }
+function canManageOffboarding(user){ return isApproved() && !!user && (isAdmin() || (isLead() && user.departmentId === currentProfile.departmentId)); }
+
+async function requestGoogleLogin(){
+  try {
+    await auth.signInWithPopup(googleProvider);
+  } catch(error) {
+    console.error('로그인 실패:', error);
+    setAppStatus('로그인에 실패했습니다');
+    alert('Google 로그인에 실패했습니다. 팝업 차단 또는 Firebase Authentication 설정을 확인해주세요.');
+  }
+}
+
+async function signOut(){ await auth.signOut(); }
+
+async function createAccessRequest(user){
+  // 역할·부서 필드는 절대 클라이언트에서 쓰지 않습니다. 보안 규칙도 이 필드만 허용해야 합니다.
+  await db.collection('accessRequests').doc(user.uid).set({
+    email: user.email || '',
+    name: user.displayName || '',
+    requestedAt: firebase.firestore.FieldValue.serverTimestamp()
+  }, { merge: true });
+}
+
+function subscribeCollection(query, apply, label){
+  const unsubscribe = query.onSnapshot(snapshot => {
+    apply(snapshot.docs.map(docToObject));
+    rerenderSafely();
+  }, error => {
+    console.error(`${label} 구독 실패:`, error);
+    setAppStatus('데이터를 불러오지 못했습니다');
+    rerenderSafely();
+  });
+  dataUnsubscribers.push(unsubscribe);
+}
+
+function subscribeProjectScopeForMember(ownTasks){
+  const projectIds = [...new Set(ownTasks.map(task => task.projectId).filter(Boolean))].sort();
+  const nextScopeKey = projectIds.join('|');
+  memberScopeOwnTasks = ownTasks;
+  // 업무 내용만 바뀌고 참여 프로젝트가 같으면 기존 구독을 유지합니다.
+  if(memberScopeKey === nextScopeKey && memberScopePublish) {
+    memberScopePublish();
+    return;
+  }
+  scopedProjectUnsubscribers.forEach(unsub => unsub());
+  scopedProjectUnsubscribers = [];
+  memberScopeKey = nextScopeKey;
+  const scopedProjects = new Map();
+  const scopedTasks = new Map();
+  const scopedMilestones = new Map();
+  const scopedUpdates = new Map();
+  const taskIdsByProject = new Map();
+  const milestoneIdsByProject = new Map();
+  const updateIdsByProject = new Map();
+
+  const publish = () => {
+    projects = [...scopedProjects.values()].sort((a, b) => String(a.code || a.name).localeCompare(String(b.code || b.name)));
+    const own = memberScopeOwnTasks.map(task => [task.id, task]);
+    tasks = [...new Map([...own, ...scopedTasks]).values()];
+    milestones = [...scopedMilestones.values()];
+    projectUpdates = [...scopedUpdates.values()];
+    rerenderSafely();
+  };
+  memberScopePublish = publish;
+
+  projectIds.forEach(projectId => {
+    scopedProjectUnsubscribers.push(db.collection('projects').doc(projectId).onSnapshot(doc => {
+      if(doc.exists) scopedProjects.set(doc.id, docToObject(doc));
+      else scopedProjects.delete(projectId);
+      publish();
+    }, error => console.error('프로젝트 구독 실패:', error)));
+    // Firestore 규칙은 projectMembers/{projectId_uid} 존재 여부를 검사해 이 쿼리를 허용합니다.
+    scopedProjectUnsubscribers.push(db.collection('tasks').where('projectId', '==', projectId).onSnapshot(snapshot => {
+      (taskIdsByProject.get(projectId) || []).forEach(id => scopedTasks.delete(id));
+      const ids = snapshot.docs.map(doc => { scopedTasks.set(doc.id, docToObject(doc)); return doc.id; });
+      taskIdsByProject.set(projectId, ids);
+      publish();
+    }, error => console.error('프로젝트 업무 구독 실패:', error)));
+    scopedProjectUnsubscribers.push(db.collection('milestones').where('projectId', '==', projectId).onSnapshot(snapshot => {
+      (milestoneIdsByProject.get(projectId) || []).forEach(id => scopedMilestones.delete(id));
+      const ids = snapshot.docs.map(doc => { scopedMilestones.set(doc.id, docToObject(doc)); return doc.id; });
+      milestoneIdsByProject.set(projectId, ids);
+      publish();
+    }, error => console.error('프로젝트 마일스톤 구독 실패:', error)));
+    scopedProjectUnsubscribers.push(db.collection('projectUpdates').where('projectId', '==', projectId).onSnapshot(snapshot => {
+      (updateIdsByProject.get(projectId) || []).forEach(id => scopedUpdates.delete(id));
+      const ids = snapshot.docs.map(doc => { scopedUpdates.set(doc.id, docToObject(doc)); return doc.id; });
+      updateIdsByProject.set(projectId, ids);
+      publish();
+    }, error => console.error('프로젝트 업데이트 구독 실패:', error)));
+  });
+  publish();
+}
+
+function subscribeApprovedData(){
+  resetDataSubscriptions();
+  if(isAdmin() || isPM()) {
+    subscribeCollection(db.collection('projects'), data => { projects = data; }, '프로젝트');
+    subscribeCollection(db.collection('tasks'), data => { tasks = data; workDataReadiness.tasks = true; }, '업무');
+    subscribeCollection(db.collection('milestones'), data => { milestones = data; }, '마일스톤');
+    subscribeCollection(db.collection('projectUpdates'), data => { projectUpdates = data; }, '프로젝트 업데이트');
+    subscribeCollection(db.collection('assignmentHistory'), data => { assignmentHistory = data; }, '배정 이력');
+    subscribeCollection(db.collection('holidays'), data => { holidays = data; workDataReadiness.holidays = true; }, '공휴일');
+    subscribeCollection(db.collection('users'), data => { visibleUsers = data; }, '사용자');
+    // 승인 요청은 사용자 권한 관리 화면을 보는 관리자만 필요합니다.
+    if(isAdmin()) subscribeCollection(db.collection('accessRequests'), data => { accessRequests = data; }, '승인 요청');
+  } else if(isLead()) {
+    subscribeCollection(db.collection('projects'), data => { projects = data; }, '프로젝트');
+    subscribeCollection(db.collection('tasks').where('departmentId', '==', currentProfile.departmentId), data => { tasks = data; workDataReadiness.tasks = true; }, '업무');
+    subscribeCollection(db.collection('milestones'), data => { milestones = data; }, '마일스톤');
+    subscribeCollection(db.collection('projectUpdates'), data => { projectUpdates = data; }, '프로젝트 업데이트');
+    subscribeCollection(db.collection('holidays'), data => { holidays = data; workDataReadiness.holidays = true; }, '공휴일');
+    subscribeCollection(db.collection('users').where('departmentId', '==', currentProfile.departmentId), data => { visibleUsers = data; }, '팀원');
+  } else {
+    let primaryTasks = [], supportTasks = [];
+    let primaryLoaded = false, supportLoaded = false;
+    const publishOwnTasks = () => {
+      const ownTasks = [...new Map([...primaryTasks, ...supportTasks].map(task => [task.id, task])).values()];
+      if(primaryLoaded && supportLoaded) { tasks = ownTasks; workDataReadiness.tasks = true; }
+      subscribeProjectScopeForMember(ownTasks);
+    };
+    subscribeCollection(db.collection('tasks').where('assigneeId', '==', currentUser.uid), data => {
+      primaryTasks = data; primaryLoaded = true; publishOwnTasks();
+    }, '내 주 담당 업무');
+    subscribeCollection(db.collection('tasks').where('assigneeIds', 'array-contains', currentUser.uid), data => {
+      supportTasks = data; supportLoaded = true; publishOwnTasks();
+    }, '내 지원 업무');
+    subscribeCollection(db.collection('holidays'), data => { holidays = data; workDataReadiness.holidays = true; }, '공휴일');
+  }
+}
+
+function handleProfile(profile){
+  currentProfile = profile?.active ? profile : null;
+  if(!currentProfile) {
+    resetDataSubscriptions();
+    setAppStatus('승인 대기 중');
+  } else {
+    activeView = isPM() ? 'projects' : isLead() ? 'team' : 'my-work';
+    // 사용자 정보는 상단 계정 영역에서 한 번만 보여줍니다. 상태 영역은 오류·로딩 안내에만 사용합니다.
+    setAppStatus('');
+    subscribeApprovedData();
+  }
+  rerenderSafely();
+}
+
+function startAuth(){
+  // 네트워크·브라우저 확장 프로그램 등으로 인증 초기 응답이 지연돼도 빈 화면에 머물지 않게 합니다.
+  const authFallbackTimer = setTimeout(() => {
+    if(authResolved) return;
+    authResolved = true;
+    setAppStatus('로그인 상태를 확인해주세요');
+    rerenderSafely();
+  }, 4000);
+  auth.onAuthStateChanged(async user => {
+    authResolved = true;
+    clearTimeout(authFallbackTimer);
+    if(profileUnsubscribe) { profileUnsubscribe(); profileUnsubscribe = null; }
+    resetDataSubscriptions();
+    currentUser = user;
+    currentProfile = null;
+    if(!user) {
+      activeView = 'home';
+      profileLookup = { status: 'idle', uid: '', message: '' };
+      setAppStatus('로그인이 필요합니다');
+      rerenderSafely();
+      return;
+    }
+    profileLookup = { status: 'checking', uid: user.uid, message: '' };
+    setAppStatus('권한을 확인하는 중…');
+    profileUnsubscribe = db.collection('users').doc(user.uid).onSnapshot(async doc => {
+      if(!doc.exists) {
+        // 최초 구독은 브라우저 캐시의 오래된 "문서 없음" 상태를 받을 수 있습니다.
+        // 서버를 한 번 직접 확인해 실제 관리자 문서가 있으면 즉시 반영합니다.
+        try {
+          const serverDoc = await db.collection('users').doc(user.uid).get({ source: 'server' });
+          if(serverDoc.exists) {
+            const profile = { id: serverDoc.id, ...serverDoc.data() };
+            profileLookup = {
+              status: profile.active === true ? 'approved' : 'inactive', uid: user.uid,
+              message: `role=${profile.role || '없음'}, active=${String(profile.active)}`
+            };
+            handleProfile(profile);
+            return;
+          }
+        } catch(error) {
+          profileLookup = { status: 'error', uid: user.uid, message: error.code || error.message || 'unknown' };
+          console.error('서버 권한 정보 확인 실패:', error);
+          setAppStatus('권한 정보를 확인할 수 없습니다');
+          handleProfile(null);
+          return;
+        }
+        profileLookup = { status: 'missing', uid: user.uid, message: '' };
+        try { await createAccessRequest(user); }
+        catch(error) { console.error('승인 요청 생성 실패:', error); }
+        handleProfile(null);
+        return;
+      }
+      const profile = { id: doc.id, ...doc.data() };
+      profileLookup = {
+        status: profile.active === true ? 'approved' : 'inactive', uid: user.uid,
+        message: `role=${profile.role || '없음'}, active=${String(profile.active)}`
+      };
+      handleProfile(profile);
+    }, error => {
+      profileLookup = { status: 'error', uid: user.uid, message: error.code || error.message || 'unknown' };
+      console.error('권한 정보 확인 실패:', error);
+      setAppStatus('권한 정보를 확인할 수 없습니다');
+      rerenderSafely();
+    });
+  }, error => {
+    clearTimeout(authFallbackTimer);
+    authResolved = true;
+    console.error('인증 상태 확인 실패:', error);
+    setAppStatus('인증 연결을 확인해주세요');
+    rerenderSafely();
+  });
+}
+
+function requirePermission(allowed, message){
+  if(allowed) return true;
+  alert(message || '이 작업을 할 권한이 없습니다.');
+  return false;
+}
+
+async function saveTask(input){
+  const isNew = !input.id;
+  const previous = isNew ? null : tasks.find(task => task.id === input.id);
+  const departmentId = input.departmentId || previous?.departmentId;
+  if(!requirePermission(isNew ? canCreateTask(departmentId) : canEditTask(previous), '이 업무를 수정할 권한이 없습니다.')) return;
+  if(!input.title?.trim()) throw new Error('업무 제목을 입력해주세요.');
+  const external = departmentId === 'video_partner';
+  if(external && !canManageProjects()) throw new Error('외부 파트너 업무는 관리자 또는 PM만 수정할 수 있습니다.');
+  if(external ? !input.externalAssigneeName?.trim() : !input.assigneeId) throw new Error(external ? '영상 파트너명을 입력해주세요.' : '담당자를 지정해주세요.');
+  if(isNew && !canCreateTask(departmentId, input.assigneeId)) throw new Error('다른 사람의 업무는 팀장, PM 또는 관리자만 등록할 수 있습니다.');
+
+  const data = normalizeTask({ ...previous, ...input, title: input.title.trim(), departmentId, assigneeName: personName(input.assigneeId), updatedBy: currentUser.uid });
+  delete data.returnToAutomatic;
+  const datesChanged = !!previous && (dateOnly(previous.startDate) !== dateOnly(data.startDate) || dateOnly(previous.dueDate) !== dateOnly(data.dueDate));
+  if(previous?.scheduleRule?.type === 'after_task' && data.datePolicy !== 'anchor' && datesChanged && !input.returnToAutomatic) data.dateOverride = true;
+  if(input.returnToAutomatic) {
+    data.dateOverride = false; data.dateLocked = false; data.scheduleMode = 'automatic'; data.scheduleReview = null;
+  }
+  if(datesChanged && previous?.scheduleReview && !input.returnToAutomatic) data.scheduleReview = null;
+  if(external) Object.assign(data, { assigneeId: null, assigneeIds: [], assignees: [], assigneeName: null, externalAssigneeName: input.externalAssigneeName.trim() });
+  if(data.startDate && data.dueDate && data.dueDate < data.startDate) throw new Error('마감일이 시작일보다 빠릅니다.');
+  if(isNew || canManageTaskAssignment(previous)) data.scheduleStatus = data.startDate && data.dueDate ? 'scheduled' : 'unscheduled';
+  if(data.stageId) {
+    const targetProject = projects.find(item => item.id === data.projectId);
+    if(!targetProject?.stageSnapshots?.some(stage => stage.id === data.stageId)) throw new Error('선택한 단계가 프로젝트에 속하지 않습니다.');
+  }
+  const previousAssigneeIds = previous?.assigneeIds || previous?.assignees?.map(item => item.userId) || (previous?.assigneeId ? [previous.assigneeId] : []);
+  const assignmentChanged = isNew || previousAssigneeIds.join('|') !== data.assigneeIds.join('|');
+  if(!isNew && assignmentChanged && !canManageTaskAssignment(previous)) {
+    throw new Error('담당자 변경은 PM, 관리자 또는 해당 부서 팀장만 할 수 있습니다.');
+  }
+  if(assignmentChanged) {
+    const assessments = data.assignees.map(assignee => assignmentAssessment(assignee.userId, data, true));
+    const overloaded = assessments.filter(assessment => assessment.level === 'danger');
+    if(overloaded.length && !input.capacityConfirmed) {
+      const error = new Error('선택한 담당자는 과부하 상태입니다. 경고를 확인한 뒤 다시 저장해주세요.');
+      error.code = 'OVER_CAPACITY'; error.assessments = overloaded; throw error;
+    }
+  }
+  if(data.status === 'done' && previous?.status !== 'done') data.completedAt = firebase.firestore.FieldValue.serverTimestamp();
+  if(data.status !== 'done') data.completedAt = null;
+  if(data.milestoneId) {
+    const milestone = milestones.find(item => item.id === data.milestoneId);
+    if(!milestone || milestone.projectId !== data.projectId) throw new Error('선택한 마일스톤은 연결 프로젝트에 속해야 합니다.');
+  }
+  if(data.dependsOn.includes(input.id)) throw new Error('업무는 자기 자신을 선행 업무로 지정할 수 없습니다.');
+  if(data.dependsOn.some(dependencyId => wouldCreateDependencyCycle(input.id, dependencyId))) {
+    throw new Error('순환 선행 관계가 생깁니다. 선행 업무를 다시 선택해주세요.');
+  }
+  let schedulePreview = { changes: [], retained: [] };
+  let scheduleInputs = [];
+  if(datesChanged && window.DependencyScheduler) {
+    const connected = tasksForProject(data.projectId);
+    if(connected.some(task => task.scheduleRule?.type === 'after_task' && task.scheduleRule.predecessorId === input.id)) {
+      scheduleInputs = connected.map(task => ({ ...task }));
+      if(!workDataReadiness.holidays) throw new Error('공휴일 데이터를 불러오는 중입니다. 잠시 후 다시 저장해주세요.');
+      schedulePreview = window.DependencyScheduler.previewChanges(connected, input.id, { startDate: data.startDate, dueDate: data.dueDate }, { holidays: holidays.map(item => item.date || item.id) });
+      if(schedulePreview.changes.some(change => !canEditTask(tasks.find(task => task.id === change.id)))) throw new Error('다른 직군의 연결 일정도 변경됩니다. 관리자 또는 PM에게 일정 반영을 요청해주세요.');
+      if(schedulePreview.changes.length || schedulePreview.retained.length) {
+        if(!await confirmScheduleChanges(schedulePreview)) return false;
+        const freshPreview = window.DependencyScheduler.previewChanges(tasksForProject(data.projectId), input.id, { startDate: data.startDate, dueDate: data.dueDate }, { holidays: holidays.map(item => item.date || item.id) });
+        if(JSON.stringify(freshPreview) !== JSON.stringify(schedulePreview)) throw new Error('확인 중 연결 일정이 변경되었습니다. 다시 저장하여 변경 내용을 확인해주세요.');
+      }
+    }
+  }
+  const ref = isNew ? db.collection('tasks').doc() : db.collection('tasks').doc(input.id);
+  if(1 + schedulePreview.changes.length + data.assignees.length > 500) throw new Error('한 번에 변경할 수 있는 업무 수를 초과했습니다.');
+  const scheduleWrites = [];
+  const batch = {
+    set: (ref, value, options) => scheduleWrites.push({ type: 'set', ref, value, options }),
+    update: (ref, value) => scheduleWrites.push({ type: 'update', ref, value })
+  };
+  schedulePreview.changes.forEach(change => batch.update(db.collection('tasks').doc(change.id), {
+    ...change.patch, updatedAt: firebase.firestore.FieldValue.serverTimestamp(), updatedBy: currentUser.uid
+  }));
+  batch.set(ref, {
+    ...data,
+    id: firebase.firestore.FieldValue.delete(),
+    createdBy: previous?.createdBy || currentUser.uid,
+    createdAt: previous?.createdAt || firebase.firestore.FieldValue.serverTimestamp(),
+    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+  }, { merge: true });
+  // 프로젝트 구성원 문서가 있어야 팀원이 해당 프로젝트의 전체 흐름을 읽을 수 있습니다.
+  if(data.projectId && (isAdmin() || isPM() || isLead())) {
+    data.assignees.forEach(assignee => batch.set(db.collection('projectMembers').doc(`${data.projectId}_${assignee.userId}`), {
+      projectId: data.projectId, userId: assignee.userId,
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    }, { merge: true }));
+  }
+  const applyWrites = writer => scheduleWrites.forEach(write => {
+    if(write.type === 'update') writer.update(write.ref, write.value);
+    else writer.set(write.ref, write.value, write.options);
+  });
+  if(scheduleInputs.length) {
+    const signature = task => JSON.stringify({
+      start: dateOnly(task.startDate), due: dateOnly(task.dueDate), status: task.status || 'todo',
+      rule: task.scheduleRule || null, policy: task.datePolicy || null, days: task.estimatedDays || 0,
+      locked: !!task.dateLocked, override: !!task.dateOverride, mode: task.scheduleMode || null,
+      archived: !!task.archivedAt, review: task.scheduleReview || null,
+      assigneeId: task.assigneeId || null, assigneeIds: task.assigneeIds || []
+    });
+    await db.runTransaction(async transaction => {
+      const current = await Promise.all(scheduleInputs.map(task => transaction.get(db.collection('tasks').doc(task.id))));
+      current.forEach((doc, index) => {
+        if(!doc.exists || signature(doc.data()) !== signature(scheduleInputs[index])) throw new Error('다른 담당자가 연결 일정을 변경했습니다. 다시 저장하여 변경 내용을 확인해주세요.');
+      });
+      applyWrites(transaction);
+    });
+  } else {
+    const writer = db.batch(); applyWrites(writer); await writer.commit();
+  }
+  return true;
+}
+
+async function resolveTaskScheduleReview(taskId, applyRecommended){
+  const task = tasks.find(item => item.id === taskId);
+  if(!task?.scheduleReview || !canEditTask(task)) throw new Error('일정 확인 권한 또는 권장 일정이 없습니다.');
+  if(applyRecommended) return saveTask({ ...task,
+    startDate: task.scheduleReview.recommendedStartDate, dueDate: task.scheduleReview.recommendedDueDate,
+    returnToAutomatic: true
+  });
+  await db.collection('tasks').doc(task.id).update({ scheduleReview: null, dateOverride: true,
+    updatedAt: firebase.firestore.FieldValue.serverTimestamp(), updatedBy: currentUser.uid });
+  return true;
+}
+
+async function restoreAutomaticSchedule(taskId){
+  const task = tasks.find(item => item.id === taskId);
+  if(!task || !canEditTask(task) || task.datePolicy === 'anchor' || task.scheduleRule?.type !== 'after_task') throw new Error('자동 일정으로 연결할 수 없는 업무입니다.');
+  const predecessor = tasks.find(item => item.id === task.scheduleRule.predecessorId);
+  if(!predecessor) throw new Error('선행 업무를 찾을 수 없습니다.');
+  if(!workDataReadiness.holidays) throw new Error('공휴일 데이터를 불러오는 중입니다.');
+  const dates = window.DependencyScheduler.recommendDates(task, predecessor, holidays.map(item => item.date || item.id));
+  if(!dates) throw new Error('선행 업무의 기준 날짜를 먼저 입력해주세요.');
+  return saveTask({ ...task, ...dates, returnToAutomatic: true });
+}
+
+async function archiveTask(taskId){
+  const task = tasks.find(item => item.id === taskId);
+  if(!requirePermission(canEditTask(task), '이 업무를 보관할 권한이 없습니다.')) return;
+  await db.collection('tasks').doc(taskId).update({
+    archivedAt: firebase.firestore.FieldValue.serverTimestamp(),
+    updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+    updatedBy: currentUser.uid
+  });
+}
+
+async function completeTask(taskId){
+  const task = tasks.find(item => item.id === taskId);
+  if(!requirePermission(canEditTask(task), '이 업무를 완료 처리할 권한이 없습니다.')) return;
+  await db.collection('tasks').doc(taskId).update({
+    status: 'done', progress: 100,
+    completedAt: firebase.firestore.FieldValue.serverTimestamp(),
+    updatedAt: firebase.firestore.FieldValue.serverTimestamp(), updatedBy: currentUser.uid
+  });
+}
+
+function importedTaskStatus(value){
+  const text = String(value || '').trim().toLowerCase();
+  if(['완료', 'done', '100', '100%'].includes(text)) return 'done';
+  if(['차단', '차단됨', 'blocked'].includes(text)) return 'blocked';
+  if(['진행', '진행중', '진행 중', 'in progress', 'in_progress'].includes(text)) return 'in_progress';
+  return 'todo';
+}
+function importedPlatform(value){
+  const text = String(value || '').toLowerCase();
+  if(text.includes('모바일') || text.includes('mobile')) return 'mobile';
+  if(text.includes('콘솔') || text.includes('console') || text.includes('ps')) return 'console';
+  return 'pc';
+}
+function importedDepartment(value){
+  const text = String(value || '').toLowerCase();
+  if(text.includes('ui')) return 'ui';
+  if(text.includes('개발') || text.includes('program')) return 'development';
+  if(text.includes('qa')) return 'qa';
+  if(text.includes('영상')) return 'video';
+  if(text.includes('글비') || text.includes('타코')) return 'business';
+  if(text.includes('제작')) return 'studio';
+  return 'planning';
+}
+
+function importTaskKey(row){
+  const projectKey = String(row.projectCode || row.projectName || '').trim().toLowerCase();
+  return [projectKey, String(row.title || '').trim().toLowerCase(), row.platform || 'pc', row.departmentId || 'planning', dateOnly(row.startDate), dateOnly(row.dueDate)].join('|');
+}
+function isDuplicateImportedRow(row){
+  const key = importTaskKey(row);
+  return activeTasks().some(task => {
+    const project = projects.find(item => item.id === task.projectId);
+    return importTaskKey({ ...task, projectCode: project?.code || project?.name || '' }) === key;
+  });
+}
+
+async function importTasksFromPreview(rows, sourceName = ''){
+  if(!requirePermission(canManageProjects(), '엑셀 이관은 PM 또는 관리자만 실행할 수 있습니다.')) return;
+  const knownKeys = new Set(activeTasks().map(task => {
+    const project = projects.find(item => item.id === task.projectId);
+    return importTaskKey({ ...task, projectCode: project?.code || project?.name || '' });
+  }));
+  let duplicatesSkipped = 0;
+  const validRows = (rows || []).filter(row => row.valid).filter(row => {
+    const key = importTaskKey(row);
+    if(knownKeys.has(key)) { duplicatesSkipped++; return false; }
+    knownKeys.add(key); return true;
+  });
+  if(!validRows.length) throw new Error('이관할 수 있는 업무 행이 없습니다.');
+  const batchId = `import_${Date.now()}`;
+  const knownProjects = new Map(projects.map(project => [String(project.code || project.name).trim().toLowerCase(), project]));
+  const projectRefs = new Map();
+  const writes = [];
+  const queueWrite = (ref, data, options = {}) => writes.push({ ref, data, options });
+  validRows.forEach(row => {
+    const projectKey = String(row.projectCode || row.projectName).trim().toLowerCase();
+    let project = knownProjects.get(projectKey);
+    let projectId;
+    if(project) projectId = project.id;
+    else if(projectRefs.has(projectKey)) projectId = projectRefs.get(projectKey).id;
+    else {
+      const ref = db.collection('projects').doc();
+      projectId = ref.id; projectRefs.set(projectKey, ref);
+      queueWrite(ref, {
+        code: row.projectCode || row.projectName, name: row.projectName || row.projectCode,
+        platforms: [row.platform || 'pc'], versions: [row.platform || 'pc'],
+        schedulingMode: 'manual', status: 'active', health: 'on_track', importedAt: firebase.firestore.FieldValue.serverTimestamp(),
+        createdBy: currentUser.uid, createdAt: firebase.firestore.FieldValue.serverTimestamp(), updatedBy: currentUser.uid, updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+      });
+    }
+    const assigned = activeUsers().find(user => (user.name || '').trim() === String(row.assignee || '').trim() || (user.email || '').trim() === String(row.assignee || '').trim());
+    const taskRef = db.collection('tasks').doc();
+    const estimatedDays = Math.max(0.5, Number(row.estimatedDays || 1));
+    queueWrite(taskRef, normalizeTask({
+      projectId, platform: row.platform || 'pc', departmentId: row.departmentId || 'planning', taskGroup: row.taskGroup || '',
+      title: row.title, system: row.system || '', buildVersion: row.buildVersion || '',
+      assigneeId: assigned?.id || null, assigneeName: assigned ? (assigned.name || assigned.email) : (row.assignee || '담당자 미배정'), legacyAssigneeName: assigned ? null : (row.assignee || null), needsAssignment: !assigned,
+      status: row.status || 'todo', progress: row.status === 'done' ? 100 : 0, estimatedDays,
+      startDate: row.startDate || null, dueDate: row.dueDate || null, scheduleMode: 'manual', importedAt: firebase.firestore.FieldValue.serverTimestamp(), importBatchId: batchId, importSource: sourceName,
+      archivedAt: null, createdBy: currentUser.uid, createdAt: firebase.firestore.FieldValue.serverTimestamp(), updatedBy: currentUser.uid, updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    }));
+    if(assigned) queueWrite(db.collection('projectMembers').doc(`${projectId}_${assigned.id}`), { projectId, userId: assigned.id, importedAt: firebase.firestore.FieldValue.serverTimestamp(), updatedAt: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true });
+  });
+  for(let index = 0; index < writes.length; index += 400) {
+    const batch = db.batch();
+    writes.slice(index, index + 400).forEach(write => batch.set(write.ref, write.data, write.options));
+    await batch.commit();
+  }
+  return { batchId, imported: validRows.length, projectsCreated: projectRefs.size, duplicatesSkipped, excluded: (rows || []).length - validRows.length };
+}
+
+async function reassignTask(taskId, assigneeId, force = false){
+  const task = tasks.find(item => item.id === taskId);
+  if(!task) throw new Error('업무를 찾을 수 없습니다.');
+  if(!requirePermission(canManageTaskAssignment(task), '담당자 변경은 본인 업무의 담당자, PM, 관리자 또는 해당 부서 팀장만 할 수 있습니다.')) return;
+  if(!assigneeId) throw new Error('새 담당자를 선택해주세요.');
+  const target = activeUsers().find(user => user.id === assigneeId) || (assigneeId === currentUser?.uid ? currentProfile : null);
+  if(!target?.active) throw new Error('활성 상태의 담당자만 배정할 수 있습니다.');
+  const assessment = assignmentAssessment(assigneeId, task);
+  if(assessment.level === 'danger' && !force) {
+    const error = new Error('대상자가 과부하 상태입니다. 경고를 확인한 뒤 다시 배정해주세요.');
+    error.code = 'OVER_CAPACITY'; error.assessment = assessment; throw error;
+  }
+  const batch = db.batch();
+  batch.update(db.collection('tasks').doc(taskId), {
+    ...primaryAssignmentFields(assigneeId, target.name || target.email || '이름 미지정'),
+    previousAssigneeId: task.assigneeId || null, previousAssigneeName: task.assigneeId ? personName(task.assigneeId) : '담당자 미배정',
+    assignmentWarning: assessment.level === 'danger' ? assessment.label : null,
+    updatedAt: firebase.firestore.FieldValue.serverTimestamp(), updatedBy: currentUser.uid
+  });
+  batch.set(db.collection('assignmentHistory').doc(), {
+    taskId, projectId: task.projectId || null, previousAssigneeId: task.assigneeId || null, previousAssigneeName: task.assigneeId ? personName(task.assigneeId) : '담당자 미배정',
+    nextAssigneeId: assigneeId, nextAssigneeName: target.name || target.email || '이름 미지정', warningLevel: assessment.level, warningMessage: assessment.level === 'danger' ? assessment.label : null,
+    changedBy: currentUser.uid, changedByName: currentProfile.name || currentUser.displayName || currentUser.email || '', changedAt: firebase.firestore.FieldValue.serverTimestamp()
+  });
+  if(task.projectId && (isAdmin() || isPM() || isLead())) batch.set(db.collection('projectMembers').doc(`${task.projectId}_${assigneeId}`), {
+    projectId: task.projectId, userId: assigneeId, updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+  }, { merge: true });
+  await batch.commit();
+  return assessment;
+}
+
+async function saveProject(input){
+  if(!requirePermission(canManageProjects(), '프로젝트는 관리자만 관리할 수 있습니다.')) return;
+  if(!input.name?.trim()) throw new Error('프로젝트 이름을 입력해주세요.');
+  const ref = input.id ? db.collection('projects').doc(input.id) : db.collection('projects').doc();
+  await ref.set({
+    name: input.name.trim(), code: (input.code || '').trim(),
+    versions: input.versions || input.platforms || [], platforms: input.platforms || input.versions || [],
+    staffing: Array.isArray(input.staffing) ? input.staffing : (input.staffing || []),
+    schedulingMode: input.schedulingMode || 'manual', status: input.status || 'active',
+    updatedAt: firebase.firestore.FieldValue.serverTimestamp(), updatedBy: currentUser.uid,
+    createdAt: input.createdAt || firebase.firestore.FieldValue.serverTimestamp(),
+    createdBy: input.createdBy || currentUser.uid
+  }, { merge: true });
+}
+
+async function completeProject(projectId){
+  if(!requirePermission(canManageProjects(), '프로젝트 완료 처리는 관리자 또는 PM만 실행할 수 있습니다.')) return;
+  const project = projects.find(item => item.id === projectId);
+  if(!project) throw new Error('프로젝트를 찾을 수 없습니다.');
+  await db.collection('projects').doc(projectId).update({
+    status: 'completed', completedAt: firebase.firestore.FieldValue.serverTimestamp(), completedBy: currentUser.uid,
+    updatedAt: firebase.firestore.FieldValue.serverTimestamp(), updatedBy: currentUser.uid
+  });
+}
+
+async function reopenProject(projectId){
+  if(!requirePermission(canManageProjects(), '프로젝트 재개는 관리자 또는 PM만 실행할 수 있습니다.')) return;
+  const project = projects.find(item => item.id === projectId);
+  if(!project) throw new Error('프로젝트를 찾을 수 없습니다.');
+  await db.collection('projects').doc(projectId).update({
+    status: 'active', completedAt: null, completedBy: null,
+    updatedAt: firebase.firestore.FieldValue.serverTimestamp(), updatedBy: currentUser.uid
+  });
+}
+
+async function createScheduledProject(input){
+  if(!requirePermission(canManageProjects(), '프로젝트는 관리자 또는 PM만 생성할 수 있습니다.')) return;
+  if(!input.name?.trim() || !input.code?.trim()) throw new Error('프로젝트명과 프로젝트 코드를 입력해주세요.');
+  const platforms = [...new Set((input.platforms || []).filter(platform => PLATFORMS.some(item => item.id === platform)))];
+  if(!platforms.length) throw new Error('적용할 플랫폼을 하나 이상 선택해주세요.');
+  const milestoneDates = input.milestoneDates || {};
+  if(!milestoneDates.demo_build || !milestoneDates.demo_release || !milestoneDates.full_build || !milestoneDates.full_release) {
+    throw new Error('데모·완전판의 빌드 마감일과 출시일을 모두 입력해주세요.');
+  }
+  const projectRef = db.collection('projects').doc();
+  const batch = db.batch();
+  const staffing = (input.staffing || []).filter(item => platforms.includes(item.platform) && TEMPLATE_DEPARTMENTS.includes(item.departmentId));
+  batch.set(projectRef, {
+    name: input.name.trim(), code: input.code.trim(), platforms, versions: platforms, staffing,
+    schedulingMode: 'template', status: 'active', health: 'on_track',
+    createdBy: currentUser.uid, createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+    updatedBy: currentUser.uid, updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+  });
+
+  const milestoneRefs = {};
+  DELIVERY_MILESTONES.forEach(definition => {
+    const ref = db.collection('milestones').doc();
+    milestoneRefs[definition.key] = ref.id;
+    batch.set(ref, {
+      projectId: projectRef.id, title: definition.title, anchorKey: definition.key,
+      version: null, dueDate: milestoneDates[definition.key], status: 'todo', generated: true, archivedAt: null,
+      createdBy: currentUser.uid, createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+      updatedBy: currentUser.uid, updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+  });
+
+  const generatedTaskIds = new Map();
+  platforms.forEach(platform => {
+    PROJECT_WORK_TEMPLATE.forEach(template => { generatedTaskIds.set(templateTaskKey(platform, template.key), db.collection('tasks').doc().id); });
+  });
+  platforms.forEach(platform => {
+    PROJECT_WORK_TEMPLATE.forEach(template => {
+      const ref = db.collection('tasks').doc(generatedTaskIds.get(templateTaskKey(platform, template.key)));
+      const staff = staffingFor({ staffing }, platform, template.departmentId);
+      const dates = scheduledDates(milestoneDates[template.anchorKey], template.dueOffset, template.estimatedDays);
+      const predecessorId = template.dependsOnKey ? generatedTaskIds.get(templateTaskKey(platform, template.dependsOnKey)) : null;
+      batch.set(ref, normalizeTask({
+        projectId: projectRef.id, platform, departmentId: template.departmentId,
+        assigneeId: staff?.userId || null, assigneeName: staff?.userId ? personName(staff.userId) : null, title: template.title, milestoneId: milestoneRefs[template.anchorKey],
+        phaseId: template.phaseId,
+        status: 'todo', progress: 0, estimatedDays: template.estimatedDays,
+        startDate: dates.startDate, dueDate: dates.dueDate, dependsOn: predecessorId ? [predecessorId] : [],
+        generated: true, templateKey: template.key,
+        scheduleRule: { anchorKey: template.anchorKey, dueOffset: template.dueOffset, estimatedDays: template.estimatedDays },
+        archivedAt: null, createdBy: currentUser.uid, createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+        updatedBy: currentUser.uid, updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+      }));
+    });
+  });
+  staffing.filter(item => item.userId).forEach(item => {
+    batch.set(db.collection('projectMembers').doc(`${projectRef.id}_${item.userId}`), {
+      projectId: projectRef.id, userId: item.userId, platforms: firebase.firestore.FieldValue.arrayUnion(item.platform),
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    }, { merge: true });
+  });
+  await batch.commit();
+  return projectRef.id;
+}
+
+async function createProjectFromTemplate(input){
+  if(!requirePermission(canManageProjects(), '프로젝트는 관리자 또는 PM만 생성할 수 있습니다.')) return;
+  const catalog = await loadProjectTemplateCatalog();
+  (input.assignments || []).filter(item => catalog.roles.find(role => role.id === item.roleId)?.assignmentType === 'internal_user').forEach(item => {
+    if(!visibleUsers.some(user => user.id === item.userId && user.active && user.departmentId === item.roleId)) throw new Error(`${departmentName(item.roleId)}의 활성 담당자를 선택해주세요.`);
+  });
+  const snapshot = window.ProjectTemplateEngine.buildProjectSnapshot(catalog, input, {
+    idFactory: prefix => db.collection(prefix === 'task' ? 'tasks' : 'projects').doc().id
+  });
+  const writes = window.ProjectTemplateEngine.createProjectWritePlan(snapshot);
+  if(writes.length > 500) throw new Error('한 번에 생성할 수 있는 업무 수를 초과했습니다. 템플릿을 나누어주세요.');
+  const batch = db.batch();
+  writes.forEach(write => {
+    const data = {
+      ...write.data,
+      createdBy: currentUser.uid,
+      createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+      updatedBy: currentUser.uid,
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    };
+    const normalized = write.collection === 'tasks' ? normalizeTask({ ...data, assigneeName: data.assigneeId ? personName(data.assigneeId) : null }) : data;
+    const ref = db.collection(write.collection).doc(write.id);
+    if(write.merge) batch.set(ref, normalized, { merge: true });
+    else batch.set(ref, normalized);
+  });
+  await batch.commit();
+  return snapshot.project.id;
+}
+
+async function rescheduleGeneratedTasks(projectId, milestoneOverrides = {}){
+  if(!requirePermission(canManageProjects(), '일정 재계산은 관리자 또는 PM만 실행할 수 있습니다.')) return;
+  const project = projects.find(item => item.id === projectId);
+  if(!project) throw new Error('프로젝트를 찾을 수 없습니다.');
+  const anchors = projectMilestoneMap(projectId, milestoneOverrides);
+  const generated = tasksForProject(projectId).filter(task => task.generated && task.scheduleRule?.anchorKey && anchors[task.scheduleRule.anchorKey] && !task.dateOverride && !task.dateLocked && task.status !== 'done');
+  const batch = db.batch();
+  generated.forEach(task => {
+    const rule = task.scheduleRule;
+    const dates = scheduledDates(anchors[rule.anchorKey], rule.dueOffset, rule.estimatedDays || task.estimatedDays);
+    batch.update(db.collection('tasks').doc(task.id), { startDate: dates.startDate, dueDate: dates.dueDate, updatedAt: firebase.firestore.FieldValue.serverTimestamp(), updatedBy: currentUser.uid });
+  });
+  if(generated.length) await batch.commit();
+}
+
+async function syncProjectStaffing(projectId, staffing, options = {}){
+  if(projects.find(item => item.id === projectId)?.schedulingMode === 'template_v2') throw new Error('새 템플릿 프로젝트는 전용 담당자 수정 기능을 사용해주세요.');
+  if(!requirePermission(canManageProjects(), '담당자 배정은 관리자 또는 PM만 변경할 수 있습니다.')) return;
+  const project = projects.find(item => item.id === projectId);
+  if(!project) throw new Error('프로젝트를 찾을 수 없습니다.');
+  const cleaned = (staffing || []).filter(item => (project.platforms || []).includes(item.platform) && TEMPLATE_DEPARTMENTS.includes(item.departmentId))
+    .map(item => ({ platform: item.platform, departmentId: item.departmentId, userId: item.userId || null }));
+  cleaned.forEach(item => {
+    const previous = staffingFor(project,item.platform,item.departmentId)?.userId || null;
+    if(item.userId && item.userId !== previous && !visibleUsers.some(user=>user.id===item.userId && user.active && user.departmentId===item.departmentId)) throw new Error(`${departmentName(item.departmentId)}의 활성 담당자를 선택해주세요.`);
+  });
+  let writeCount = 1;
+  const batch = db.batch();
+  const info = options.info || {};
+  if(options.info && (!info.name?.trim() || !info.code?.trim())) throw new Error('프로젝트명과 코드를 입력해주세요.');
+  batch.update(db.collection('projects').doc(projectId), { ...(options.info ? {name:info.name.trim(),code:info.code.trim()} : {}), staffing: cleaned, updatedAt: firebase.firestore.FieldValue.serverTimestamp(), updatedBy: currentUser.uid });
+  // 기존 자동 일정 프로젝트에 템플릿 업무가 빠져 있으면 담당자를 저장할 때만 보완합니다.
+  // 날짜가 없는 수동 프로젝트에는 임의의 데모·완전판 일정을 만들지 않습니다.
+  const anchors = projectMilestoneMap(projectId);
+  const milestoneIds = new Map(milestonesForProject(projectId).filter(item => item.anchorKey).map(item => [item.anchorKey, item.id]));
+  const hasAllAnchors = DELIVERY_MILESTONES.every(definition => anchors[definition.key] && milestoneIds.has(definition.key));
+  if(project.schedulingMode === 'template' && hasAllAnchors) {
+    const existingGenerated = new Map(tasksForProject(projectId).filter(task => task.generated && task.templateKey).map(task => [templateTaskKey(task.platform, task.templateKey), task]));
+    const generatedIds = new Map();
+    (project.platforms || []).forEach(platform => PROJECT_WORK_TEMPLATE.forEach(template => {
+      const key = templateTaskKey(platform, template.key);
+      generatedIds.set(key, existingGenerated.get(key)?.id || db.collection('tasks').doc().id);
+    }));
+    (project.platforms || []).forEach(platform => PROJECT_WORK_TEMPLATE.forEach(template => {
+      const key = templateTaskKey(platform, template.key);
+      if(existingGenerated.has(key)) return;
+      writeCount++;
+      const staff = staffingFor({ staffing: cleaned }, platform, template.departmentId);
+      const dates = scheduledDates(anchors[template.anchorKey], template.dueOffset, template.estimatedDays);
+      const predecessorId = template.dependsOnKey ? generatedIds.get(templateTaskKey(platform, template.dependsOnKey)) : null;
+      batch.set(db.collection('tasks').doc(generatedIds.get(key)), normalizeTask({
+        projectId, platform, departmentId: template.departmentId, phaseId: template.phaseId, title: template.title,
+        assigneeId: staff?.userId || null, assigneeName: staff?.userId ? personName(staff.userId) : null,
+        milestoneId: milestoneIds.get(template.anchorKey), status: 'todo', progress: 0, estimatedDays: template.estimatedDays,
+        startDate: dates.startDate, dueDate: dates.dueDate, dependsOn: predecessorId ? [predecessorId] : [],
+        generated: true, templateKey: template.key,
+        scheduleRule: { anchorKey: template.anchorKey, dueOffset: template.dueOffset, estimatedDays: template.estimatedDays },
+        archivedAt: null, createdBy: currentUser.uid, createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+        updatedBy: currentUser.uid, updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+      }));
+    }));
+  }
+  selectedProjectAssignmentChanges(project, cleaned, options.ongoingTaskIds).forEach(task => {
+    const staff = staffingFor({ staffing: cleaned }, task.platform, task.departmentId);
+    if(!staff) return;
+    writeCount++;
+    const assignment = transferredTaskAssignment(task, staff.userId);
+    batch.update(db.collection('tasks').doc(task.id), { assigneeId: assignment.assigneeId, assigneeIds: assignment.assigneeIds, assignees: assignment.assignees, assigneeName: assignment.assigneeId ? personName(assignment.assigneeId) : '담당자 미배정', updatedAt: firebase.firestore.FieldValue.serverTimestamp(), updatedBy: currentUser.uid });
+  });
+  cleaned.filter(item => item.userId).forEach(item => {
+    writeCount++;
+    batch.set(db.collection('projectMembers').doc(`${projectId}_${item.userId}`), {
+      projectId, userId: item.userId, platforms: firebase.firestore.FieldValue.arrayUnion(item.platform), updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    }, { merge: true });
+  });
+  if(writeCount > 500) throw new Error('한 번에 변경할 수 있는 업무 수를 초과했습니다.');
+  await batch.commit();
+}
+
+function previewProjectAssignmentChanges(project, assignments){
+  return tasksForProject(project.id).filter(task => {
+    if(!task.generated || task.status === 'done' || task.sourceType === 'manual' || task.parentTaskId) return false;
+    const modern = project.schedulingMode === 'template_v2';
+    if(!modern && task.departmentId === 'video_partner') return false;
+    const previous = modern ? project.projectAssignments?.find(item => item.departmentId === task.departmentId) : staffingFor(project, task.platform, task.departmentId);
+    const next = modern ? assignments.find(item => item.departmentId === task.departmentId) : staffingFor({staffing:assignments}, task.platform, task.departmentId);
+    if(!previous || !next) return false;
+    if(previous.assignmentType === 'external_text') return task.externalAssigneeName === previous.externalAssigneeName && previous.externalAssigneeName !== next.externalAssigneeName;
+    const oldId = (modern ? previous.assigneeId : previous.userId) || null;
+    const nextId = (modern ? next.assigneeId : next.userId) || null;
+    return (task.assigneeId || null) === oldId && oldId !== nextId;
+  });
+}
+
+function projectAssignmentNeedsChoice(task){
+  return task.status === 'in_progress' || Number(task.progress || 0) > 0;
+}
+
+function selectedProjectAssignmentChanges(project, assignments, ongoingTaskIds = []){
+  const chosen = new Set(ongoingTaskIds || []);
+  return previewProjectAssignmentChanges(project, assignments).filter(task => !projectAssignmentNeedsChoice(task) || chosen.has(task.id));
+}
+
+// Transfer the former primary's share, not a fresh share=1. Merge if the new
+// primary already supports this task; clearing a primary never promotes support.
+function transferredTaskAssignment(task, nextId){
+  const original = normalizeTask(task).assignees;
+  const previous = original.find(item => item.userId === task.assigneeId);
+  const existing = original.find(item => item.userId === nextId && item.userId !== task.assigneeId);
+  const supporters = original.filter(item => item.userId !== task.assigneeId && item.userId !== nextId).map(item => ({...item,role:'co'}));
+  const assignees = nextId ? [{userId:nextId,role:'primary',share:(previous?.share ?? (original.length ? 0 : 1)) + (existing?.share || 0)},...supporters] : supporters;
+  return {assigneeId:nextId || null,assigneeIds:assignees.map(item=>item.userId),assignees};
+}
+
+async function saveTemplateProject(projectId, input){
+  if(!requirePermission(canManageProjects(), '프로젝트는 관리자 또는 PM만 수정할 수 있습니다.')) return;
+  const project = projects.find(item => item.id === projectId);
+  if(!project || project.schedulingMode !== 'template_v2') throw new Error('새 템플릿 프로젝트를 찾을 수 없습니다.');
+  if(!input.name?.trim() || !input.code?.trim()) throw new Error('프로젝트명과 코드를 입력해주세요.');
+  const assignments = (project.projectAssignments || []).map(previous => {
+    const next = input.assignments.find(item => item.departmentId === previous.departmentId);
+    if(!next) throw new Error('담당 정보가 누락되었습니다.');
+    if(previous.assignmentType === 'internal_user') {
+      const person = visibleUsers.find(user => user.id === next.assigneeId && user.active && user.departmentId === previous.departmentId);
+      if(!person) throw new Error(`${departmentName(previous.departmentId)}의 활성 담당자를 선택해주세요.`);
+      return { ...previous, assigneeId: person.id };
+    }
+    if(!next.externalAssigneeName?.trim()) throw new Error('영상 파트너명을 입력해주세요.');
+    return { ...previous, externalAssigneeName: next.externalAssigneeName.trim() };
+  });
+  const changes = selectedProjectAssignmentChanges(project, assignments, input.ongoingTaskIds);
+  const batch = db.batch();
+  const timestamp = firebase.firestore.FieldValue.serverTimestamp();
+  const audit = { updatedAt: timestamp, updatedBy: currentUser.uid };
+  batch.update(db.collection('projects').doc(projectId), {
+    name: input.name.trim(), code: input.code.trim(), projectAssignments: assignments,
+    staffing: (project.platforms || []).flatMap(platform => assignments.filter(item => item.assignmentType === 'internal_user').map(item => ({ platform, departmentId: item.departmentId, userId: item.assigneeId }))), ...audit
+  });
+  changes.forEach(task => {
+    const next = assignments.find(item => item.departmentId === task.departmentId);
+    if(next.assignmentType === 'external_text') {
+      batch.update(db.collection('tasks').doc(task.id), { externalAssigneeName: next.externalAssigneeName, ...audit });
+      return;
+    }
+    const normalized = transferredTaskAssignment(task, next.assigneeId);
+    batch.update(db.collection('tasks').doc(task.id), {
+      assigneeId: normalized.assigneeId, assigneeIds: normalized.assigneeIds, assignees: normalized.assignees,
+      assigneeName: personName(next.assigneeId), ...audit
+    });
+  });
+  const members = [...new Set(assignments.filter(item => item.assignmentType === 'internal_user').map(item => item.assigneeId))];
+  members.forEach(userId => batch.set(db.collection('projectMembers').doc(`${projectId}_${userId}`), { projectId, userId, platforms: project.platforms, ...audit }, { merge: true }));
+  if(1 + changes.length + members.length > 500) throw new Error('한 번에 변경할 수 있는 업무 수를 초과했습니다.');
+  await batch.commit();
+}
+
+async function saveProjectUpdate(input){
+  if(!requirePermission(isAdmin() || isPM() || isLead(), '프로젝트 업데이트는 PM, 팀장 또는 관리자만 작성할 수 있습니다.')) return;
+  if(!input.projectId) throw new Error('프로젝트를 선택해주세요.');
+  const project = projects.find(item => item.id === input.projectId);
+  if(!project) throw new Error('프로젝트를 찾을 수 없습니다.');
+  const health = ['on_track', 'at_risk', 'off_track'].includes(input.health) ? input.health : 'on_track';
+  const batch = db.batch();
+  batch.set(db.collection('projectUpdates').doc(), {
+    projectId: input.projectId, health,
+    achievements: (input.achievements || '').trim(), blockers: (input.blockers || '').trim(), nextSteps: (input.nextSteps || '').trim(),
+    createdBy: currentUser.uid, createdByName: currentProfile.name || currentUser.displayName || currentUser.email || '',
+    createdAt: firebase.firestore.FieldValue.serverTimestamp()
+  });
+  batch.update(db.collection('projects').doc(project.id), {
+    health, lastUpdatedAt: firebase.firestore.FieldValue.serverTimestamp(), updatedAt: firebase.firestore.FieldValue.serverTimestamp(), updatedBy: currentUser.uid
+  });
+  await batch.commit();
+}
+
+function watchTaskDiscussion(taskId, onChange){
+  let comments = [], links = [];
+  const publish = () => onChange({ comments, links });
+  const unsubComments = db.collection('tasks').doc(taskId).collection('comments').orderBy('createdAt', 'asc').onSnapshot(snapshot => {
+    comments = snapshot.docs.map(docToObject); publish();
+  }, error => console.error('댓글 구독 실패:', error));
+  const unsubLinks = db.collection('tasks').doc(taskId).collection('links').orderBy('createdAt', 'desc').onSnapshot(snapshot => {
+    links = snapshot.docs.map(docToObject); publish();
+  }, error => console.error('링크 구독 실패:', error));
+  return () => { unsubComments(); unsubLinks(); };
+}
+
+async function addTaskComment(taskId, text){
+  if(!isApproved() || !text?.trim()) throw new Error('댓글 내용을 입력해주세요.');
+  const task = tasks.find(item => item.id === taskId);
+  if(!task) throw new Error('업무를 찾을 수 없습니다.');
+  await db.collection('tasks').doc(taskId).collection('comments').add({
+    text: text.trim(), authorId: currentUser.uid,
+    authorName: currentProfile.name || currentUser.displayName || currentUser.email || '이름 미지정',
+    mentions: (text.match(/@[^\s@]+/g) || []).map(name => name.slice(1)),
+    createdAt: firebase.firestore.FieldValue.serverTimestamp()
+  });
+}
+
+async function addTaskLink(taskId, input){
+  if(!isApproved()) return;
+  const task = tasks.find(item => item.id === taskId);
+  if(!task || !canEditTask(task)) throw new Error('링크를 추가할 권한이 없습니다.');
+  let url;
+  try { url = new URL(input.url.trim()); }
+  catch { throw new Error('올바른 링크 주소를 입력해주세요.'); }
+  if(!['https:', 'http:'].includes(url.protocol)) throw new Error('http 또는 https 링크만 추가할 수 있습니다.');
+  await db.collection('tasks').doc(taskId).collection('links').add({
+    url: url.href, label: (input.label || '').trim() || url.hostname,
+    addedBy: currentUser.uid, addedByName: currentProfile.name || currentUser.displayName || currentUser.email || '',
+    createdAt: firebase.firestore.FieldValue.serverTimestamp()
+  });
+}
+
+async function saveMilestone(input){
+  if(!requirePermission(canManageProjects(), '마일스톤은 관리자만 관리할 수 있습니다.')) return;
+  if(!input.projectId || !input.title?.trim()) throw new Error('프로젝트와 마일스톤 제목을 입력해주세요.');
+  const ref = input.id ? db.collection('milestones').doc(input.id) : db.collection('milestones').doc();
+  await ref.set({
+    projectId: input.projectId, title: input.title.trim(),
+    version: input.version || null, anchorKey: input.anchorKey || null, dueDate: input.dueDate || null,
+    status: input.status || 'todo', archivedAt: input.archivedAt || null,
+    updatedAt: firebase.firestore.FieldValue.serverTimestamp(), updatedBy: currentUser.uid,
+    createdAt: input.createdAt || firebase.firestore.FieldValue.serverTimestamp(),
+    createdBy: input.createdBy || currentUser.uid
+  }, { merge: true });
+  if(input.anchorKey) await rescheduleGeneratedTasks(input.projectId, { [input.anchorKey]: input.dueDate });
+}
+
+async function archiveMilestone(milestoneId){
+  if(!requirePermission(canManageProjects(), '마일스톤은 관리자만 관리할 수 있습니다.')) return;
+  await db.collection('milestones').doc(milestoneId).update({
+    archivedAt: firebase.firestore.FieldValue.serverTimestamp(),
+    updatedAt: firebase.firestore.FieldValue.serverTimestamp(), updatedBy: currentUser.uid
+  });
+}
+
+async function approveAccessRequest(requestId, role, departmentId, adminAccess = false){
+  if(!requirePermission(isAdmin(), '사용자 권한은 관리자만 부여할 수 있습니다.')) return;
+  const request = accessRequests.find(item => item.id === requestId);
+  if(!request) throw new Error('승인 요청을 찾을 수 없습니다.');
+  if(!['pm', 'lead', 'member'].includes(role)) throw new Error('올바른 업무 역할을 선택해주세요.');
+  if(role !== 'pm' && !departmentId) throw new Error('소속 부서를 선택해주세요.');
+  const batch = db.batch();
+  batch.set(db.collection('users').doc(requestId), {
+    email: request.email || '', name: request.name || request.email || '이름 미지정',
+    role, departmentId: role === 'pm' ? null : departmentId, isAdmin: Boolean(adminAccess), active: true,
+    approvedAt: firebase.firestore.FieldValue.serverTimestamp(),
+    updatedAt: firebase.firestore.FieldValue.serverTimestamp(), updatedBy: currentUser.uid
+  }, { merge: true });
+  batch.delete(db.collection('accessRequests').doc(requestId));
+  await batch.commit();
+}
+
+async function saveUserRole(userId, role, departmentId, adminAccess = false){
+  if(!requirePermission(isAdmin(), '사용자 권한은 관리자만 변경할 수 있습니다.')) return;
+  if(!['pm', 'lead', 'member'].includes(role)) throw new Error('올바른 업무 역할을 선택해주세요.');
+  if(role !== 'pm' && !departmentId) throw new Error('소속 부서를 선택해주세요.');
+  if(userId === currentUser.uid && isAdmin() && !adminAccess) throw new Error('본인의 관리자 권한은 해제할 수 없습니다. 다른 관리자에게 요청해주세요.');
+  await db.collection('users').doc(userId).update({
+    role, departmentId: role === 'pm' ? null : departmentId, isAdmin: Boolean(adminAccess),
+    updatedAt: firebase.firestore.FieldValue.serverTimestamp(), updatedBy: currentUser.uid
+  });
+}
+
+function unfinishedTasksForUser(userId){ return activeTasks().filter(task => task.assigneeId === userId && task.status !== 'done'); }
+
+async function offboardUser(userId, decisions){
+  const user = visibleUsers.find(item => item.id === userId);
+  if(!requirePermission(canManageOffboarding(user), '퇴사 처리는 관리자·PM 또는 해당 부서 팀장만 할 수 있습니다.')) return;
+  if(userId === currentUser?.uid) throw new Error('본인 계정은 직접 퇴사 처리할 수 없습니다. 다른 관리자 또는 PM에게 요청해주세요.');
+  if(!user?.active) throw new Error('이미 비활성화된 사용자입니다.');
+  const unresolved = unfinishedTasksForUser(userId);
+  const decisionByTask = new Map((decisions || []).map(item => [item.taskId, item]));
+  if(unresolved.some(task => !decisionByTask.has(task.id))) throw new Error('진행 중·예정 업무의 처리 방식을 모두 선택해주세요.');
+
+  const batch = db.batch();
+  const updatedStaffing = new Map();
+  unresolved.forEach(task => {
+    const decision = decisionByTask.get(task.id);
+    if(!['reassign', 'unassign', 'archive'].includes(decision.action)) throw new Error('업무 처리 방식을 확인해주세요.');
+    if(decision.action === 'reassign') {
+      const replacement = activeUsers().find(item => item.id === decision.userId);
+      if(!replacement) throw new Error('재배정할 현재 직원을 선택해주세요.');
+      if(!isAdmin() && replacement.departmentId !== user.departmentId) throw new Error('팀장은 자기 부서 직원에게만 재배정할 수 있습니다.');
+      batch.update(db.collection('tasks').doc(task.id), {
+        ...primaryAssignmentFields(replacement.id, replacement.name || replacement.email || '이름 미지정'),
+        previousAssigneeId: userId, previousAssigneeName: user.name || user.email || '', handoverAt: firebase.firestore.FieldValue.serverTimestamp(),
+        updatedAt: firebase.firestore.FieldValue.serverTimestamp(), updatedBy: currentUser.uid
+      });
+      if(task.projectId && task.platform) {
+        const project = projects.find(item => item.id === task.projectId);
+        if(project) {
+          const key = project.id;
+          const staffing = updatedStaffing.get(key) || (project.staffing || []).map(item => ({ ...item }));
+          staffing.forEach(item => { if(item.platform === task.platform && item.departmentId === task.departmentId && item.userId === userId) item.userId = replacement.id; });
+          updatedStaffing.set(key, staffing);
+        }
+      }
+      if(task.projectId) batch.set(db.collection('projectMembers').doc(`${task.projectId}_${replacement.id}`), { projectId: task.projectId, userId: replacement.id, updatedAt: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true });
+    } else if(decision.action === 'unassign') {
+      batch.update(db.collection('tasks').doc(task.id), {
+        ...primaryAssignmentFields(null),
+        previousAssigneeId: userId, previousAssigneeName: user.name || user.email || '', handoverAt: firebase.firestore.FieldValue.serverTimestamp(),
+        updatedAt: firebase.firestore.FieldValue.serverTimestamp(), updatedBy: currentUser.uid
+      });
+      if(task.projectId && task.platform) {
+        const project = projects.find(item => item.id === task.projectId);
+        if(project) {
+          const key = project.id;
+          const staffing = updatedStaffing.get(key) || (project.staffing || []).map(item => ({ ...item }));
+          staffing.forEach(item => { if(item.platform === task.platform && item.departmentId === task.departmentId && item.userId === userId) item.userId = null; });
+          updatedStaffing.set(key, staffing);
+        }
+      }
+    } else {
+      batch.update(db.collection('tasks').doc(task.id), {
+        archivedAt: firebase.firestore.FieldValue.serverTimestamp(), offboardingAction: 'archived',
+        updatedAt: firebase.firestore.FieldValue.serverTimestamp(), updatedBy: currentUser.uid
+      });
+    }
+  });
+  updatedStaffing.forEach((staffing, projectId) => {
+    batch.update(db.collection('projects').doc(projectId), { staffing, updatedAt: firebase.firestore.FieldValue.serverTimestamp(), updatedBy: currentUser.uid });
+  });
+  batch.update(db.collection('users').doc(userId), {
+    active: false, employmentStatus: 'departed', offboardedAt: firebase.firestore.FieldValue.serverTimestamp(),
+    updatedAt: firebase.firestore.FieldValue.serverTimestamp(), updatedBy: currentUser.uid
+  });
+  await batch.commit();
+}

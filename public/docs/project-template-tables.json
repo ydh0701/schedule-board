@@ -1,0 +1,242 @@
+{
+  "schemaVersion": 2,
+  "description": "프로젝트 생성용 관리 테이블. 배열의 각 객체를 관리 화면의 한 행으로 취급한다.",
+  "platforms": [
+    { "id": "pc", "name": "PC", "order": 10, "active": true },
+    { "id": "mobile", "name": "모바일", "order": 20, "active": true },
+    { "id": "console", "name": "콘솔", "order": 30, "active": true }
+  ],
+  "roles": [
+    { "id": "planning", "name": "기획", "assignmentType": "internal_user", "order": 10, "active": true },
+    { "id": "ui", "name": "UI", "assignmentType": "internal_user", "order": 20, "active": true },
+    { "id": "development", "name": "개발", "assignmentType": "internal_user", "order": 30, "active": true },
+    { "id": "qa", "name": "QA", "assignmentType": "internal_user", "order": 40, "active": true },
+    { "id": "business", "name": "글로벌비즈니스실", "assignmentType": "internal_user", "datePolicy": "anchor", "order": 50, "active": true },
+    { "id": "video_partner", "name": "영상 파트너", "assignmentType": "external_text", "datePolicy": "anchor", "order": 60, "active": true }
+  ],
+  "templates": [
+    {
+      "id": "fmv_pc_default",
+      "name": "FMV PC 기본 템플릿",
+      "platformId": "pc",
+      "version": 2,
+      "status": "active",
+      "active": true
+    },
+    {
+      "id": "fmv_mobile_default",
+      "name": "FMV 모바일 기본 템플릿",
+      "platformId": "mobile",
+      "version": 1,
+      "status": "draft",
+      "active": true
+    }
+  ],
+  "templateStages": [
+    { "id": "stage_m1", "templateId": "fmv_pc_default", "code": "M1", "name": "프로젝트 준비", "order": 10, "active": true },
+    { "id": "stage_m2", "templateId": "fmv_pc_default", "code": "M2", "name": "영상·기반 제작", "order": 20, "active": true },
+    { "id": "stage_m3", "templateId": "fmv_pc_default", "code": "M3", "name": "데모 제작", "order": 30, "active": true },
+    { "id": "stage_m4", "templateId": "fmv_pc_default", "code": "M4", "name": "완전판 제작", "order": 40, "active": true },
+    { "id": "stage_m5", "templateId": "fmv_pc_default", "code": "M5", "name": "출시", "order": 50, "active": true },
+    { "id": "mobile_stage_m1", "templateId": "fmv_mobile_default", "code": "M1", "name": "프로젝트 준비", "order": 10, "active": true },
+    { "id": "mobile_stage_m2", "templateId": "fmv_mobile_default", "code": "M2", "name": "사전예약 준비", "order": 20, "active": true },
+    { "id": "mobile_stage_m3", "templateId": "fmv_mobile_default", "code": "M3", "name": "출시 준비", "order": 30, "active": true },
+    { "id": "mobile_stage_m4", "templateId": "fmv_mobile_default", "code": "M4", "name": "출시", "order": 40, "active": true }
+  ],
+  "templateTasks": [
+    {
+      "id": "planning_concept_document",
+      "templateId": "fmv_pc_default",
+      "stageId": "stage_m1",
+      "roleId": "planning",
+      "title": "콘셉트 기획서 작성",
+      "order": 10,
+      "defaultWorkdays": 5,
+      "dependsOnTaskId": null,
+      "startOffsetWorkdays": 0,
+      "active": true
+    },
+    {
+      "id": "partner_treatment_delivery",
+      "templateId": "fmv_pc_default",
+      "stageId": "stage_m1",
+      "roleId": "video_partner",
+      "title": "시나리오 트리트먼트 전달",
+      "order": 20,
+      "defaultWorkdays": 10,
+      "dependsOnTaskId": "planning_concept_document",
+      "startOffsetWorkdays": 1,
+      "active": true
+    },
+    {
+      "id": "partner_rough_cut_delivery",
+      "templateId": "fmv_pc_default",
+      "stageId": "stage_m2",
+      "roleId": "video_partner",
+      "title": "가편 영상 납품",
+      "order": 10,
+      "defaultWorkdays": 10,
+      "dependsOnTaskId": null,
+      "startOffsetWorkdays": 0,
+      "active": true
+    },
+    {
+      "id": "planning_rough_cut_review",
+      "templateId": "fmv_pc_default",
+      "stageId": "stage_m2",
+      "roleId": "planning",
+      "title": "가편 영상 검수",
+      "order": 20,
+      "defaultWorkdays": 3,
+      "dependsOnTaskId": "partner_rough_cut_delivery",
+      "startOffsetWorkdays": 1,
+      "active": true
+    },
+    {
+      "id": "ui_direction",
+      "templateId": "fmv_pc_default",
+      "stageId": "stage_m2",
+      "roleId": "ui",
+      "title": "UI 방향성 정리",
+      "order": 30,
+      "defaultWorkdays": 3,
+      "dependsOnTaskId": null,
+      "startOffsetWorkdays": 0,
+      "active": true
+    },
+    {
+      "id": "partner_rough_cut_correction",
+      "templateId": "fmv_pc_default",
+      "stageId": "stage_m2",
+      "roleId": "video_partner",
+      "title": "가편 영상 수정 납품",
+      "order": 21,
+      "defaultWorkdays": 3,
+      "dependsOnTaskId": "planning_rough_cut_review",
+      "referenceDate": "dueDate",
+      "startOffsetWorkdays": 1,
+      "active": true
+    },
+    {
+      "id": "planning_rough_cut_final_review",
+      "templateId": "fmv_pc_default",
+      "stageId": "stage_m2",
+      "roleId": "planning",
+      "title": "가편 영상 최종 확인",
+      "order": 22,
+      "defaultWorkdays": 2,
+      "dependsOnTaskId": "partner_rough_cut_correction",
+      "referenceDate": "dueDate",
+      "startOffsetWorkdays": 1,
+      "active": true
+    },
+    {
+      "id": "development_initial_project",
+      "templateId": "fmv_pc_default",
+      "stageId": "stage_m2",
+      "roleId": "development",
+      "title": "초기 유니티 프로젝트 구성",
+      "order": 40,
+      "defaultWorkdays": 5,
+      "dependsOnTaskId": null,
+      "startOffsetWorkdays": 0,
+      "active": true
+    },
+    {
+      "id": "planning_first_data",
+      "templateId": "fmv_pc_default",
+      "stageId": "stage_m3",
+      "roleId": "planning",
+      "title": "1차 데이터·업적·밸런스 작성",
+      "order": 10,
+      "defaultWorkdays": 10,
+      "dependsOnTaskId": null,
+      "startOffsetWorkdays": 0,
+      "active": true
+    },
+    {
+      "id": "ui_demo_production",
+      "templateId": "fmv_pc_default",
+      "stageId": "stage_m3",
+      "roleId": "ui",
+      "title": "데모 UI 제작",
+      "order": 20,
+      "defaultWorkdays": 15,
+      "dependsOnTaskId": "planning_first_data",
+      "startOffsetWorkdays": 0,
+      "active": true
+    },
+    {
+      "id": "development_demo_features",
+      "templateId": "fmv_pc_default",
+      "stageId": "stage_m3",
+      "roleId": "development",
+      "title": "데모 기능 구현",
+      "order": 30,
+      "defaultWorkdays": 20,
+      "dependsOnTaskId": "planning_first_data",
+      "startOffsetWorkdays": 0,
+      "active": true
+    },
+    {
+      "id": "qa_demo_review",
+      "templateId": "fmv_pc_default",
+      "stageId": "stage_m3",
+      "roleId": "qa",
+      "title": "데모 심사 QA",
+      "order": 40,
+      "defaultWorkdays": 4,
+      "dependsOnTaskId": "development_demo_features",
+      "startOffsetWorkdays": 1,
+      "active": true
+    },
+    {
+      "id": "business_demo_submission",
+      "templateId": "fmv_pc_default",
+      "stageId": "stage_m3",
+      "roleId": "business",
+      "title": "데모 심사 제출",
+      "order": 50,
+      "defaultWorkdays": 1,
+      "dependsOnTaskId": "qa_demo_review",
+      "startOffsetWorkdays": 1,
+      "active": true
+    },
+    {
+      "id": "ui_full_production",
+      "templateId": "fmv_pc_default",
+      "stageId": "stage_m4",
+      "roleId": "ui",
+      "title": "완전판 UI 제작",
+      "order": 10,
+      "defaultWorkdays": 30,
+      "dependsOnTaskId": null,
+      "startOffsetWorkdays": 0,
+      "active": true
+    },
+    {
+      "id": "development_full_features",
+      "templateId": "fmv_pc_default",
+      "stageId": "stage_m4",
+      "roleId": "development",
+      "title": "완전판 기능 구현",
+      "order": 20,
+      "defaultWorkdays": 35,
+      "dependsOnTaskId": null,
+      "startOffsetWorkdays": 0,
+      "active": true
+    },
+    {
+      "id": "qa_release",
+      "templateId": "fmv_pc_default",
+      "stageId": "stage_m5",
+      "roleId": "qa",
+      "title": "출시 QA",
+      "order": 10,
+      "defaultWorkdays": 10,
+      "dependsOnTaskId": "development_full_features",
+      "startOffsetWorkdays": 1,
+      "active": true
+    }
+  ]
+}
