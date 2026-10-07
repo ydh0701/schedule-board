@@ -10,11 +10,34 @@ function guideDashboardTask(task,colors=guideProjectColorScope()){
   const detail=el('div','guide-dashboard-task-detail');detail.append(el('strong','',task.title),el('small','',MilestoneDashboardModel.shortDates(task.startDate,task.dueDate,today)));
   item.append(meta,detail);return item;
 }
-function openGuideDashboardMilestone(projectList){
-  if(!canManageProjects())return;
-  const {dialog,close}=openDialog('주요 일정 추가 · 프로젝트 선택');
-  projectList.forEach(project=>dialog.appendChild(button(`${project.code||''} ${project.name}`,'ghost',()=>{close();openMilestoneEditor(null,project.id);}))); 
-  if(!projectList.length)dialog.appendChild(el('p','','주요 일정을 추가할 프로젝트가 없습니다.'));
+function guideDashboardMajorSelection(){
+  return MilestoneDashboardModel.readMajorSelection(localStorage,location.pathname,currentUser.uid);
+}
+function openGuideDashboardMilestone(ownTasks){
+  const {dialog,close}=openDialog('주요 일정 선택 · 내 일정');
+  const candidates=MilestoneDashboardModel.personalMajorCandidates(ownTasks),draft=new Set(guideDashboardMajorSelection());
+  const form=el('div','guide-major-picker'),list=el('div','guide-major-picker-list'),note=el('p','guide-footnote');
+  note.textContent='담당·지원 중인 미완료 일정입니다. 선택한 일정은 내 주요 일정에만 추가됩니다. 이 브라우저에 저장됩니다.';
+  const count=el('p','guide-footnote');count.setAttribute('aria-live','polite');
+  const updateCount=()=>{count.textContent=`선택 ${candidates.filter(task=>draft.has(task.id)).length}건`;};
+  function draw(query=''){
+    list.replaceChildren();const found=candidates.filter(task=>{const project=projects.find(item=>item.id===task.projectId);return [task.title,project?.code,project?.name].some(value=>String(value||'').toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()));});
+    found.forEach(task=>{
+      const row=el('label','guide-major-picker-row'),input=document.createElement('input');input.type='checkbox';input.checked=draft.has(task.id);input.setAttribute('aria-label',task.title);
+      input.onchange=()=>{if(input.checked)draft.add(task.id);else draft.delete(task.id);updateCount();};
+      const content=el('span','guide-major-picker-content'),project=projects.find(item=>item.id===task.projectId);
+      content.append(el('small','',`${project?.code||project?.name||'개인 일정'} · ${platformName(task.platform)}`),el('strong','',task.title));
+      row.append(input,content,el('small','guide-major-picker-date',MilestoneDashboardModel.shortDates(task.startDate,task.dueDate,dateKey(todayDate()))));list.appendChild(row);
+    });
+    if(!found.length)list.appendChild(el('p','guide-empty',candidates.length?'검색 결과가 없습니다.':'본인에게 배정된 미완료 일정이 없습니다.'));
+  }
+  const error=el('p','guide-footnote');error.setAttribute('role','alert');
+  const actions=el('div','form-actions');actions.append(button('취소','ghost',close),button('선택 적용','primary',()=>{
+    const ids=MilestoneDashboardModel.selectedMajorTasks(candidates,[...draft]).map(task=>task.id);
+    try{MilestoneDashboardModel.writeMajorSelection(localStorage,location.pathname,currentUser.uid,ids);}catch{error.textContent='브라우저 저장소를 사용할 수 없습니다. 설정을 확인한 뒤 다시 시도해 주세요.';return;}
+    close();rerender();
+  }));
+  form.append(note,guideSearch('내 일정 검색', '',draw),count,list,error,actions);mountDialogForm(dialog,form);draw();updateCount();
 }
 function renderGuideDashboard(main){
   if(!workDataReadiness.tasks){main.appendChild(el('p','guide-empty','업무 데이터를 불러오는 중입니다.'));return;}
@@ -24,20 +47,20 @@ function renderGuideDashboard(main){
   if(!state.timelineStart || (state.today!==today&&state.followToday))state.timelineStart=today.slice(0,4)+'-01';state.today=today;
   const tabs=el('div','guide-page-tabs');tabs.setAttribute('role','tablist');tabs.setAttribute('aria-label','대시보드 보기');
   [['calendar','캘린더'],['timeline','타임라인']].forEach(([id,label])=>{const tab=button(label,state.view===id?'active':'',()=>{state.view=id;rerender();});tab.setAttribute('role','tab');tab.setAttribute('aria-selected',String(state.view===id));tabs.appendChild(tab);});main.appendChild(tabs);
-  if(isPM()||isAdmin()){
-    const notice=el('div','guide-dashboard-role-note');notice.append(el('span','','현재는 내 업무 대시보드입니다. 팀장 계정은 팀 배치와 받은 멘션 영역을 표시합니다.'),button('팀별 현황 보기','ghost tiny',()=>setView('people')));main.appendChild(notice);
-  }
   const own=MilestonePersonalModel.personalTasks(activeTasks(),projects,currentUser.uid);
   const events=MilestoneDashboardModel.events(projects,own,milestones,activeTasks());
   const colors=guideProjectColorScope(events.map(event=>event.project));
   const layout=el('div','guide-dashboard-layout'),sidebar=el('aside','guide-dashboard-sidebar'),calendar=el('section','guide-dashboard-calendar-panel');
   const major=el('section','guide-dashboard-panel guide-dashboard-major');major.appendChild(el('h2','','주요 일정'));
   const majorItems=MilestoneDashboardModel.upcomingMajorEvents(events,today);
+  const automaticTaskIds=new Set(majorItems.filter(event=>event.task).map(event=>event.task.id));
+  const selectedTasks=MilestoneDashboardModel.selectedMajorTasks(own,guideDashboardMajorSelection()).filter(task=>!automaticTaskIds.has(task.id));
   const majorList=el('div','guide-dashboard-scroll');
   majorItems.forEach(event=>{const item=button('','guide-dashboard-task',()=>{setView('projects',event.project.id);});colors.apply(item,event.project);const meta=el('div','guide-dashboard-task-meta');meta.appendChild(el('span','guide-dashboard-project-label',`${event.project.code||event.project.name}${event.task?.platform?' '+platformName(event.task.platform):''}`));const detail=el('div','guide-dashboard-task-detail');detail.append(el('strong','',event.title),el('small','',MilestoneDashboardModel.shortDates(event.startDate,event.dueDate,today)));item.append(meta,detail);majorList.appendChild(item);});
-  if(!majorItems.length)majorList.appendChild(el('p','guide-dashboard-empty','참여 프로젝트에 등록된 예정 주요 일정이 없습니다.'));
+  selectedTasks.forEach(task=>majorList.appendChild(guideDashboardTask(task,colors)));
+  if(!majorItems.length&&!selectedTasks.length)majorList.appendChild(el('p','guide-dashboard-empty','표시할 주요 일정이 없습니다. +에서 내 일정을 선택하세요.'));
   major.appendChild(majorList);
-  if(canManageProjects()){const footer=el('div','guide-dashboard-major-footer');const add=button('+','guide-dashboard-add',()=>openGuideDashboardMilestone(projects.filter(project=>!['archived','completed'].includes(project.status))));add.setAttribute('aria-label','주요 일정 추가');footer.appendChild(add);major.appendChild(footer);}sidebar.appendChild(major);
+  const footer=el('div','guide-dashboard-major-footer');const add=button('','guide-dashboard-add',()=>openGuideDashboardMilestone(own));add.appendChild(milestoneIcon('plus'));add.setAttribute('aria-label','내 일정에서 주요 일정 선택');footer.appendChild(add);major.appendChild(footer);sidebar.appendChild(major);
   const work=el('section','guide-dashboard-panel');const workHead=el('div','guide-dashboard-panel-head');workHead.append(el('h2','','내 업무'),button('개인 일정 ›','guide-team-link',openGuideMyWork));work.appendChild(workHead);
   const summary=MilestoneDashboardModel.summary(own,today),workList=el('div','guide-dashboard-scroll guide-dashboard-work-scroll');
   [['attention','확인이 필요한 업무'],['current','오늘 업무'],['next','다음 업무']].forEach(([key,label])=>{

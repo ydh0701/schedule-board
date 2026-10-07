@@ -27,6 +27,22 @@
     return events.filter(event=>(event.kind!=='task'||event.task?.datePolicy==='anchor')&&eventStatus(event)!=='done'&&event.dueDate>=today)
       .sort((a,b)=>a.startDate.localeCompare(b.startDate)||String(a.id).localeCompare(String(b.id)));
   }
+  // Display preferences only: never change shared milestones, dates, or owners.
+  function personalMajorCandidates(ownTasks){
+    return ownTasks.filter(task=>!task.archivedAt&&task.status!=='done')
+      .slice().sort((a,b)=>String(a.startDate||'9999').localeCompare(String(b.startDate||'9999'))||String(a.title||'').localeCompare(String(b.title||''),'ko'));
+  }
+  function selectedMajorTasks(ownTasks,ids){
+    const selected=new Set(Array.isArray(ids)?ids:[]);
+    return personalMajorCandidates(ownTasks).filter(task=>selected.has(task.id));
+  }
+  function majorPreferenceKey(scope,userId){return 'milestone-personal-major-v1:'+scope+':'+userId;}
+  function readMajorSelection(storage,scope,userId){
+    try{const ids=JSON.parse(storage.getItem(majorPreferenceKey(scope,userId))||'[]');return Array.isArray(ids)?[...new Set(ids.filter(id=>typeof id==='string'))]:[];}catch{return [];}
+  }
+  function writeMajorSelection(storage,scope,userId,ids){
+    storage.setItem(majorPreferenceKey(scope,userId),JSON.stringify([...new Set(ids)]));
+  }
   function filterEvents(events,settings={}){
     const query=String(settings.query||'').trim().toLocaleLowerCase();
     const result=events.filter(event=>{
@@ -125,6 +141,6 @@
     return [['overdue','지연 업무'],['review','일정 변경 확인 필요'],['undated','날짜 미정 업무']]
       .map(([id,label])=>({id,label,tasks:issues[id]||[]})).filter(item=>item.tasks.length);
   }
-  const api={DISPLAY_POLICY,VIEW_OPTIONS,summary,participation,events,calendarWeeks,completionDate,shortDates,filterEvents,timeline,eventStatus,upcomingMajorEvents,majorDateMarkers,markerLayout,teamOverview,teamIssueItems};
+  const api={DISPLAY_POLICY,VIEW_OPTIONS,summary,participation,events,calendarWeeks,completionDate,shortDates,filterEvents,timeline,eventStatus,upcomingMajorEvents,personalMajorCandidates,selectedMajorTasks,readMajorSelection,writeMajorSelection,majorDateMarkers,markerLayout,teamOverview,teamIssueItems};
   if(typeof module==='object'&&module.exports) module.exports=api;else root.MilestoneDashboardModel=api;
 })(typeof window!=='undefined'?window:globalThis);
