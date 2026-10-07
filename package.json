@@ -1,5 +1,5 @@
 {
   "name":"milestone-test-site",
   "private":true,
-  "scripts":{"verify":"node scripts/verify-demo.js","deploy":"firebase deploy --only hosting --project fmv-schedule"}
+  "scripts":{"verify":"node scripts/verify-demo.js && node --test tests/actual-task-table.test.js","deploy":"firebase deploy --only hosting --project fmv-schedule"}
 }
