@@ -10,7 +10,7 @@
   };
   function majorDateMarkers(events,startDate,endDate){
     const groups=new Map(),start=Date.parse(startDate+'T00:00:00Z'),length=Date.parse(endDate+'T00:00:00Z')+86400000-start;
-    events.filter(event=>event.kind!=='task'&&event.dueDate>=startDate&&event.dueDate<=endDate).forEach(event=>{
+    events.filter(event=>event.kind==='milestone'&&event.dueDate>=startDate&&event.dueDate<=endDate).forEach(event=>{
       if(!groups.has(event.dueDate))groups.set(event.dueDate,[]);groups.get(event.dueDate).push(event);
     });
     return [...groups].sort(([a],[b])=>a.localeCompare(b)).map(([date,items])=>({date,events:items,left:(Date.parse(date+'T00:00:00Z')-start)/length*100}));
@@ -102,8 +102,8 @@
     const completedToday=tasks.filter(task=>task.status==='done'&&completionDate(task.completedAt)===today);
     return {attention:attention.sort((a,b)=>String(a.dueDate||'9999').localeCompare(String(b.dueDate||'9999'))),current:[...current,...completedToday],next,undated};
   }
-  function participation(projects,tasks){
-    return projects.filter(project=>project.status!=='archived' && project.status!=='completed' && tasks.some(task=>task.projectId===project.id)).map(project=>{
+  function participation(projects,tasks,relatedIds=[]){
+    return projects.filter(project=>project.status!=='archived' && project.status!=='completed' && (relatedIds.includes(project.id)||tasks.some(task=>task.projectId===project.id))).map(project=>{
       const own=tasks.filter(task=>task.projectId===project.id);
       const platforms=[...new Set(own.map(task=>task.platform||''))].map(platform=>{
         const rows=own.filter(task=>(task.platform||'')===platform),done=rows.filter(task=>task.status==='done').length;
@@ -112,8 +112,8 @@
       });return {project,platforms};
     });
   }
-  function events(projects,ownTasks,milestones,allTasks){
-    const ids=new Set(ownTasks.map(task=>task.projectId)),projectMap=new Map(projects.filter(project=>project.status!=='archived' && ids.has(project.id)).map(project=>[project.id,project]));
+  function events(projects,ownTasks,milestones,allTasks,relatedIds=[]){
+    const ids=new Set([...relatedIds,...ownTasks.map(task=>task.projectId)]),projectMap=new Map(projects.filter(project=>project.status!=='archived' && ids.has(project.id)).map(project=>[project.id,project]));
     const result=ownTasks.filter(task=>task.startDate&&task.dueDate&&task.startDate<=task.dueDate).map(task=>({id:'task:'+task.id,kind:'task',project:projectMap.get(task.projectId),title:task.title,startDate:task.startDate,dueDate:task.dueDate,task})).filter(event=>event.project);
     const ownIds=new Set(ownTasks.map(task=>task.id));
     milestones.filter(item=>!item.archivedAt&&item.dueDate&&projectMap.has(item.projectId)).forEach(item=>result.push({id:'milestone:'+item.id,kind:'milestone',project:projectMap.get(item.projectId),title:item.title,startDate:item.dueDate,dueDate:item.dueDate,source:item}));
@@ -138,18 +138,60 @@
     }return result;
   }
   // Scope before deriving counts; unassigned team work remains visible to the lead.
-  function teamOverview(projects,tasks,milestones,departmentId,today){
+  function teamOverview(projects,tasks,milestones,departmentId,today,teamIds=[],relatedIds=[]){
     const available=new Set(projects.filter(project=>project.status!=='archived').map(project=>project.id));
-    const teamTasks=tasks.filter(task=>departmentId&&task.departmentId===departmentId&&!task.archivedAt&&available.has(task.projectId));
+    const teamTasks=tasks.filter(task=>departmentId&&(task.departmentId===departmentId||teamIds.some(id=>assigned(task,id)))&&!task.archivedAt&&available.has(task.projectId));
     const active=teamTasks.filter(task=>task.status!=='done');
     const issues={overdue:active.filter(task=>task.dueDate&&task.dueDate<today),review:active.filter(task=>task.scheduleReview),undated:active.filter(task=>!task.startDate||!task.dueDate||task.startDate>task.dueDate)};
-    const major=events(projects,teamTasks,milestones,tasks).filter(event=>event.kind!=='task'||event.task?.datePolicy==='anchor').map(event=>({...event,startDate:event.dueDate}));
+    const major=events(projects,teamTasks,milestones,tasks,relatedIds).filter(event=>event.kind!=='task'||event.task?.datePolicy==='anchor').map(event=>({...event,startDate:event.dueDate}));
     return {tasks:teamTasks,issues,events:major};
   }
   function teamIssueItems(issues){
     return [['overdue','지연 업무'],['review','일정 변경 확인 필요'],['undated','날짜 미정 업무']]
       .map(([id,label])=>({id,label,tasks:issues[id]||[]})).filter(item=>item.tasks.length);
   }
-  const api={DISPLAY_POLICY,VIEW_OPTIONS,summary,participation,events,calendarWeeks,completionDate,shortDates,filterEvents,timeline,eventStatus,upcomingMajorEvents,personalMajorCandidates,selectedMajorTasks,readMajorSelection,writeMajorSelection,majorDateMarkers,markerLayout,markerGroups,teamOverview,teamIssueItems};
+  function assigned(task,id){return task.assigneeId===id||(task.assigneeIds||[]).includes(id)||(task.assignees||[]).some(item=>item.userId===id);}
+  function relatedProjects(projects,tasks,user,memberships=[],teamIds=[]){
+    const direct=new Set(memberships.filter(item=>item.userId===user.id).map(item=>item.projectId));
+    const team=new Set(teamIds),linked=new Set();
+    for(const task of tasks){
+      if(task.archivedAt)continue;
+      const assignees=[task.assigneeId,...(task.assigneeIds||[]),...(task.assignees||[]).map(item=>item.userId)];
+      if(assigned(task,user.id)||(user.role==='lead'&&(task.departmentId===user.departmentId||assignees.some(id=>team.has(id)))))linked.add(task.projectId);
+    }
+    return projects.filter(project=>project.status!=='archived' && (
+      user.isAdmin||user.role==='admin'||direct.has(project.id)||
+      (project.managerIds||[]).includes(user.id)||(project.observerIds||[]).includes(user.id)||
+      (!Array.isArray(project.managerIds)&&project.createdBy===user.id)||
+      linked.has(project.id)||
+      (user.role==='lead'&&(project.participantDepartmentIds||project.staffing?.filter(item=>item.userId).map(item=>item.departmentId)||[]).includes(user.departmentId))
+    ));
+  }
+  function projectOverview(projects,tasks,today){
+    const grouped=new Map();
+    for(const task of tasks){if(task.archivedAt)continue;if(!grouped.has(task.projectId))grouped.set(task.projectId,[]);grouped.get(task.projectId).push(task);}
+    return projects.filter(project=>project.status!=='archived'&&project.status!=='completed').map(project=>{
+      const rows=grouped.get(project.id)||[],active=rows.filter(task=>task.status!=='done');
+      const done=rows.length-active.length;
+      return {project,tasks:rows,total:rows.length,done,progress:rows.length?Math.round(done/rows.length*100):0,
+        overdue:active.filter(task=>task.dueDate&&task.dueDate<today),review:active.filter(task=>task.scheduleReview),
+        unassigned:active.filter(task=>!task.externalAssigneeName&&!task.assigneeId),undated:active.filter(task=>!task.startDate||!task.dueDate),
+        next:active.filter(task=>task.dueDate&&task.dueDate>=today).sort((a,b)=>a.dueDate.localeCompare(b.dueDate)).slice(0,3)};
+    });
+  }
+  function recentChanges(tasks,projectIds,userId,limit=5,projects=[]){
+    const ids=new Set(projectIds),time=value=>value?.toMillis?.()||value?.toDate?.().getTime()||(typeof value==='string'?Date.parse(value):value instanceof Date?value.getTime():0)||0;
+    const createdTimes=new Map(projects.map(project=>[project.id,time(project.createdAt)])),result=[];
+    const count=Math.max(0,Math.floor(limit));if(!count)return result;
+    for(const task of tasks){
+      if(!ids.has(task.projectId)||task.updatedBy===userId)continue;
+      const created=time(task.createdAt),updated=time(task.updatedAt),stamp=Math.max(created,updated);if(!stamp)continue;
+      const item={task,created:created>=updated,time:stamp};
+      if(task.generated&&item.created&&(createdTimes.get(task.projectId)||0)===stamp)continue;
+      result.push(item);result.sort((a,b)=>b.time-a.time||String(a.task.id).localeCompare(String(b.task.id)));if(result.length>count)result.pop();
+    }
+    return result;
+  }
+  const api={DISPLAY_POLICY,VIEW_OPTIONS,summary,participation,events,calendarWeeks,completionDate,shortDates,filterEvents,timeline,eventStatus,upcomingMajorEvents,personalMajorCandidates,selectedMajorTasks,readMajorSelection,writeMajorSelection,majorDateMarkers,markerLayout,markerGroups,teamOverview,teamIssueItems,relatedProjects,projectOverview,recentChanges};
   if(typeof module==='object'&&module.exports) module.exports=api;else root.MilestoneDashboardModel=api;
 })(typeof window!=='undefined'?window:globalThis);

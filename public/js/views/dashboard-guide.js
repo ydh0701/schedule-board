@@ -1,8 +1,48 @@
 /* Personal dashboard: summaries and calendar share the existing task/project records. */
-const guideDashboardView={month:null,today:null,followToday:true,projectsExpanded:false,undatedExpanded:false,view:'calendar',timelineStart:null,timelineMonths:3,query:'',project:'',platform:'',kind:'all',status:'all',sort:'start',fields:{project:true,title:true,dates:false}};
+const guideDashboardView={owner:null,month:null,today:null,followToday:true,projectsExpanded:null,undatedExpanded:false,view:'calendar',timelineStart:null,timelineMonths:3,query:'',project:'',platform:'',kind:'all',status:'all',sort:'start',fields:{project:true,title:true,dates:false}};
+const guideManagerDashboardView={owner:null,mode:'projects',view:'calendar',today:null,month:null,followToday:true,query:'',project:'',platform:'',kind:'all',status:'all',sort:'start',fields:{project:true,title:true,dates:false}};
+function guideRelatedProjects(){
+  const teamIds=activeUsers().filter(user=>user.departmentId===currentProfile.departmentId).map(user=>user.id);
+  return MilestoneDashboardModel.relatedProjects(projects,activeTasks(),{id:currentUser.uid,...currentProfile,isAdmin:isAdmin()},projectMemberships,teamIds);
+}
+function guideRelatedProjectCards(container,related,title,overview){
+  const section=el('details','guide-dashboard-panel guide-dashboard-projects');section.open=true;section.append(el('summary','',`${title} · ${related.length}개`));
+  const rows=overview||MilestoneDashboardModel.projectOverview(related,activeTasks(),dateKey(todayDate()));
+  rows.forEach(row=>{const card=el('article','guide-dashboard-project');card.append(button(`${row.project.code||''} ${row.project.name}`,'guide-team-link',()=>setView('projects',row.project.id)),el('small','',`전체 업무 완료 ${row.done}/${row.total} · ${row.progress}%`),progressBlock(row.progress));
+    const flags=[row.overdue.length?`지연 ${row.overdue.length}`:'',row.review.length?`재확인 ${row.review.length}`:'',row.unassigned.length?`미배정 ${row.unassigned.length}`:'',row.undated.length?`날짜 미정 ${row.undated.length}`:''].filter(Boolean);if(flags.length)card.append(el('p','',flags.join(' · ')));section.append(card);});
+  if(!rows.length)section.append(el('p','guide-dashboard-empty','진행 중인 관련 프로젝트가 없습니다.'));container.append(section);
+}
+function guideRecentProjectChanges(container,related){
+  const changes=MilestoneDashboardModel.recentChanges(tasks,related.map(project=>project.id),currentUser.uid,5,related);
+  const section=el('details','guide-dashboard-panel guide-dashboard-projects');section.open=changes.length>0;section.append(el('summary','','최근 업무 추가·변경'));
+  changes.forEach(change=>{const task=change.task,project=projects.find(project=>project.id===task.projectId);const item=button('','guide-dashboard-task',()=>task.archivedAt?openTaskDetails(task):openGuideTaskLocation(task));
+    item.append(el('small','',`${task.archivedAt?'보관':change.created?'추가':'변경'} · ${project?.code||project?.name||''} · ${new Date(change.time).toLocaleDateString('ko-KR')}`),el('strong','',task.title));section.append(item);});
+  if(!changes.length)section.append(el('p','guide-dashboard-empty','확인할 최근 업무 변경이 없습니다.'));container.append(section);
+}
+function renderGuideManagementDashboard(main){
+  const state=guideManagerDashboardView,today=dateKey(todayDate());
+  if(state.owner!==currentUser.uid){Object.assign(state,{owner:currentUser.uid,mode:'projects',month:today.slice(0,7),query:'',project:'',platform:''});}
+  state.today=today;guideDashboardView.today=today;
+  const tabs=el('div','guide-page-tabs');tabs.setAttribute('role','tablist');tabs.setAttribute('aria-label','관리 대시보드 보기');
+  [['projects','관리 프로젝트'],['personal','내 업무']].forEach(([id,label])=>{const tab=button(label,state.mode===id?'active':'',()=>{state.mode=id;rerender();});tab.setAttribute('role','tab');tab.setAttribute('aria-selected',String(state.mode===id));tabs.append(tab);});main.append(tabs);
+  if(state.mode==='personal')return false;
+  const related=guideRelatedProjects().filter(project=>project.status!=='completed'),ids=new Set(related.map(project=>project.id)),scope=activeTasks().filter(task=>ids.has(task.projectId));
+  const rows=MilestoneDashboardModel.projectOverview(related,scope,today),layout=el('div','guide-dashboard-layout'),sidebar=el('aside','guide-dashboard-sidebar'),calendar=el('section','guide-dashboard-calendar-panel');
+  const issues=el('section','guide-dashboard-panel guide-manager-issues');issues.append(el('h2','','확인할 사항'));
+  [['overdue','지연 업무'],['review','일정 재확인'],['unassigned','담당 미배정'],['undated','날짜 미정']].forEach(([key,label])=>{const items=rows.flatMap(row=>row[key]);if(!items.length)return;
+    issues.append(button(`${label} · ${items.length}건`,'guide-team-link',()=>{const {dialog,close}=openDialog(label),list=el('div','guide-dashboard-scroll');items.forEach(task=>{const item=guideDashboardTask(task);item.onclick=()=>{close();openGuideTaskLocation(task);};list.append(item);});dialog.append(list);}));});
+  if(!issues.querySelector('button'))issues.append(el('p','guide-dashboard-empty','확인할 사항이 없습니다.'));sidebar.append(issues);
+  guideRelatedProjectCards(sidebar,related,isAdmin()?'전체 프로젝트':'관리·참여 프로젝트',rows);guideRecentProjectChanges(sidebar,related);
+  const events=MilestoneDashboardModel.events(related,scope,milestones,scope,[...ids]).filter(event=>event.kind!=='task'||event.task?.datePolicy==='anchor');
+  if(!state.month||state.followToday)state.month=today.slice(0,7);
+  guideDashboardSchedule(calendar,events,state,today,{majorOnly:true,label:'관리 프로젝트 주요 일정',footnote:'프로젝트의 주요 일정과 고정 기준일을 표시합니다. 전체 업무는 프로젝트 세부 일정에서 확인하세요.'});
+  if(!projects.length){sidebar.append(el('p','guide-dashboard-empty','프로젝트를 만들고 담당자를 지정하면 팀의 업무와 개인 일정이 연결됩니다.'),button('첫 프로젝트 만들기','primary',openProjectCreator));}
+  else if(!related.length)sidebar.append(button('프로젝트 현황에서 관리 담당 지정','guide-team-link',()=>setView('projects')));
+  layout.append(sidebar,calendar);main.append(layout);return true;
+}
 function openGuideMyWork(full=false){guidePersonalView.owner=currentUser.uid;Object.assign(guidePersonalState(currentUser.uid),{project:'',platform:'',status:full===true?'all':'active',query:''});setView('my-work');}
 function guideDashboardTask(task,colors=guideProjectColorScope()){
-  const item=button('','guide-dashboard-task',()=>canEditTask(task)?openTaskEditor(task):openGuideMyWork());
+  const item=button('','guide-dashboard-task',()=>openTaskEditor(task));
   const today=dateKey(todayDate());
   const status=MilestoneProjectModel.taskPresentation(task,today);
   const project=projects.find(project=>project.id===task.projectId);if(project)colors.apply(item,project);
@@ -44,14 +84,17 @@ function openGuideDashboardMilestone(ownTasks){
 }
 function renderGuideDashboard(main){
   if(!workDataReadiness.tasks){main.appendChild(el('p','guide-empty','업무 데이터를 불러오는 중입니다.'));return;}
+  if((isAdmin()||isPM())&&renderGuideManagementDashboard(main))return;
   if(isLead()){renderGuideLeadDashboard(main);return;}
   const today=dateKey(todayDate()),state=guideDashboardView;
+  if(state.owner!==currentUser.uid)Object.assign(state,{owner:currentUser.uid,projectsExpanded:null,month:null,timelineStart:null,query:'',project:'',platform:'',followToday:true});
   if(!state.month || (state.today!==today&&state.followToday))state.month=today.slice(0,7);
   if(!state.timelineStart || (state.today!==today&&state.followToday))state.timelineStart=today.slice(0,7);state.today=today;
   const tabs=el('div','guide-page-tabs');tabs.setAttribute('role','tablist');tabs.setAttribute('aria-label','대시보드 보기');
   [['calendar','캘린더'],['timeline','타임라인']].forEach(([id,label])=>{const tab=button(label,state.view===id?'active':'',()=>{state.view=id;rerender();});tab.setAttribute('role','tab');tab.setAttribute('aria-selected',String(state.view===id));tabs.appendChild(tab);});main.appendChild(tabs);
   const own=MilestonePersonalModel.personalTasks(activeTasks(),projects,currentUser.uid);
-  const events=MilestoneDashboardModel.events(projects,own,milestones,activeTasks());
+  const related=guideRelatedProjects(),relatedIds=related.map(project=>project.id);
+  const events=MilestoneDashboardModel.events(projects,own,milestones,activeTasks(),relatedIds);
   const colors=guideProjectColorScope(events.map(event=>event.project));
   const layout=el('div','guide-dashboard-layout'),sidebar=el('aside','guide-dashboard-sidebar'),calendar=el('section','guide-dashboard-calendar-panel');
   const major=el('section','guide-dashboard-panel guide-dashboard-major');major.appendChild(el('h2','','주요 일정'));
@@ -59,7 +102,7 @@ function renderGuideDashboard(main){
   const automaticTaskIds=new Set(majorItems.filter(event=>event.task).map(event=>event.task.id));
   const selectedTasks=MilestoneDashboardModel.selectedMajorTasks(own,guideDashboardMajorSelection()).filter(task=>!automaticTaskIds.has(task.id));
   const majorList=el('div','guide-dashboard-scroll');
-  majorItems.forEach(event=>{const item=button('','guide-dashboard-task',()=>{setView('projects',event.project.id);});colors.apply(item,event.project);const meta=el('div','guide-dashboard-task-meta');meta.appendChild(el('span','guide-dashboard-project-label',`${event.project.code||event.project.name}${event.task?.platform?' '+platformName(event.task.platform):''}`));const detail=el('div','guide-dashboard-task-detail');detail.append(el('strong','',event.title),el('small','',MilestoneDashboardModel.shortDates(event.startDate,event.dueDate,today)));item.append(meta,detail);majorList.appendChild(item);});
+  majorItems.forEach(event=>{const item=button('','guide-dashboard-task',()=>{event.task?openGuideTaskLocation(event.task):setView('projects',event.project.id);});colors.apply(item,event.project);const meta=el('div','guide-dashboard-task-meta');meta.appendChild(el('span','guide-dashboard-project-label',`${event.project.code||event.project.name}${event.task?.platform?' '+platformName(event.task.platform):''}`));const detail=el('div','guide-dashboard-task-detail');detail.append(el('strong','',event.title),el('small','',MilestoneDashboardModel.shortDates(event.startDate,event.dueDate,today)));item.append(meta,detail);majorList.appendChild(item);});
   majorList.querySelectorAll('.guide-dashboard-project-label,.guide-dashboard-task-detail strong').forEach(label=>{label.title=label.textContent;});
   selectedTasks.forEach(task=>majorList.appendChild(guideDashboardTask(task,colors)));
   if(!majorItems.length&&!selectedTasks.length)majorList.appendChild(el('p','guide-dashboard-empty','표시할 주요 일정이 없습니다. +에서 내 일정을 선택하세요.'));
@@ -73,12 +116,13 @@ function renderGuideDashboard(main){
     if(summary[key].length>MilestoneDashboardModel.DISPLAY_POLICY.summaryLimit)workList.appendChild(button(`나머지 ${summary[key].length-MilestoneDashboardModel.DISPLAY_POLICY.summaryLimit}건 확인`,'guide-team-link',()=>openGuideMyWork(true)));
   });if(!Object.values(summary).some(items=>items.length))workList.appendChild(el('p','guide-dashboard-empty','오늘 표시할 업무가 없습니다.'));work.appendChild(workList);
   if(summary.undated.length){const undated=el('details','guide-dashboard-undated');undated.open=state.undatedExpanded;undated.ontoggle=()=>state.undatedExpanded=undated.open;undated.appendChild(el('summary','',`일정 미정 업무 · ${summary.undated.length}건`));const list=el('div','guide-dashboard-scroll');summary.undated.forEach(task=>list.appendChild(guideDashboardTask(task,colors)));undated.appendChild(list);work.appendChild(undated);}sidebar.appendChild(work);
-  const participation=el('details','guide-dashboard-panel guide-dashboard-projects');participation.open=state.projectsExpanded;participation.ontoggle=()=>{state.projectsExpanded=participation.open;};participation.appendChild(el('summary','','참여 프로젝트'));
-  const participating=MilestoneDashboardModel.participation(projects,own);
+  const participating=MilestoneDashboardModel.participation(projects,own,relatedIds);
+  const participation=el('details','guide-dashboard-panel guide-dashboard-projects');participation.open=state.projectsExpanded ?? (!own.length&&participating.length>0);participation.ontoggle=()=>{state.projectsExpanded=participation.open;};participation.appendChild(el('summary','',`참여 프로젝트 · ${participating.length}개`));
   participating.forEach(item=>{
     const card=el('article','guide-dashboard-project');card.appendChild(button(`${item.project.code||''} ${item.project.name}`,'guide-team-link',()=>setView('projects',item.project.id)));
-    item.platforms.forEach(platform=>{card.append(el('p','',`${platformName(platform.platform)} · ${platform.stage}`),el('small','',`내 업무 완료 ${platform.done}/${platform.total} · ${platform.progress}%`),progressBlock(platform.progress));});participation.appendChild(card);
+    item.platforms.forEach(platform=>{card.append(el('p','',`${platformName(platform.platform)} · ${platform.stage}`),el('small','',`내 업무 완료 ${platform.done}/${platform.total} · ${platform.progress}%`),progressBlock(platform.progress));});if(!item.platforms.length)card.append(el('small','','조회 참여 · 배정 업무 없음'));participation.appendChild(card);
   });if(!participating.length)participation.appendChild(el('p','guide-dashboard-empty','참여 중인 프로젝트가 없습니다.'));sidebar.appendChild(participation);
+  guideRecentProjectChanges(sidebar,related);
   if(state.view==='timeline'){main.appendChild(calendar);guideDashboardSchedule(calendar,events,state,today,{colors});return;}
   guideDashboardSchedule(calendar,events,state,today,{colors});
   layout.append(sidebar,calendar);main.appendChild(layout);
@@ -113,15 +157,15 @@ function guideDashboardSchedule(calendar,allEvents,state,today,options={}){
       const day=button(String(Number(date.slice(8))),'guide-dashboard-day'+(date.slice(0,7)!==state.month?' outside':'')+(date===today?' today':''),()=>{
         const {dialog,close}=openDialog(`${date} 일정`);if(!items.length)dialog.appendChild(el('p','','등록된 일정이 없습니다.'));
         const dayColors=colors.snapshot();
-        items.forEach(event=>{if(event.kind==='task'){const item=guideDashboardTask(event.task,dayColors);item.onclick=()=>{close();canEditTask(event.task)?openTaskEditor(event.task):openGuideMyWork();};dialog.appendChild(item);}else dialog.appendChild(button(`${event.project.code||event.project.name} · ${event.title}`,'ghost',()=>{close();setView('projects',event.project.id);}));});
+        items.forEach(event=>{if(event.kind==='task'){const item=guideDashboardTask(event.task,dayColors);item.onclick=()=>{close();openTaskEditor(event.task);};dialog.appendChild(item);}else dialog.appendChild(button(`${event.project.code||event.project.name} · ${event.title}`,'ghost',()=>{close();setView('projects',event.project.id);}));});
       });day.setAttribute('aria-label',`${date} 일정 ${items.length}건`);days.appendChild(day);
     });
     week.segments.forEach(event=>{
-      const bar=button('','guide-dashboard-event',()=>event.kind==='task'&&canEditTask(event.task)?openTaskEditor(event.task):setView('projects',event.project.id));
+      const bar=button('','guide-dashboard-event',()=>event.task?openGuideTaskLocation(event.task):setView('projects',event.project.id));
       bar.style.gridColumn=`${event.column+1} / span ${event.span}`;bar.style.gridRow=String(event.lane+1);colors.apply(bar,event.project);
       if(state.fields.project)bar.appendChild(el('strong','',event.project.code||event.project.name));if(state.fields.title)bar.appendChild(el('small','',event.title));if(state.fields.dates)bar.appendChild(el('small','',MilestoneDashboardModel.shortDates(event.startDate,event.dueDate,today)));bar.title=`${event.title} · ${event.startDate} ~ ${event.dueDate}`;bar.setAttribute('aria-label',`${event.project.code||event.project.name} ${event.title} ${event.startDate}부터 ${event.dueDate}까지`);bars.appendChild(bar);
     });
-    const more=button('','guide-dashboard-more',()=>{const {dialog,close}=openDialog('이 주의 일정');week.segments.forEach(event=>dialog.appendChild(button(`${event.startDate.slice(5)} · ${event.project.code||event.project.name} · ${event.title}`,'ghost',()=>{close();event.kind==='task'&&canEditTask(event.task)?openTaskEditor(event.task):setView('projects',event.project.id);})));});bars.appendChild(more);
+    const more=button('','guide-dashboard-more',()=>{const {dialog,close}=openDialog('이 주의 일정');week.segments.forEach(event=>dialog.appendChild(button(`${event.startDate.slice(5)} · ${event.project.code||event.project.name} · ${event.title}`,'ghost',()=>{close();event.task?openGuideTaskLocation(event.task):setView('projects',event.project.id);})));});bars.appendChild(more);
     row.append(days,bars);grid.appendChild(row);
   });grid.classList.toggle('show-dates',state.fields.dates);content.appendChild(grid);
   }draw();

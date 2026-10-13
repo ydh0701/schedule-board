@@ -17,6 +17,18 @@
     return typeof value === 'string' && value.trim().length > 0;
   }
 
+  function dependencyIds(task) {
+    return [...new Set([...rows(task?.dependsOnTaskIds), task?.dependsOnTaskId].filter(Boolean))];
+  }
+
+  function selectedTasks(tasks, input = {}) {
+    const features = new Set(rows(input.featureKeys));
+    const requests = new Set(rows(input.requestTaskKeys));
+    return tasks.filter(task => task.active !== false
+      && (!task.featureKey || features.has(task.featureKey))
+      && (task.creationPolicy !== 'on_request' || requests.has(task.id)));
+  }
+
   function uniqueErrors(tableName, tableRows) {
     const seen = new Set();
     const errors = [];
@@ -43,10 +55,11 @@
       }
       if (visited.has(taskId)) return null;
       visiting.add(taskId);
-      const dependencyId = taskMap.get(taskId)?.dependsOnTaskId;
-      const cycle = dependencyId && taskMap.has(dependencyId)
-        ? visit(dependencyId, [...path, taskId])
-        : null;
+      let cycle = null;
+      for (const dependencyId of dependencyIds(taskMap.get(taskId))) {
+        if(taskMap.has(dependencyId)) cycle = visit(dependencyId, [...path, taskId]);
+        if(cycle) break;
+      }
       visiting.delete(taskId);
       visited.add(taskId);
       return cycle;
@@ -107,16 +120,38 @@
       if (!roleIds.has(task.roleId)) errors.push(`업무 ${task.id}의 직군이 존재하지 않습니다: ${task.roleId}`);
       if (task.active !== false && roles.find(role => role.id === task.roleId)?.active === false) errors.push(`활성 업무 ${task.id}의 직군이 비활성 상태입니다.`);
       if (!nonEmpty(task.title)) errors.push(`업무 ${task.id}의 이름이 비어 있습니다.`);
+      if (task.ruleType && !['after_task','before_task','during_task'].includes(task.ruleType)) errors.push(`업무 ${task.id}의 연결 방식이 올바르지 않습니다.`);
+      if (task.datePolicy && !['anchor','automatic'].includes(task.datePolicy)) errors.push(`업무 ${task.id}의 날짜 정책이 올바르지 않습니다.`);
       if (!Number.isFinite(task.defaultWorkdays) || task.defaultWorkdays < 1) errors.push(`업무 ${task.id}의 기본 작업일은 1 이상이어야 합니다.`);
       if (task.referenceDate && !['startDate', 'dueDate'].includes(task.referenceDate)) errors.push(`업무 ${task.id}의 연결 날짜 기준이 올바르지 않습니다.`);
       if (!Number.isInteger(task.startOffsetWorkdays || 0)) errors.push(`업무 ${task.id}의 시작 간격은 정수 작업일이어야 합니다.`);
-      if (task.dependsOnTaskId) {
-        const dependency = taskMap.get(task.dependsOnTaskId);
-        if (!dependency) errors.push(`업무 ${task.id}의 선행 업무가 존재하지 않습니다: ${task.dependsOnTaskId}`);
+      if(task.ruleType==='during_task' && dependencyIds(task).length!==1) errors.push(`기간 참여 업무 ${task.id}는 기준 일정 하나가 필요합니다.`);
+      if(task.ruleType==='before_task' && (!dependencyIds(task).length || Number(task.startOffsetWorkdays ?? -1)>=0)) errors.push(`역산 업무 ${task.id}는 기준 일정과 음수 간격이 필요합니다.`);
+      for(const id of rows(task.participantRoleIds)){
+        if(!roles.some(role=>role.id===id && role.assignmentType==='internal_user' && role.active!==false)) errors.push(`업무 ${task.id}의 참여 직군을 확인해주세요: ${id}`);
+      }
+      const validateDeadline=rule=>{
+        if(rule.referenceDate && !['startDate','dueDate'].includes(rule.referenceDate)) errors.push(`업무 ${task.id}의 마감 날짜 기준을 확인해주세요.`);
+        if(!Number.isInteger(rule.offsetWorkdays ?? -1)) errors.push(`업무 ${task.id}의 마감 간격은 정수 작업일이어야 합니다.`);
+      };
+      rows(task.deadlines).forEach(validateDeadline);
+      const stepIds=new Set();
+      rows(task.steps).forEach(step=>{
+        if(!nonEmpty(step.id) || stepIds.has(step.id) || !nonEmpty(step.title) || !Number.isFinite(step.workdays) || step.workdays<1 || !rows(step.dependsOnTaskIds).length) errors.push(`업무 ${task.id}의 후속 작업 정의를 확인해주세요.`);
+        stepIds.add(step.id);rows(step.deadlines).forEach(validateDeadline);
+      });
+      for (const dependencyId of dependencyIds(task)) {
+        const dependency = taskMap.get(dependencyId);
+        if (!dependency) errors.push(`업무 ${task.id}의 선행 업무가 존재하지 않습니다: ${dependencyId}`);
         else if (dependency.templateId !== task.templateId) errors.push(`업무 ${task.id}의 선행 업무는 같은 템플릿에 있어야 합니다.`);
         if (task.active !== false && dependency?.active === false) errors.push(`활성 업무 ${task.id}의 선행 업무가 비활성 상태입니다.`);
-        if (task.dependsOnTaskId === task.id) errors.push(`업무 ${task.id}는 자기 자신을 선행 업무로 지정할 수 없습니다.`);
+        if (dependencyId === task.id) errors.push(`업무 ${task.id}는 자기 자신을 선행 업무로 지정할 수 없습니다.`);
       }
+      const extraRefs = [...rows(task.readinessTaskIds), ...rows(task.deadlines).map(rule=>rule.taskId), ...rows(task.steps).flatMap(step=>[...rows(step.dependsOnTaskIds), ...rows(step.deadlines).map(rule=>rule.taskId)])];
+      extraRefs.forEach(id=>{
+        const target=taskMap.get(id);
+        if(!target || target.templateId!==task.templateId || (task.active!==false && target.active===false)) errors.push(`업무 ${task.id}의 마감/세부 작업 연결을 확인해주세요: ${id}`);
+      });
     });
 
     templates.forEach(template => {
@@ -208,7 +243,10 @@
   function buildProjectSnapshot(catalog, input, options = {}) {
     assertValidCatalog(catalog);
     const platformIds = [...new Set(rows(input?.platformIds || input?.platforms))];
-    const selectedTemplates = platformIds.map(platformId => getTemplateForPlatform(catalog, platformId, options));
+    const selectedTemplates = platformIds.map(platformId => {
+      const selection = getTemplateForPlatform(catalog, platformId, options);
+      return {...selection, tasks:selectedTasks(selection.tasks, input)};
+    });
     validateCreateInput(catalog, input, selectedTemplates);
 
     const idFactory = options.idFactory || defaultIdFactory;
@@ -243,7 +281,21 @@
         const assignment = assignments.get(task.roleId);
         const internal = role.assignmentType === 'internal_user';
         const assigneeId = internal ? assignment.userId : null;
-        const dependencyId = task.dependsOnTaskId ? taskIdMap.get(`${template.id}:${task.dependsOnTaskId}`) : null;
+        const participantIds = [...new Set([assigneeId, ...rows(task.participantRoleIds).map(id=>assignments.get(id)?.userId)].filter(Boolean))];
+        const dependencies = dependencyIds(task).map(id => taskIdMap.get(`${template.id}:${id}`)).filter(Boolean);
+        const dependencyId = dependencies[0] || null;
+        const ruleType = task.ruleType || 'after_task';
+        const scheduleRule = dependencies.length ? {
+          type: ruleType, predecessorId: dependencyId, predecessorIds: dependencies,
+          referenceDate: task.referenceDate || (ruleType === 'before_task' ? 'startDate' : 'dueDate'),
+          offsetWorkdays: Number(task.startOffsetWorkdays ?? (ruleType === 'before_task' ? -1 : 1))
+        } : null;
+        const remapDeadline = rule => ({...rule,taskId:taskIdMap.get(`${template.id}:${rule.taskId}`)});
+        const scheduleSteps = rows(task.steps).map(step=>({
+          id:step.id,title:step.title,estimatedDays:Number(step.workdays || 1),
+          scheduleRule:{type:'after_task',predecessorIds:rows(step.dependsOnTaskIds).map(id=>taskIdMap.get(`${template.id}:${id}`)).filter(Boolean),referenceDate:'dueDate',offsetWorkdays:1},
+          deadlineRules:rows(step.deadlines).map(remapDeadline)
+        }));
         projectTasks.push({
           id: taskIdMap.get(`${template.id}:${task.id}`),
           projectId,
@@ -253,10 +305,10 @@
           departmentId: task.roleId,
           title: task.title,
           assigneeId,
-          assigneeIds: assigneeId ? [assigneeId] : [],
-          assignees: assigneeId ? [{ userId: assigneeId, share: 1, role: 'primary' }] : [],
+          assigneeIds: participantIds,
+          assignees: participantIds.map((userId,index)=>({userId,share:1/participantIds.length,role:index===0?'primary':'co'})),
           externalAssigneeName: internal ? null : assignment.externalName.trim(),
-          supporterIds: [],
+          supporterIds: rows(task.participantRoleIds).map(id=>assignments.get(id)?.userId).filter(id=>id && id!==assigneeId),
           parentTaskId: null,
           startDate: null,
           dueDate: null,
@@ -264,9 +316,16 @@
           scheduleStatus: 'unscheduled',
           progress: 0,
           estimatedDays: Number(task.defaultWorkdays),
-          dependsOn: dependencyId ? [dependencyId] : [],
-          scheduleRule: dependencyId ? { type: 'after_task', predecessorId: dependencyId, referenceDate: task.referenceDate || 'dueDate', offsetWorkdays: Number(task.startOffsetWorkdays || 0) } : null,
-          datePolicy: role.datePolicy || 'automatic',
+          dependsOn: dependencies,
+          readinessDependsOn: rows(task.readinessTaskIds).map(id=>taskIdMap.get(`${template.id}:${id}`)).filter(Boolean),
+          scheduleRule,
+          deadlineRules: rows(task.deadlines).map(remapDeadline),
+          scheduleSteps,
+          scheduleStepDates: {},
+          taskScope: task.taskScope || 'role',
+          durationSource: task.durationSource || 'temporary',
+          featureKey: task.featureKey || null,
+          datePolicy: task.datePolicy || role.datePolicy || 'automatic',
           generated: true,
           sourceType: 'template',
           templateKey: task.id,
@@ -307,9 +366,13 @@
           .filter(item => item.assignmentType === 'internal_user')
           .map(item => ({ platform, departmentId: item.departmentId, userId: item.assigneeId }))),
         projectAssignments,
+        participantDepartmentIds: [...new Set(projectAssignments.filter(item=>item.assignmentType==='internal_user').map(item=>item.departmentId))],
+        managerIds: [...new Set(rows(input.managerIds).filter(Boolean))],
+        observerIds: [...new Set(rows(input.observerIds).filter(Boolean))],
         schedulingMode: 'template_v2',
         status: 'active',
-        health: 'on_track'
+        health: 'on_track',
+        featureKeys: rows(input.featureKeys), requestTaskKeys: rows(input.requestTaskKeys)
       },
       projectStages,
       tasks: projectTasks
@@ -327,6 +390,7 @@
         const previous = memberships.get(item.assigneeId) || { departmentIds: [] };
         memberships.set(item.assigneeId, { departmentIds: [...new Set([...previous.departmentIds, item.departmentId])] });
       });
+    [...rows(snapshot.project.managerIds),...rows(snapshot.project.observerIds)].forEach(userId=>{if(!memberships.has(userId))memberships.set(userId,{departmentIds:[]});});
     memberships.forEach((membership, userId) => writes.push({
         collection: 'projectMembers',
         id: `${snapshot.project.id}_${userId}`,
@@ -341,6 +405,7 @@
     assertValidCatalog,
     getTemplateForPlatform,
     buildProjectSnapshot,
-    createProjectWritePlan
+    createProjectWritePlan,
+    selectedTasks, dependencyIds
   };
 });

@@ -63,10 +63,10 @@ function guideFitScrollAreas(){
     const weeks=target.querySelectorAll('.guide-dashboard-week').length;if(!weeks)return;
     const header=target.querySelector('.guide-dashboard-weekdays').getBoundingClientRect().height;
     const available=window.innerHeight-target.getBoundingClientRect().top-window.scrollY-header-40;
-    const height=Math.max(56,Math.floor(available/weeks));
+    const height=Math.max(110,Math.floor(available/weeks));
     target.style.setProperty('--calendar-week-height',`${height}px`);
     target.querySelectorAll('.guide-dashboard-week').forEach(row=>{
-      const capacity=Math.max(0,Math.min(3,Math.floor((height-38)/(target.classList.contains('show-dates')?49:36))));
+      const capacity=Math.max(0,Math.min(3,Math.floor((height-50)/(target.classList.contains('show-dates')?49:36))));
       const bars=[...row.querySelectorAll('.guide-dashboard-event')];let hidden=0;
       bars.forEach(bar=>{bar.hidden=Number(bar.style.gridRow)>capacity;if(bar.hidden)hidden++;});
       const more=row.querySelector('.guide-dashboard-more');if(more){more.hidden=!hidden;more.textContent=`+${hidden}건 더 보기`;}

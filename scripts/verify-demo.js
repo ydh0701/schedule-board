@@ -9,4 +9,9 @@ for(const file of ['js/state.js','js/render.js','js/template-engine.js','tests/b
 assert.equal(fs.existsSync(path.join(publicDir,'firestore.rules')),false);
 function checkPublic(directory){for(const item of fs.readdirSync(directory,{withFileTypes:true})){const full=path.join(directory,item.name);assert.ok(!/local-only|actual-data\.json|actual-seed\.js|pc15-task-table\.json|import-review\.json|actual-import-config\.json/i.test(full),'Private local data must not be published: '+full);if(item.isDirectory())checkPublic(full);}}
 checkPublic(publicDir);
+const prohibited = /firebasejs|initializeApp\(|fmv-schedule\.firebaseapp\.com|import-validation-controls|polish-validation-seed|qa-validation-seed|handoff\/references/;
+assert.ok(!prohibited.test(html), 'Production bootstrap or private/local-only fixture in sample entry');
+const {execFileSync}=require('node:child_process');
+function syntaxCheck(directory){for(const item of fs.readdirSync(directory,{withFileTypes:true})){const full=path.join(directory,item.name);if(item.isDirectory())syntaxCheck(full);else if(full.endsWith('.js'))execFileSync(process.execPath,['--check',full],{stdio:'pipe'});}}
+syntaxCheck(publicDir);
 console.log('Test-only Hosting package verified. No production DB or credentials bundled.');

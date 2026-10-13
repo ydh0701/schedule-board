@@ -77,7 +77,7 @@ function renderGuidePersonal(main){
       if(closed) return;
       group.visible.forEach(task=>{
         const row=el('div','guide-gantt-row'),info=el('div','guide-gantt-info');colors.apply(row,group.project);
-        const title=button(task.title,'guide-task-title',()=>openTaskEditor(task));title.disabled=!canEditTask(task);title.title=task.title;
+        const title=button(task.title,'guide-task-title',()=>openTaskEditor(task));title.dataset.focusTask=task.id;title.title=task.title;row.dataset.taskId=task.id;
         const range=MilestoneProjectModel.taskDateRange(task.startDate,task.dueDate,dateKey(todayDate()));
         const status=MilestoneProjectModel.taskPresentation(task,dateKey(todayDate()));
         info.append(title,el('span','guide-task-period',range),el('span',`guide-status ${status.key}`,status.label));row.append(info,guideTimelineCell(task,state));table.appendChild(row);
@@ -94,7 +94,7 @@ function renderGuidePersonal(main){
       details.appendChild(el('summary','',`일정 미정 업무 · ${undatedCount}건`));
       groups.filter(group=>group.undated.length).forEach(group=>{
         const section=el('section','guide-undated-group');colors.apply(section,group.project);section.appendChild(el('h3','',`${group.project.code||group.project.name} · ${platformName(group.platform)} · ${group.undated.length}건`));
-        group.undated.forEach(task=>{const row=el('div','guide-undated-row'),title=button(task.title,'guide-task-title',()=>openTaskEditor(task));title.disabled=!canEditTask(task);title.title=task.title;
+        group.undated.forEach(task=>{const row=el('div','guide-undated-row'),title=button(task.title,'guide-task-title',()=>openTaskEditor(task));title.dataset.focusTask=task.id;title.title=task.title;row.dataset.taskId=task.id;
           const status=MilestoneProjectModel.taskPresentation(task,dateKey(todayDate()));row.append(title,el('small','',task.startDate&&task.dueDate?'날짜 확인 필요':'일정 미정'),el('span',`guide-status ${status.key}`,status.label));section.appendChild(row);});details.appendChild(section);
       });target.appendChild(details);
     }

@@ -23,7 +23,7 @@ function healthLabel(health){ return { on_track: '정상', at_risk: '주의', of
 function healthClass(health){ return health === 'on_track' ? 'ok' : health === 'at_risk' ? 'warn' : health === 'off_track' ? 'danger' : 'neutral'; }
 function userName(uid){
   if(uid === currentUser?.uid) return currentProfile?.name || currentUser?.displayName || '나';
-  return visibleUsers.find(user => user.id === uid)?.name || '담당자 미확인';
+  return visibleUsers.find(user => user.id === uid)?.name || (uid && tasks.find(task=>task.assigneeId===uid&&task.assigneeName&&task.assigneeName!=='담당자 미확인')?.assigneeName) || '담당자 미확인';
 }
 function taskAssigneeName(task){ return task?.externalAssigneeName || task?.assigneeName || userName(task?.assigneeId); }
 
@@ -1131,8 +1131,10 @@ function renderAdmin(main){
 
 function openOffboardingEditor(user){
   const { overlay, dialog } = openDialog(`${user.name || user.email} 퇴사 처리`);
+  const expectedUserSignature=taskEditSignature(user);
   const openTasks = unfinishedTasksForUser(user.id);
   dialog.append(el('p', 'sub', '완료 업무는 그대로 보존됩니다. 진행 중·예정·차단 업무는 반드시 재배정, 미배정 또는 보관 중 하나로 처리해야 합니다.'));
+  dialog.append(el('p','sub','공동 업무는 다른 참여자를 유지합니다. 참여를 해제하면 남은 담당자의 분담 비율을 다시 계산합니다. 프로젝트 기본 담당은 관리자에게 재지정을 요청해주세요.'));
   const form = el('form', 'form-grid');
   const decisions = [];
   if(!openTasks.length) form.append(el('p', 'sub', '처리할 미완료 업무가 없습니다. 계정 로그인과 새 업무 배정만 중지합니다.'));
@@ -1141,9 +1143,11 @@ function openOffboardingEditor(user){
     card.append(el('strong', '', task.title));
     const project = projects.find(item => item.id === task.projectId);
     card.append(el('p', 'foot-note', `${project?.code || '공통 업무'}${task.platform ? ` · ${platformName(task.platform)}` : ''} · ${TASK_STATUS[task.status] || '할 일'}`));
-    const candidates = activeUsers().filter(candidate => candidate.id !== user.id && (isAdmin() || candidate.departmentId === user.departmentId) && candidate.departmentId === task.departmentId);
+    const primary=task.assigneeId===user.id;
+    card.append(el('span','tag',primary?'주 담당':'공동 담당'));
+    const candidates = activeUsers().filter(candidate => candidate.id !== user.id && (canManageProjects() || candidate.departmentId === user.departmentId) && (!primary||candidate.departmentId === task.departmentId));
     const action = selectField('처리 방법', [
-      ['reassign', '다른 담당자에게 재배정'], ['unassign', '미배정으로 남기기'], ['archive', '업무 보관']
+      ['reassign', '다른 담당자에게 재배정'], ['unassign', primary?'미배정으로 남기기':'공동 참여 해제'], ...(primary?[['archive','업무 보관']]:[])
     ]);
     const replacement = selectField('새 담당자', [['', '담당자 선택'], ...candidates.map(candidate => [candidate.id, candidate.name || candidate.email])]);
     if(!candidates.length) action.select.value = 'unassign';
@@ -1157,44 +1161,117 @@ function openOffboardingEditor(user){
   const actions = el('div', 'form-actions'); actions.append(submit); form.append(error, actions);
   form.onsubmit = async event => {
     event.preventDefault(); error.hidden = true;
-    const input = decisions.map(item => ({ taskId: item.task.id, action: item.action.select.value, userId: item.replacement.select.value }));
+    if(dialog.dataset.saving==='true')return;
+    const input = decisions.map(item => ({ taskId: item.task.id, expectedSignature:taskEditSignature(item.task),action: item.action.select.value, userId: item.replacement.select.value }));
     const invalid = input.find(item => item.action === 'reassign' && !item.userId);
     if(invalid) { error.textContent = '재배정 업무의 새 담당자를 선택해주세요.'; error.hidden = false; return; }
-    submit.disabled = true; submit.textContent = '퇴사 처리 중…';
+    const release=setDialogSaving(dialog,true);submit.textContent = '퇴사 처리 중…';
     try {
-      await offboardUser(user.id, input); overlay.remove(); showToast(`${user.name || user.email}님의 계정을 비활성화하고 업무 인수인계를 반영했습니다.`);
+      const result=await offboardUser(user.id, input,expectedUserSignature); release();overlay.remove(); showToast(`${user.name || user.email}님의 퇴사와 인수인계를 반영했습니다.${result?.projectDefaultsNeedReview?.length?' 프로젝트 기본 담당은 관리자에게 재지정을 요청해주세요.':''}`);
     } catch(cause) {
       error.textContent = cause.message || '퇴사 처리에 실패했습니다.'; error.hidden = false;
-    } finally { submit.disabled = false; submit.textContent = '업무 처리 후 퇴사 확정'; }
+    } finally { release();submit.textContent = '업무 처리 후 퇴사 확정'; }
   };
   mountDialogForm(dialog,form);
+  protectDialogForm(form);
 }
 
 function inputField(label, placeholder, type = 'text'){
   const wrap = el('label', 'field'); wrap.append(el('span', '', label));
-  const input = document.createElement('input'); input.type = type; input.placeholder = placeholder || ''; wrap.appendChild(input);
+  const input = document.createElement('input'); input.type = type; input.placeholder = placeholder || '';input.setAttribute('aria-label',label); wrap.appendChild(input);
   return { wrap, input };
 }
 function selectField(label, options){
   const wrap = el('label', 'field'); wrap.append(el('span', '', label));
-  const select = document.createElement('select');
+  const select = document.createElement('select');select.setAttribute('aria-label',label);
   options.forEach(([value, labelText]) => { const option = new Option(labelText, value); select.add(option); });
   wrap.appendChild(select); return { wrap, select };
 }
 function multiSelectField(label){
   const wrap = el('label', 'field'); wrap.append(el('span', '', label));
-  const select = document.createElement('select'); select.multiple = true; select.size = 4;
+  const select = document.createElement('select'); select.multiple = true; select.size = 4;select.setAttribute('aria-label',label);
   wrap.appendChild(select); return { wrap, select };
 }
 
 let scheduleDialogCounter = 0;
+function dialogInputSignature(form){
+  return JSON.stringify([...form.querySelectorAll('input,select,textarea')].filter(node=>!node.dataset.pickerSearch).map(node=>node.tagName==='SELECT'?[...node.selectedOptions].map(option=>option.value):['checkbox','radio'].includes(node.type)?node.checked:node.value));
+}
+function protectDialogForm(form){form.dataset.protectInput='true';form.dataset.initialInput=dialogInputSignature(form);}
+function showFieldError(field,message){
+  const wrap=field.closest('.field')||field.parentElement;
+  let error=wrap.querySelector('.field-error');if(!error){error=el('p','field-error');error.id=`field-error-${++scheduleDialogCounter}`;wrap.appendChild(error);}
+  error.textContent=message;field.setAttribute('aria-invalid','true');field.setAttribute('aria-describedby',error.id);
+  for(let parent=field.parentElement;parent;parent=parent.parentElement)if(parent.tagName==='DETAILS')parent.open=true;
+  return field;
+}
+function searchableTaskSelect(field){
+  const select=field.select,label=field.wrap.querySelector('span')?.textContent||'선택';select.hidden=true;select.setAttribute('aria-label',label);
+  const wrap=el('div','field searchable-picker');while(field.wrap.firstChild)wrap.appendChild(field.wrap.firstChild);field.wrap.replaceWith(wrap);field.wrap=wrap;
+  const search=document.createElement('input');search.type='search';search.placeholder='검색';search.setAttribute('aria-label',`${label} 검색`);search.dataset.pickerSearch='true';
+  const chosen=el('div','picker-chosen'),list=el('div','picker-list');field.wrap.append(search,chosen,list);
+  const draw=()=>{
+    const focused=document.activeElement;
+    const focusValue=list.contains(focused)||chosen.contains(focused)?focused?.dataset.optionValue:null;
+    const focusChip=chosen.contains(focused);
+    chosen.replaceChildren();list.replaceChildren();search.disabled=select.disabled;
+    [...select.options].filter(option=>option.selected).forEach(option=>{const remove=button(`${option.text} ×`,'picker-chip',()=>{option.selected=false;select.dispatchEvent(new Event('change'));});remove.dataset.optionValue=option.value;remove.disabled=select.disabled;remove.setAttribute('aria-label',`${option.text} 선택 해제`);chosen.appendChild(remove);});
+    [...select.options].filter(option=>option.text.toLocaleLowerCase().includes(search.value.trim().toLocaleLowerCase())).forEach(option=>{
+      const row=el('label','picker-option'),check=document.createElement('input');check.type='checkbox';check.checked=option.selected;check.disabled=select.disabled;check.dataset.pickerSearch='true';
+      check.dataset.optionValue=option.value;check.onchange=()=>{option.selected=check.checked;select.dispatchEvent(new Event('change'));};row.append(check,el('span','',option.text));list.appendChild(row);
+    });
+    if(!select.options.length)list.appendChild(el('p','sub','프로젝트를 선택하면 표시됩니다.'));
+    else if(!list.children.length)list.appendChild(el('p','sub','검색 결과가 없습니다.'));
+    if(focusValue!==null && focusValue!==undefined){const target=[...(focusChip?chosen:list).querySelectorAll('[data-option-value]')].find(node=>node.dataset.optionValue===focusValue)||[...list.querySelectorAll('[data-option-value]')].find(node=>node.dataset.optionValue===focusValue)||search;if(!target.disabled)target.focus({preventScroll:true});}
+  };
+  search.oninput=draw;select.addEventListener('change',draw);
+  const observer=new MutationObserver(draw);observer.observe(select,{childList:true,attributes:true,attributeFilter:['disabled']});draw();
+  return ()=>observer.disconnect();
+}
+
+function openTaskDetails(task){
+  if(!task||!tasks.some(item=>item.id===task.id))return;
+  const {dialog,close,onClose}=openDialog('업무 상세');
+  const content=el('div','task-readonly');content.append(el('h3','',task.title),el('p','sub',`${projectCode(task)} · ${departmentName(task.departmentId)}`),el('p','',`담당 · ${taskAssigneeName(task)}`),el('p','',`${fmtDate(task.startDate)} ~ ${fmtDate(task.dueDate)} · ${TASK_STATUS[task.status]||task.status}`));
+  const shared=(task.assigneeIds||[]).filter(id=>id!==task.assigneeId);if(shared.length)content.appendChild(el('p','',`공동 담당 · ${shared.map(userName).join(', ')}`));
+  const dependencies=taskDependencies(task);if(dependencies.length){content.appendChild(el('h4','','선행·착수 조건'));dependencies.forEach(item=>content.appendChild(button(`${item.title} · ${item.status==='done'?'완료':'미완료'} · ${fmtDate(item.dueDate)}`,'readonly-related',()=>openTaskDetails(item))));}
+  (task.scheduleSteps||[]).forEach(step=>{const dates=task.scheduleStepDates?.[step.id];content.appendChild(el('p','',`${step.title} · ${dates?fmtDate(dates.startDate)+' ~ '+fmtDate(dates.dueDate):'일정 미정'}`));});
+  const actions=el('div','form-actions');actions.appendChild(button('닫기','ghost',close));content.appendChild(actions);renderTaskDiscussion(mountDialogForm(dialog,content),task.id,onClose,true);
+}
+const sessionDialogs=new Set();
+function closeSessionDialogs(){
+  [...sessionDialogs].reverse().forEach(dispose=>dispose());
+  if(typeof guideScrollMemory!=='undefined')guideScrollMemory.clear();
+  if(typeof guidePageScrollMemory!=='undefined')guidePageScrollMemory.clear();
+}
 function openDialog(title){
   const overlay = el('div', 'modal-backdrop');
   const dialog = el('section', 'modal panel');
   const previousFocus = document.activeElement;
   dialog.setAttribute('role', 'dialog'); dialog.setAttribute('aria-modal', 'true'); dialog.tabIndex = -1;
   const cleanup = [];
-  const close = () => { cleanup.splice(0).forEach(fn => fn()); overlay.remove(); if(previousFocus?.isConnected) previousFocus.focus(); };
+  const removeOverlay=overlay.remove.bind(overlay);
+  let closed=false;
+  const dispose=()=>{
+    if(closed)return;
+    closed=true;sessionDialogs.delete(dispose);
+    cleanup.splice(0).forEach(fn=>{try{fn();}catch(error){console.error('팝업 정리 실패:',error);}});
+    removeOverlay();
+  };
+  overlay.remove=dispose;
+  sessionDialogs.add(dispose);
+  const close = (force=false) => {
+    if(closed)return;
+    if(dialog.dataset.saving==='true'||dialog.querySelector('.discussion form[data-saving]')) return;
+    const form=dialog.querySelector('form[data-protect-input]');
+    if(force!==true&&((form&&form.dataset.initialInput!==dialogInputSignature(form))||dialogHasDiscussionDraft(dialog))){
+      let guard=dialog.querySelector('.discard-input');if(guard){guard.querySelector('button').focus();return;}
+      const inputFocus=document.activeElement,body=dialog.querySelector('.modal-body'),scroll=body?.scrollTop||0;
+      guard=el('section','discard-input');guard.setAttribute('role','alert');guard.append(el('p','','작성한 내용을 저장하지 않고 닫을까요?'),button('계속 작성','primary',()=>{guard.remove();if(inputFocus?.isConnected)inputFocus.focus({preventScroll:true});if(body)body.scrollTop=scroll;}),button('내용 버리고 닫기','ghost',()=>close(true)));dialog.appendChild(guard);guard.querySelector('button').focus();return;
+    }
+    dispose(); if(previousFocus?.isConnected) previousFocus.focus();
+    else {const id=document.getElementById('main')?.dataset.focusTask;[...document.querySelectorAll('[data-focus-task]')].find(node=>node.dataset.focusTask===id)?.focus({preventScroll:true});}
+  };
   const header = el('div', 'modal-header'); const heading = el('h2', '', title); heading.id = `schedule-dialog-${++scheduleDialogCounter}`; dialog.setAttribute('aria-labelledby', heading.id); header.append(heading);
   const dismiss = button('×', 'tiny ghost', close); dismiss.setAttribute('aria-label', '닫기'); header.appendChild(dismiss);
   dialog.appendChild(header); overlay.appendChild(dialog);
@@ -1203,15 +1280,31 @@ function openDialog(title){
   dialog.onkeydown = event => {
     if(event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); close(); }
     if(event.key === 'Tab') {
-      const focusable = [...dialog.querySelectorAll('button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), a[href]')].filter(node => node.getClientRects().length);
+      const focusable = [...dialog.querySelectorAll('button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), a[href], summary')].filter(node => node.getClientRects().length);
       const first = focusable[0], last = focusable.at(-1);
       if(event.shiftKey && (document.activeElement === first || document.activeElement === dialog)) { event.preventDefault(); last?.focus(); }
       else if(!event.shiftKey && (document.activeElement === last || document.activeElement === dialog)) { event.preventDefault(); first?.focus(); }
     }
   };
   dialog.focus();
-  return { overlay, dialog, close, onClose: fn => cleanup.push(fn) };
+  return { overlay, dialog, close, onClose: fn => closed?fn():cleanup.push(fn) };
 }
+
+function setDialogSaving(dialog, saving){
+  if(saving){
+    const focused=document.activeElement;let released=false;
+    dialog.dataset.saving='true';dialog.setAttribute('aria-busy','true');
+    const controls=[...dialog.querySelectorAll('button,input,select,textarea')];
+    const disabled=controls.map(node=>node.disabled);controls.forEach(node=>{node.disabled=true;});
+    return ()=>{if(released)return;released=true;controls.forEach((node,index)=>{node.disabled=disabled[index];});delete dialog.dataset.saving;dialog.removeAttribute('aria-busy');if(document.activeElement===document.body&&focused?.isConnected&&!focused.disabled)focused.focus({preventScroll:true});};
+  }
+}
+function allowDialogAction(dialog){
+  if(dialog.dataset.saving==='true'||dialog.querySelector('.discussion form[data-saving]'))return false;
+  const form=dialog.querySelector('form[data-protect-input]');
+  return ((!form||form.dataset.initialInput===dialogInputSignature(form))&&!dialogHasDiscussionDraft(dialog)) || confirm('작성한 변경 내용을 버리고 이 동작을 진행할까요?');
+}
+function dialogHasDiscussionDraft(dialog){return [...dialog.querySelectorAll('.discussion textarea,.discussion input')].some(node=>node.value.trim());}
 
 /* Mount existing forms without changing their validators or submit handlers. */
 function mountDialogForm(dialog,form){
@@ -1222,11 +1315,12 @@ function mountDialogForm(dialog,form){
   let actions=form.querySelector(':scope > .form-actions');
   if(!actions){actions=el('div','form-actions');[...form.children].filter(node=>node.tagName==='BUTTON').forEach(node=>actions.appendChild(node));}
   actions.querySelectorAll('button[type="submit"]').forEach(node=>node.setAttribute('form',form.id));
-  if(![...actions.querySelectorAll('button')].some(node=>node.textContent==='취소')){
+  if(![...actions.querySelectorAll('button')].some(node=>['취소','닫기'].includes(node.textContent))){
     const cancel=button('취소','ghost',()=>dialog.querySelector('.modal-header button').click()),secondary=actions.querySelector('.dialog-secondary-action');
     if(secondary)actions.insertBefore(cancel,secondary.nextSibling);else actions.prepend(cancel);
   }
-  footer.appendChild(actions);body.appendChild(form);dialog.append(body,footer);return body;
+  footer.appendChild(actions);body.appendChild(form);dialog.append(body,footer);
+  dialog.querySelectorAll('.task-title-field textarea').forEach(resizeTaskTitle);return body;
 }
 
 function openQuickTaskEditor(){
@@ -1406,9 +1500,27 @@ function confirmProjectAssignmentChanges(project, assignments, parentDialog){
   });
 }
 
+function projectPeopleFields(project={},onClose){
+  const people=[...new Map([...visibleUsers.map(user=>[user.id,user]),[currentUser.uid,{id:currentUser.uid,...currentProfile}]]).values()].filter(user=>user.active);
+  const managerIds=project.managerIds ?? (project.createdBy?[project.createdBy]:[currentUser.uid]);
+  const observerIds=project.observerIds || [];
+  const options=(manager,selected)=>{
+    const rows=people.filter(user=>!manager||user.isAdmin||['admin','pm'].includes(user.role)).map(user=>[user.id,user.name||user.email||user.id]);
+    selected.filter(id=>!rows.some(row=>row[0]===id)).forEach(id=>rows.push([id,`${userName(id)} · 기존 참여자`]));return rows;
+  };
+  const managers=multiSelectField('프로젝트 관리 담당자'),observers=multiSelectField('추가 참여자 · 조회');
+  options(true,managerIds).forEach(([id,label])=>managers.select.add(new Option(label,id)));
+  options(false,observerIds).forEach(([id,label])=>observers.select.add(new Option(label,id)));
+  [...managers.select.options].forEach(option=>option.selected=managerIds.includes(option.value));
+  [...observers.select.options].forEach(option=>option.selected=observerIds.includes(option.value));
+  const wrap=el('details','schedule-detail-group');wrap.append(el('summary','','프로젝트 참여·관리'),el('p','sub','직군 담당자는 자동 참여합니다. 추가 참여자는 전체 일정을 조회하고, 관리 담당자는 관리 대시보드에서 확인합니다.'),managers.wrap,observers.wrap);
+  onClose(searchableTaskSelect(managers));onClose(searchableTaskSelect(observers));
+  return {wrap,value:()=>({managerIds:[...managers.select.selectedOptions].map(option=>option.value),observerIds:[...observers.select.selectedOptions].map(option=>option.value)})};
+}
 function openProjectEditor(project){
   if(project.schedulingMode === 'template_v2') return openTemplateProjectEditor(project);
-  const { dialog, close } = openDialog('프로젝트 정보 수정');
+  const { dialog, close, onClose } = openDialog('프로젝트 정보 수정');
+  const access=projectPeopleFields(project,onClose),expectedProjectSignature=taskEditSignature(project);
   const form = el('form', 'form-grid');
   const name = inputField('프로젝트명', ''); name.input.value = project.name || '';
   const code = inputField('코드', ''); code.input.value = project.code || '';
@@ -1428,25 +1540,28 @@ function openProjectEditor(project){
     staffingBox.appendChild(card);
   });
   const submit = button('저장', 'primary');
-  form.append(name.wrap, code.wrap, staffingTitle, staffingBox, submit);
+  form.append(name.wrap, code.wrap, staffingTitle, staffingBox, access.wrap, submit);
   form.onsubmit = async event => {
     event.preventDefault();
-    submit.disabled = true;
+    if(dialog.dataset.saving==='true')return;
+    const release=setDialogSaving(dialog,true);
     try {
       if(!name.input.value.trim() || !code.input.value.trim())throw new Error('프로젝트명과 코드를 입력해주세요.');
       const staffing=getStaffing();
       const ongoingTaskIds=await confirmProjectAssignmentChanges(project,staffing,dialog);
       if(ongoingTaskIds===null)return;
-      await syncProjectStaffing(project.id, staffing, {info:{name:name.input.value,code:code.input.value},ongoingTaskIds});
-      close(); showToast('프로젝트 정보와 자동 업무 담당자를 반영했습니다.');
+      await syncProjectStaffing(project.id, staffing, {info:{name:name.input.value,code:code.input.value},ongoingTaskIds,...access.value(),expectedProjectSignature});
+      release();close(true); showToast('프로젝트 정보와 자동 업무 담당자를 반영했습니다.');
     } catch(error) { alert(error.message); }
-    finally {submit.disabled = false;if(dialog.isConnected)submit.focus();}
+    finally {release();if(dialog.isConnected)submit.focus();}
   };
   mountDialogForm(dialog,form);
+  protectDialogForm(form);
 }
 
 function openTemplateProjectEditor(project){
-  const { dialog, close } = openDialog('프로젝트 정보 수정');
+  const { dialog, close, onClose } = openDialog('프로젝트 정보 수정');
+  const access=projectPeopleFields(project,onClose),expectedProjectSignature=taskEditSignature(project);
   const form = el('form', 'form-grid');
   const name = inputField('프로젝트명', ''); name.input.value = project.name;
   const code = inputField('프로젝트 코드', ''); code.input.value = project.code;
@@ -1467,29 +1582,31 @@ function openTemplateProjectEditor(project){
     }
   });
   const error = el('p', 'form-error'); error.hidden = true;
-  const submit = button('저장', 'primary'); form.append(error, submit);
+  const submit = button('저장', 'primary'); form.append(access.wrap,error, submit);
   form.onsubmit = async event => {
-    event.preventDefault(); submit.disabled = true; error.hidden = true;
+    event.preventDefault();if(dialog.dataset.saving==='true')return;const release=setDialogSaving(dialog,true);error.hidden = true;
     try {
       if(!name.input.value.trim() || !code.input.value.trim())throw new Error('프로젝트명과 코드를 입력해주세요.');
       const ongoingTaskIds=await confirmProjectAssignmentChanges(project,assignments,dialog);
       if(ongoingTaskIds===null)return;
-      await saveTemplateProject(project.id, { name: name.input.value, code: code.input.value, assignments, ongoingTaskIds }); close(); showToast('프로젝트와 담당 정보를 반영했습니다.');
+      await saveTemplateProject(project.id, { name: name.input.value, code: code.input.value, assignments, ongoingTaskIds,...access.value(),expectedProjectSignature }); release();close(true); showToast('프로젝트와 담당 정보를 반영했습니다.');
     }
     catch(cause) { error.textContent = cause.message; error.hidden = false; }
-    finally { submit.disabled = false;if(dialog.isConnected)submit.focus(); }
+    finally { release();if(dialog.isConnected)submit.focus(); }
   };
   mountDialogForm(dialog,form);
+  protectDialogForm(form);
 }
 
 function openProjectCreator(){
-  const { dialog, close } = openDialog('프로젝트 생성');
+  const { dialog, close, onClose } = openDialog('프로젝트 생성');
   dialog.classList.add('project-create-dialog');
   const loading = el('p', 'sub', '프로젝트 템플릿을 불러오는 중입니다…');
   dialog.appendChild(loading);
   loadProjectTemplateCatalog().then(catalog => {
     loading.remove();
     const form = el('form', 'form-grid project-create-form');
+    const access=projectPeopleFields({},onClose);
     const name = inputField('프로젝트명', '예: 하진미3');
     const code = inputField('프로젝트 코드', '예: PC17');
     name.input.required = code.input.required = true;
@@ -1505,20 +1622,35 @@ function openProjectCreator(){
       label.append(input, el('span', '', `${platform.name}${available ? '' : ' · 준비 중'}`)); platformField.appendChild(label); return input;
     });
     const staffingTitle = el('h3', 'small-heading', '직군별 담당자');
+    const optional = el('details','template-preview');
+    optional.appendChild(el('summary','','선택 기능·요청 업무'));
+    const optionsBox = el('div','platform-picker');
+    const featureNames = {new_features:'신규·변경 기능',dlc:'DLC',inventory:'인벤토리',ranking:'랭킹',voting:'투표',currency:'재화',notice:'공지'};
+    const featureChecks = [...new Set(catalog.templateTasks.map(task=>task.featureKey).filter(Boolean))].map(key=>{
+      const label=el('label','check-option'),input=document.createElement('input');input.type='checkbox';input.value=key;
+      label.append(input,el('span','',featureNames[key] || key));optionsBox.appendChild(label);return input;
+    });
+    const requestChecks = catalog.templateTasks.filter(task=>task.creationPolicy==='on_request').map(task=>{
+      const label=el('label','check-option'),input=document.createElement('input');input.type='checkbox';input.value=task.id;
+      label.append(input,el('span','',task.title));optionsBox.appendChild(label);return input;
+    });
+    optional.appendChild(optionsBox);
+    const currentOptions = ()=>({featureKeys:featureChecks.filter(input=>input.checked).map(input=>input.value),requestTaskKeys:requestChecks.filter(input=>input.checked).map(input=>input.value)});
+    const selectedTemplateTasks = () => window.ProjectTemplateEngine.selectedTasks(catalog.templateTasks,currentOptions());
     const staffingBox = el('div', 'staffing-grid');
     const staffingValues = new Map();
     const preview = el('details', 'template-preview');
     const currentPlatforms = () => platformChecks.filter(input => input.checked).map(input => input.value);
     const requiredRoleIds = () => {
       const templateIds = new Set(catalog.templates.filter(item => currentPlatforms().includes(item.platformId) && item.active !== false && item.status === 'active').map(item => item.id));
-      return new Set(catalog.templateTasks.filter(item => templateIds.has(item.templateId) && item.active !== false).map(item => item.roleId));
+      return new Set(selectedTemplateTasks().filter(item => templateIds.has(item.templateId)).map(item => item.roleId));
     };
     const eligiblePeople = departmentId => visibleUsers.filter(user => user.active && user.departmentId === departmentId);
     const renderStaffing = () => {
       staffingBox.innerHTML = '';
       const roles = catalog.roles.filter(role => role.active !== false && requiredRoleIds().has(role.id)).sort((a, b) => Number(a.order || 0) - Number(b.order || 0));
       const templateIds = new Set(catalog.templates.filter(item => currentPlatforms().includes(item.platformId) && item.active !== false && item.status === 'active').map(item => item.id));
-      const templateTasks = catalog.templateTasks.filter(item => templateIds.has(item.templateId) && item.active !== false);
+      const templateTasks = selectedTemplateTasks().filter(item => templateIds.has(item.templateId));
       const templateStages = catalog.templateStages.filter(item => templateIds.has(item.templateId) && item.active !== false).sort((a,b) => a.order-b.order);
       preview.replaceChildren(el('summary', '', `생성할 단계 ${templateStages.length}개 · 기본 업무 ${templateTasks.length}개`));
       const stageList = el('ol', '');
@@ -1538,6 +1670,7 @@ function openProjectCreator(){
       });
     };
     platformChecks.forEach(input => { input.onchange = renderStaffing; });
+    [...featureChecks,...requestChecks].forEach(input=>{input.onchange=renderStaffing;});
     renderStaffing();
     const actions = el('div', 'form-actions project-create-actions');
     const submit = button('프로젝트 생성', 'primary');
@@ -1545,24 +1678,26 @@ function openProjectCreator(){
     name.input.oninput = code.input.oninput = () => { error.hidden = true; };
     actions.appendChild(submit);
     const basics=el('div','project-create-basics');basics.append(name.wrap,code.wrap);
-    form.append(basics, platformField, staffingTitle, staffingBox, preview, guide, error, actions);
+    form.append(basics, platformField, optional, staffingTitle, staffingBox, access.wrap, preview, guide, error, actions);
     form.onsubmit = async event => {
       event.preventDefault();
-      submit.disabled = true; submit.textContent = '생성 중…'; error.hidden = true;
+      if(dialog.dataset.saving==='true')return;
+      const release=setDialogSaving(dialog,true); submit.textContent = '생성 중…'; error.hidden = true;
       try {
         const roles = catalog.roles.filter(role => requiredRoleIds().has(role.id));
         const assignments = roles.map(role => role.assignmentType === 'external_text'
           ? { roleId: role.id, assignmentType: role.assignmentType, externalName: staffingValues.get(role.id) || '' }
           : { roleId: role.id, assignmentType: role.assignmentType, userId: staffingValues.get(role.id) || '' });
-        await createProjectFromTemplate({ name: name.input.value, code: code.input.value, platformIds: currentPlatforms(), assignments });
-        close(); showToast('프로젝트와 기본 업무를 생성했습니다.');
+        await createProjectFromTemplate({ name: name.input.value, code: code.input.value, platformIds: currentPlatforms(), assignments, ...currentOptions(),...access.value() });
+        release();close(true); showToast('프로젝트와 기본 업무를 생성했습니다.');
       } catch(cause) {
         error.textContent = cause.message || '프로젝트를 생성하지 못했습니다.'; error.hidden = false;
       } finally {
-        submit.disabled = false; submit.textContent = '프로젝트 생성';
+        release();submit.textContent = '프로젝트 생성';
       }
     };
     mountDialogForm(dialog,form);
+    protectDialogForm(form);
   }).catch(cause => {
     loading.className = 'form-error';
     loading.textContent = cause.message || '프로젝트 템플릿을 불러오지 못했습니다.';
@@ -1620,7 +1755,8 @@ function previewImportedSheet(sheet, sourceName, sheetName, overrides = {}, defa
     assignee: importColumn(headers, ['담당자', '작업자', '담당']), platform: importColumn(headers, ['플랫폼']), department: importColumn(headers, ['직군', '부서', '분류']),
     status: importColumn(headers, ['상태', '진행 상태', '진행', '완료']), system: importColumn(headers, ['시스템', '화면', '영역']), buildVersion: importColumn(headers, ['빌드 버전', '버전']), taskGroup: importColumn(headers, ['업무 묶음', '세부내용', '분류', '단계'])
   };
-  const columns = { ...detectedColumns, ...Object.fromEntries(Object.entries(overrides).filter(([, value]) => Number.isInteger(value) && value >= 0)) };
+  // -1 is an explicit disconnect, not a request to restore automatic detection.
+  const columns = { ...detectedColumns, ...Object.fromEntries(Object.entries(overrides).filter(([, value]) => Number.isInteger(value) && value >= -1 && value < headers.length)) };
   const carried = {};
   const rows = matrix.slice(headerIndex + 1).map((cells, index) => {
     const rawValue = key => columns[key] >= 0 ? cells[columns[key]] : '';
@@ -1692,7 +1828,7 @@ function openImportEditor(){
     const grid = el('div', 'mapping-grid');
     fields.forEach(([key, label, aliases]) => {
       const detected = importColumn(headers, aliases); const field = selectField(label, [['-1', '연결하지 않음'], ...headers.map((header, index) => [String(index), `${String(header || '(빈 열)')} (${index + 1}열)`])]);
-      field.select.value = String(detected); field.select.onchange = () => { const value = Number(field.select.value); if(value >= 0) mappingOverrides[key] = value; else delete mappingOverrides[key]; previewBox.innerHTML = ''; importButton.hidden = true; };
+      field.select.value = String(detected); field.select.onchange = () => { mappingOverrides[key] = Number(field.select.value); previewBox.innerHTML = ''; importButton.hidden = true; };
       if(detected >= 0) mappingOverrides[key] = detected;
       grid.appendChild(field.wrap);
     });
@@ -1709,7 +1845,7 @@ function openImportEditor(){
     });
     const valid = preview.rows.filter(row => row.valid && !row.duplicate); const invalid = preview.rows.filter(row => !row.valid); const duplicates = preview.rows.filter(row => row.duplicate);
     previewBox.append(el('strong', '', `검증 결과 · 이관 가능 ${valid.length}행 / 확인 필요 ${invalid.length}행 / 중복 제외 ${duplicates.length}행`));
-    previewBox.append(el('p', 'foot-note', `자동 인식 열: 프로젝트 ${preview.columns.project >= 0 ? '✓' : '–'} · 업무 ${preview.columns.title >= 0 ? '✓' : '–'} · 시작일 ${preview.columns.start >= 0 ? '✓' : '–'} · 마감일 ${preview.columns.due >= 0 ? '✓' : '–'}`));
+    previewBox.append(el('p', 'foot-note', `연결한 열: 프로젝트 ${preview.columns.project >= 0 ? '✓' : '–'} · 업무 ${preview.columns.title >= 0 ? '✓' : '–'} · 시작일 ${preview.columns.start >= 0 ? '✓' : '–'} · 마감일 ${preview.columns.due >= 0 ? '✓' : '–'}`));
     const table = document.createElement('table'); const head = document.createElement('thead'); const hr = document.createElement('tr'); ['원본 행', '프로젝트', '업무', '기간', '담당자', '결과'].forEach(label => hr.appendChild(el('th', '', label))); head.appendChild(hr); table.appendChild(head);
     const body = document.createElement('tbody'); preview.rows.slice(0, 20).forEach(row => { const tr = document.createElement('tr'); const result = row.duplicate ? '기존 업무와 중복 · 제외' : row.valid ? '이관 가능' : row.errors.join(', '); tr.append(el('td', '', String(row.sourceRow)), el('td', '', row.projectCode), el('td', '', row.title), el('td', '', `${fmtDate(row.startDate)} ~ ${fmtDate(row.dueDate)}`), el('td', '', row.assignee || '미배정'), el('td', row.valid && !row.duplicate ? '' : 'capacity-over', result)); body.appendChild(tr); }); table.appendChild(body); const wrap = el('div', 'table-wrap'); wrap.appendChild(table); previewBox.appendChild(wrap);
     if(preview.rows.length > 20) previewBox.append(el('p', 'foot-note', `처음 20행만 표시했습니다. 총 ${preview.rows.length}행을 검증했습니다.`));
@@ -1719,7 +1855,8 @@ function openImportEditor(){
     analyze.disabled = true; sheetPicker.wrap.hidden = true; ownerPicker.wrap.hidden = true; mappingBox.hidden = true; previewBox.innerHTML = ''; importButton.hidden = true;
     try {
       if(!input.files?.[0]) return;
-      const data = await input.files[0].arrayBuffer(); workbook = XLSX.read(data, { type: 'array', cellDates: true });
+      const session=authGeneration;await loadSpreadsheetLibrary();assertCurrentSession(session);
+      const data = await input.files[0].arrayBuffer();assertCurrentSession(session);workbook = XLSX.read(data, { type: 'array', cellDates: true });
       sheetPicker.select.innerHTML = ''; workbook.SheetNames.forEach(name => sheetPicker.select.add(new Option(name, name)));
       sheetPicker.wrap.hidden = false; ownerPicker.wrap.hidden = false; ownerOptions(); renderMapping(); analyze.disabled = false;
     } catch(cause) { error.textContent = `파일을 읽지 못했습니다. ${cause.message || ''}`; error.hidden = false; }
@@ -1729,10 +1866,11 @@ function openImportEditor(){
   ownerPicker.select.onchange = () => { previewBox.innerHTML = ''; importButton.hidden = true; };
   importButton.onclick = async () => {
     if(!importPreview) return;
-    importButton.disabled = true; importButton.textContent = '이관 중…';
-    try { const result = await importTasksFromPreview(importPreview.rows, importPreview.sourceName); showToast(`${result.imported}개 업무를 이관했습니다. 중복 제외 ${result.duplicatesSkipped}행`); close(); }
-    catch(cause) { error.textContent = `이관하지 못했습니다. ${cause.message || ''}`; error.hidden = false; }
-    finally { importButton.disabled = false; importButton.textContent = '이관 실행'; }
+    if(dialog.dataset.saving==='true')return;
+    const release=setDialogSaving(dialog,true);importButton.textContent='이관 중…';error.hidden=true;
+    try { const result = await importTasksFromPreview(importPreview.rows, importPreview.sourceName,{onProgress:progress=>{importButton.textContent=`저장 확인 ${progress.completed}/${progress.total}`;}});release();close(true);showToast(`${result.imported}개 업무의 이관 완료를 확인했습니다. 중복 제외 ${result.duplicatesSkipped}행`); }
+    catch(cause) { error.textContent = cause.message || '이관하지 못했습니다.'; error.hidden = false;importButton.textContent=cause.importProgress?'이어서 실행':'이관 실행'; }
+    finally { release();if(error.hidden)importButton.textContent='이관 실행'; }
   };
   const content=el('div','guide-import-body'),actions=el('div','form-actions');actions.appendChild(importButton);
   content.append(fileField, sheetPicker.wrap, ownerPicker.wrap, mappingBox, analyze, error, previewBox, actions);mountDialogForm(dialog,content);
@@ -1787,16 +1925,47 @@ function confirmScheduleChanges(preview){
     const { dialog, close, onClose } = openDialog('연결 일정 변경 확인');
     let applied = false;
     onClose(() => resolve(applied));
-    const automatic = preview.changes.filter(item => item.kind === 'automatic').length;
+    const automatic = preview.changes.filter(item => item.kind === 'automatic' || item.kind === 'step').length;
     const reviews = preview.changes.filter(item => item.kind === 'review' && item.patch.scheduleReview).length;
-    dialog.appendChild(el('p', 'sub', `자동 변경 ${automatic}건 · 재확인 ${reviews}건 · 유지 ${preview.retained.length}건`));
-    preview.changes.forEach(change => {
-      const row = el('section', 'task-editor-section');
+    dialog.appendChild(el('p', 'sub', `이동 ${automatic}건 · 유지 ${preview.retained.length}건 · 확인 ${(preview.warnings||[]).length+reviews}건`));
+    if(preview.rootChange){
+      const change=preview.rootChange,row=el('section','task-editor-section schedule-change-row');
+      row.append(el('strong','',change.title),el('p','',`기준 일정 ${fmtDate(change.before.startDate)} ~ ${fmtDate(change.before.dueDate)} → ${fmtDate(change.after.startDate)} ~ ${fmtDate(change.after.dueDate)}`));dialog.appendChild(row);
+    }
+    const changedDetails=el('details','schedule-detail-group');changedDetails.open=preview.changes.length<=3;
+    changedDetails.appendChild(el('summary','',`변경 업무 ${preview.changes.length}건`));
+    preview.changes.forEach((change,index) => {
+      const row = el('section', 'task-editor-section schedule-change-row');
       row.append(el('strong', '', change.title), el('p', '', `현재 ${fmtDate(change.before.startDate)} ~ ${fmtDate(change.before.dueDate)}`),
-        el('p', '', `${change.kind === 'automatic' ? '변경' : '날짜 유지 · 권장'} ${change.after.startDate} ~ ${change.after.dueDate}`));
-      dialog.appendChild(row);
+        el('p', '', `${change.kind === 'review' ? '날짜 유지 · 권장' : '변경'} ${change.after.startDate} ~ ${change.after.dueDate}`));
+      if(index<3&&preview.changes.length>3)dialog.appendChild(row);else changedDetails.appendChild(row);
     });
-    preview.retained.forEach(item => dialog.appendChild(el('p', 'sub', `${item.title} · ${item.reason}`)));
+    if(preview.changes.length){changedDetails.querySelector('summary').textContent=preview.changes.length>3?`나머지 변경 ${preview.changes.length-3}건`:`변경 업무 ${preview.changes.length}건`;dialog.appendChild(changedDetails);}
+    if(preview.retained.length){
+      const retained=el('details','schedule-detail-group');retained.appendChild(el('summary','',`유지 업무 ${preview.retained.length}건`));
+      preview.retained.forEach(item=>retained.appendChild(el('p','sub',`${item.title} · ${item.reason}`)));dialog.appendChild(retained);
+    }
+    if(preview.warnings?.length) {
+      const warnings = el('section','schedule-warning-groups');
+      const labels={deadline:'마감 초과',dependency:'선행 일정 충돌',preparation:'착수 준비 확인',overlap:'담당자 일정 겹침',missing_deadline:'날짜 미정'};
+      const types=[...new Set(preview.warnings.map(item=>item.type))].sort((a,b)=>(a==='deadline'?-1:b==='deadline'?1:0));
+      types.forEach(type=>{
+        const items=preview.warnings.filter(item=>item.type===type),group=el('details','schedule-detail-group schedule-change-warnings');
+        group.open=type!=='missing_deadline';group.appendChild(el('summary','',`${labels[type]||'확인 필요'} ${items.length}건`));
+        if(type==='missing_deadline')group.appendChild(el('p','sub','업무 또는 기준 날짜를 입력하면 확인할 수 있습니다.'));
+        const moreWarnings=type==='overlap'&&items.length>3?el('details','schedule-detail-group'):null;
+        if(moreWarnings)moreWarnings.appendChild(el('summary','',`추가 겹침 ${items.length-3}건 보기`));
+        items.forEach((item,index)=>{
+          const row=el('div','schedule-warning-item');row.appendChild(el('strong','',item.title));
+          if(type!=='missing_deadline')row.appendChild(el('p','',item.message));
+          const referenceTask=tasks.find(task=>task.id===item.anchorId);
+          if(item.anchorTitle)row.appendChild(el('p','sub',`기준 · ${referenceTask?projectCode(referenceTask)+' · ':''}${item.anchorTitle}`));
+          if(item.deadline)row.appendChild(el('p','',`마감 ${item.deadline} · 예정 ${item.dueDate}`));
+          const related=referenceTask;if(related)row.appendChild(button('기준 업무 확인','ghost tiny',()=>openTaskDetails(related)));(moreWarnings&&index>=3?moreWarnings:group).appendChild(row);
+        });if(moreWarnings)group.appendChild(moreWarnings);warnings.appendChild(group);
+      });
+      dialog.appendChild(warnings);
+    }
     const actions = el('div', 'form-actions');
     actions.append(button('취소', 'ghost', close), button('변경 내용 적용', 'primary', () => { applied = true; close(); }));
     const content=el('div','');content.appendChild(actions);mountDialogForm(dialog,content);
@@ -1813,10 +1982,11 @@ function appendScheduleReview(dialog, task, close){
   if(canEditTask(task)) {
     const actions = el('div', 'form-actions');
     const resolve = async apply => {
-      [...actions.querySelectorAll('button')].forEach(button => { button.disabled = true; });
-      try { if(await resolveTaskScheduleReview(task.id, apply)) { close(); showToast(apply ? '권장 일정을 적용했습니다.' : '현재 일정을 유지합니다.'); } }
+      if(!allowDialogAction(dialog))return;
+      const release=setDialogSaving(dialog,true);
+      try { if(await resolveTaskScheduleReview(task.id, apply,taskEditSignature(task))) { release();close(true); showToast(apply ? '권장 일정을 적용했습니다.' : '현재 일정을 유지합니다.'); } }
       catch(error) { alert(error.message); }
-      finally { [...actions.querySelectorAll('button')].forEach(button => { button.disabled = false; }); }
+      finally { release(); }
     };
     actions.append(button('권장 일정 적용', 'primary', () => resolve(true)), button('현재 일정 유지', 'ghost', () => resolve(false))); review.appendChild(actions);
   }
@@ -1824,9 +1994,11 @@ function appendScheduleReview(dialog, task, close){
 }
 
 function openExternalTaskEditor(task){
+  if(!canEditTask(task))return openTaskDetails(task);
   const { dialog, close, onClose } = openDialog('영상 파트너 업무 수정');
+  const expectedTaskSignature=taskEditSignature(task);
   const form = el('form', 'form-grid');
-  const title = inputField('업무명', ''); title.input.value = task.title;
+  const title = taskTitleField(task.title);
   const partner = inputField('영상 파트너', '업체명 직접 입력'); partner.input.value = task.externalAssigneeName || '';
   const start = inputField('시작일', '', 'date'); start.input.value = dateOnly(task.startDate);
   const due = inputField('마감일', '', 'date'); due.input.value = dateOnly(task.dueDate);
@@ -1834,36 +2006,58 @@ function openExternalTaskEditor(task){
   form.append(title.wrap, partner.wrap, start.wrap, due.wrap, status.wrap, button('저장', 'primary'));
   form.onsubmit = async event => {
     event.preventDefault();
+    if(dialog.dataset.saving==='true'||dialog.querySelector('.discussion form[data-saving]'))return;
+    if(dialogHasDiscussionDraft(dialog)){alert('작성 중인 댓글·링크를 먼저 등록하거나 지운 뒤 업무를 저장해주세요.');return;}
+    const release=setDialogSaving(dialog,true);
     try {
       const changed = dateOnly(task.startDate) !== start.input.value || dateOnly(task.dueDate) !== due.input.value;
-      const saved = await saveTask({ ...task, title: title.input.value, externalAssigneeName: partner.input.value, startDate: start.input.value || null, dueDate: due.input.value || null, status: status.select.value, dateOverride: task.dateOverride || changed, dateLocked: task.dateLocked || changed });
-      if(saved !== false) close();
+      const saved = await saveTask({ ...task, expectedTaskSignature, title: title.input.value, externalAssigneeName: partner.input.value, startDate: start.input.value || null, dueDate: due.input.value || null, status: status.select.value, dateOverride: task.dateOverride || changed, dateLocked: task.dateLocked || changed });
+      if(saved !== false) {release();close(true);}
     } catch(error) { alert(error.message); }
+    finally {release();}
   };
-  renderTaskDiscussion(mountDialogForm(dialog,form), task.id, onClose);
+  renderTaskDiscussion(mountDialogForm(dialog,form), task.id, onClose);protectDialogForm(form);
 }
 
 function taskEditorAssignees(task, primaryId, supportIds = []){
   const ids=[...new Set([primaryId,...supportIds].filter(Boolean))];
   const original=task?normalizeTask(task).assignees:[];
   const samePeople=task?.assigneeId===primaryId && original.length===ids.length && original.every(item=>ids.includes(item.userId));
-  if(samePeople)return ids.map((userId,index)=>({...original.find(item=>item.userId===userId),role:index===0?'primary':'co'}));
+  if(samePeople)return original.map(item=>({...item,role:item.userId===primaryId?'primary':'co'}));
   return ids.map((userId,index)=>({userId,share:1/ids.length,role:index===0?'primary':'co'}));
 }
 
+function taskEditorSupportPeople(people, task, primaryId){
+  const candidates = new Map(people.filter(user => user.id !== primaryId).map(user => [user.id, user]));
+  (task?.assignees || []).forEach(item => {
+    if(item.userId !== primaryId && !candidates.has(item.userId)) candidates.set(item.userId, {id:item.userId,name:userName(item.userId)});
+  });
+  return [...candidates.values()];
+}
+function taskEditorDependencies(task, selectedIds){
+  const original=task?.dependsOn||[];
+  return original.length===selectedIds.length&&original.every(id=>selectedIds.includes(id))?[...original]:selectedIds;
+}
+
 function openTaskEditor(task, initial = {}){
+  if(task&&!canEditTask(task))return openTaskDetails(task);
+  if(task)document.getElementById('main').dataset.focusTask=task.id;
   if(task?.departmentId === 'video_partner') return openExternalTaskEditor(task);
   const editing = !!task;
+  const expectedTaskSignature=task?taskEditSignature(task):null;
   const { dialog, close, onClose } = openDialog(editing ? '업무 수정' : '업무 추가');
   appendScheduleReview(dialog, task, close);
-  if(task?.dateOverride && !task.scheduleReview && task.datePolicy !== 'anchor' && task.scheduleRule?.type === 'after_task') {
+  if(task?.dateOverride && !task.scheduleReview && task.datePolicy !== 'anchor' && ['after_task','before_task','during_task'].includes(task.scheduleRule?.type)) {
     dialog.appendChild(button('자동 일정으로 되돌리기', 'ghost', async () => {
-      try { if(await restoreAutomaticSchedule(task.id)) { close(); showToast('자동 일정으로 다시 연결했습니다.'); } }
+      if(!allowDialogAction(dialog))return;
+      const release=setDialogSaving(dialog,true);
+      try { if(await restoreAutomaticSchedule(task.id,expectedTaskSignature)) { release();close(true); showToast('자동 일정으로 다시 연결했습니다.'); } }
       catch(error) { alert(error.message); }
+      finally {release();}
     }));
   }
   const form = el('form', 'form-grid');
-  const title = inputField('업무명', '업무 내용을 입력하세요'); title.input.value = task?.title || '';
+  const title = taskTitleField(task?.title||'');
   const departmentOptions = DEPARTMENTS.filter(dept => isAdmin() || isPM() || dept.id === currentProfile.departmentId).map(dept => [dept.id, dept.name]);
   const department = selectField('담당 부서', departmentOptions); department.select.value = task?.departmentId || (departmentOptions.some(option=>option[0]===initial.departmentId)?initial.departmentId:null) || currentProfile.departmentId || departmentOptions[0]?.[0] || '';
   const people = [...new Map([
@@ -1887,23 +2081,28 @@ function openTaskEditor(task, initial = {}){
   const supportAssignees = multiSelectField('지원 담당자 (선택)');
   const initialSupportIds = (task?.assignees || []).filter(item => item.userId !== task?.assigneeId).map(item => item.userId);
   const initialAssigneeIds = task?.assigneeIds || task?.assignees?.map(item => item.userId) || (task?.assigneeId ? [task.assigneeId] : []);
+  let supportInitialized=false;
   const refreshSupportOptions = () => {
     const selected = new Set([...supportAssignees.select.selectedOptions].map(option => option.value));
-    initialSupportIds.forEach(id => selected.add(id));
+    if(!supportInitialized)initialSupportIds.forEach(id => selected.add(id));supportInitialized=true;
     supportAssignees.select.innerHTML = '';
-    peopleInDepartment().filter(user => user.id !== assignee.select.value).forEach(user => {
-      const option = new Option(user.name || user.email, user.id); option.selected = selected.has(user.id); supportAssignees.select.add(option);
+    taskEditorSupportPeople(people, task, assignee.select.value).forEach(user => {
+      const option = new Option(`${user.name || user.email} · ${departmentName(user.departmentId)||'기존 담당'}`, user.id); option.selected = selected.has(user.id); supportAssignees.select.add(option);
     });
   };
   refreshSupportOptions();
   supportAssignees.select.disabled = !canManageSupport;
-  const project = selectField('프로젝트', projects.filter(item => item.status !== 'completed' || item.id === task?.projectId).map(item => [item.id, item.code ? `${item.code} · ${item.name || ''}`.trim() : item.name])); project.select.value = task?.projectId || initial.projectId || '';
+  const project = selectField('프로젝트', [['','프로젝트 선택'],...projects.filter(item => item.status !== 'completed' || item.id === task?.projectId).map(item => [item.id, item.code ? `${item.code} · ${item.name || ''}`.trim() : item.name])]); project.select.value = task?.projectId || initial.projectId || '';
   const platform = selectField('플랫폼', [['', '공통'], ...PLATFORMS.map(item => [item.id, item.name])]); platform.select.value = task?.platform || initial.platform || '';
   const milestone = selectField('연결 마일스톤', [['', '마일스톤과 연결하지 않음']]);
   const stage = selectField('프로젝트 단계', [['', '단계 선택']]);
   stage.select.disabled = editing && !canManageTaskAssignment(task);
-  const dependsOn = multiSelectField('선행 업무 (복수 선택 가능)');
+  const dependsOn = multiSelectField(task?.scheduleRule?.type==='before_task'?'역산 기준 일정':task?.scheduleRule?.type==='during_task'?'참여 기준 기간':'선행 업무 (복수 선택 가능)');
+  dependsOn.select.disabled = editing && !canManageScheduleLinks(task);
+  let relationsInitialized=false;
   const refreshProjectRelations = () => {
+    const selectedDependencies=new Set([...dependsOn.select.selectedOptions].map(option=>option.value));
+    if(!relationsInitialized)(task?.dependsOn||[]).forEach(id=>selectedDependencies.add(id));relationsInitialized=true;
     const projectId = project.select.value;
     const selectedStageId = stage.select.value || task?.stageId || task?.phaseId || '';
     const stageSnapshots = projects.find(item => item.id === projectId)?.stageSnapshots || [];
@@ -1917,9 +2116,9 @@ function openTaskEditor(task, initial = {}){
     projectMilestones.forEach(item => milestone.select.add(new Option(item.title, item.id)));
     milestone.select.value = task?.milestoneId || '';
     dependsOn.select.innerHTML = '';
-    activeTasks().filter(item => item.id !== task?.id && (projectId ? item.projectId === projectId : item.departmentId === department.select.value)).forEach(item => {
-      const option = new Option(item.title, item.id);
-      option.selected = (task?.dependsOn || []).includes(item.id);
+    activeTasks().filter(item => item.id !== task?.id && projectId && item.projectId === projectId).forEach(item => {
+      const option = new Option(`${item.title} · ${departmentName(item.departmentId)} · ${taskAssigneeName(item)}`, item.id);
+      option.selected = selectedDependencies.has(item.id);
       dependsOn.select.add(option);
     });
   };
@@ -1953,15 +2152,18 @@ function openTaskEditor(task, initial = {}){
     assignmentWarning.className = `assignment-assessment ${assessment.level}`;
     assignmentWarning.innerHTML = '';
     assignmentWarning.append(el('strong', '', assessment.level === 'danger' ? '과부하 예상' : assessment.level === 'warn' ? '배정 주의' : assessment.level === 'ok' ? '배정 가능' : '계산 필요'));
-    assignmentWarning.append(el('span', '', assessment.level === 'unknown' ? '담당자·기간·예상 작업일 입력 후 자동 계산' : `최대 주간 ${assessment.weeklyLoad}% · 다음 가능일 ${fmtDate(assessment.nextDate)}`));
-    assignmentWarning.append(el('p', '', `${assignees.length > 1 ? `${assignees.length}명 공동 배정 · ` : ''}${assessment.label}`));
+    assignmentWarning.append(el('span', '', assessment.level === 'unknown' ? '기간 입력 후 계산' : `최대 주간 ${assessment.weeklyLoad}%`));
+    if(['danger','warn'].includes(assessment.level))assignmentWarning.appendChild(el('p','',assessment.label));
+    const assessmentDetails=el('details','assignment-assessment-details');assessmentDetails.appendChild(el('summary','','배정 상세'));
+    assessmentDetails.append(el('p', '', `${assignees.length > 1 ? `${assignees.length}명 공동 배정 · ` : ''}${assessment.label}`));
+    if(assessment.nextDate)assessmentDetails.appendChild(el('p','',`다음 가능일 ${fmtDate(assessment.nextDate)}`));assignmentWarning.appendChild(assessmentDetails);
     capacityConfirm.checked = false;
     capacityConfirmLabel.hidden = assessment.level !== 'danger';
   };
   const dependencyWarning = el('section', 'dependency-warning'); dependencyWarning.hidden = true;
   const dependencyConfirm = document.createElement('input'); dependencyConfirm.type = 'checkbox'; dependencyConfirm.id = `dependency-confirm-${task?.id || 'new'}`;
   const refreshDependencyWarning = () => {
-    const selected = [...dependsOn.select.selectedOptions].map(option => tasks.find(item => item.id === option.value)).filter(Boolean);
+    const selected = (['before_task','during_task'].includes(task?.scheduleRule?.type)?[]:[...dependsOn.select.selectedOptions]).map(option => tasks.find(item => item.id === option.value)).filter(Boolean);
     const conflicted = selected.filter(item => item.dueDate && start.input.value && item.dueDate >= start.input.value && item.status !== 'done');
     dependencyWarning.innerHTML = ''; dependencyConfirm.checked = false;
     if(!conflicted.length) { dependencyWarning.hidden = true; return; }
@@ -1978,61 +2180,107 @@ function openTaskEditor(task, initial = {}){
   estimate.input.oninput = refreshAssignmentWarning;
   start.input.onchange = () => { refreshDependencyWarning(); refreshAssignmentWarning(); };
   due.input.onchange = refreshAssignmentWarning;
-  if(task?.generated) form.append(el('p', 'sub', '자동 생성 업무입니다. 일정 날짜를 직접 바꾸면 이후 자동 재계산 대상에서 제외됩니다.'));
+  if(task?.generated&&task.datePolicy!=='anchor') form.append(el('p', 'sub', '날짜를 직접 변경하면 수동 일정으로 유지됩니다.'));
   const basic = el('section', 'task-editor-section');
-  basic.append(title.wrap, department.wrap, assignee.wrap, project.wrap, stage.wrap, platform.wrap, estimate.wrap, start.wrap, due.wrap, status.wrap, progress.wrap);
+  if(editing){form.appendChild(el('p','sub',`${projectCode(task)} · ${stage.select.selectedOptions[0]?.text||''} · ${departmentName(task.departmentId)}${task.datePolicy==='anchor'?' · 기준 일정':''}`));basic.append(title.wrap,assignee.wrap,estimate.wrap,start.wrap,due.wrap,status.wrap);}
+  else basic.append(title.wrap, project.wrap, stage.wrap, department.wrap, assignee.wrap, estimate.wrap, start.wrap, due.wrap, status.wrap);
   const advanced = el('details', 'task-editor-advanced');
   advanced.open = initial.showAdvanced === true;
   advanced.appendChild(el('summary', '', '추가 설정'));
   const advancedGrid = el('div', 'task-editor-advanced-grid');
-  advancedGrid.append(supportAssignees.wrap, milestone.wrap, dependsOn.wrap);
+  if(editing)advancedGrid.append(project.wrap,stage.wrap,department.wrap);
+  advancedGrid.append(platform.wrap, progress.wrap, supportAssignees.wrap, milestone.wrap, dependsOn.wrap);
   const advancedSummary=el('p','sub task-advanced-summary');
-  const refreshAdvancedSummary=()=>{advancedSummary.textContent=`지원자 ${supportAssignees.select.selectedOptions.length}명 · 선행 업무 ${dependsOn.select.selectedOptions.length}개 · 연결 마일스톤 ${milestone.select.value?'있음':'없음'}`;};
+  const refreshAdvancedSummary=()=>{
+    const parts=[];
+    if(supportAssignees.select.selectedOptions.length)parts.push(`지원 ${supportAssignees.select.selectedOptions.length}명`);
+    if(dependsOn.select.selectedOptions.length)parts.push(`선행 ${dependsOn.select.selectedOptions.length}개`);
+    if(milestone.select.value)parts.push('마일스톤 연결');advancedSummary.textContent=parts.join(' · ');advancedSummary.hidden=!parts.length;
+  };
   [supportAssignees.select,dependsOn.select,milestone.select].forEach(select=>select.addEventListener('change',refreshAdvancedSummary));refreshAdvancedSummary();
   advanced.appendChild(advancedGrid);
-  form.append(basic, advancedSummary, advanced);
-  form.append(dependencyWarning, assignmentWarning, capacityConfirmLabel);
+  if(task?.scheduleSteps?.length || task?.readinessDependsOn?.length){
+    const connections=el('details','template-preview');connections.appendChild(el('summary','','착수 조건·후속 작업'));
+    taskDependencies(task).forEach(item=>connections.appendChild(el('p','sub',`${item.title} · ${item.status==='done'?'완료':'완료 확인 필요'}`)));
+    (task.scheduleSteps || []).forEach(step=>{
+      const dates=task.scheduleStepDates?.[step.id],row=el('section','task-editor-section');
+      row.append(el('strong','',step.title),el('p','',dates?.startDate ? `${dates.startDate} ~ ${dates.dueDate}` : '일정 미정'));
+      const titles=window.DependencyScheduler.dependencies({scheduleRule:step.scheduleRule}).map(id=>tasks.find(item=>item.id===id)?.title).filter(Boolean);
+      row.appendChild(el('p','sub',`선행: ${titles.join(' · ')}`));connections.appendChild(row);
+    });
+    advanced.appendChild(connections);
+  }
+  form.append(basic, dependencyWarning, assignmentWarning, capacityConfirmLabel, advancedSummary, advanced);
   refreshDependencyWarning();
   refreshAssignmentWarning();
   if(editing && canManageTaskAssignment(task)) {
     const assignRow = el('div', 'assignment-editor-row');
-    assignRow.append(el('span', 'foot-note', `현재 담당자 · ${taskAssigneeName(task)}`), button('담당자 변경', 'tiny ghost', () => openAssignmentEditor(task)));
-    form.appendChild(assignRow);
+    assignRow.append(button('담당자 변경', 'tiny ghost', () => openAssignmentEditor(task)));
+    basic.appendChild(assignRow);
   }
   const actions = el('div', 'form-actions'); actions.appendChild(button('저장', 'primary'));
-  if(editing) actions.prepend(button('업무 보관', 'danger-button dialog-secondary-action', async () => { if(confirm('이 업무를 보관할까요?')) { await archiveTask(task.id); close(); } }));
+  if(editing) actions.prepend(button('업무 보관', 'danger-button dialog-secondary-action', async () => {
+    if(!allowDialogAction(dialog)||!confirm('이 업무를 보관할까요?'))return;
+    const release=setDialogSaving(dialog,true);
+    try{await archiveTask(task.id,expectedTaskSignature);release();close(true);}catch(error){alert(error.message);}finally{release();}
+  }));
   form.appendChild(actions);
+  const clearInputError=event=>{const field=event.target;if(!field.hasAttribute('aria-invalid'))return;field.closest('.field')?.querySelector('.field-error')?.remove();field.removeAttribute('aria-invalid');field.removeAttribute('aria-describedby');};
+  form.addEventListener('input',clearInputError);form.addEventListener('change',clearInputError);
+  let taskSaving=false;
+  let releaseSaving=()=>{};
   form.onsubmit = async event => {
     event.preventDefault();
+    if(taskSaving||dialog.querySelector('.discussion form[data-saving]'))return;
     try {
+      if(dialogHasDiscussionDraft(dialog))throw new Error('작성 중인 댓글·링크를 먼저 등록하거나 지운 뒤 업무를 저장해주세요.');
+      form.querySelectorAll('.field-error').forEach(node=>node.remove());form.querySelectorAll('[aria-invalid]').forEach(node=>{node.removeAttribute('aria-invalid');node.removeAttribute('aria-describedby');});
       const selectedProject = projects.find(item => item.id === project.select.value);
-      if(!title.input.value.trim() || !project.select.value || !assignee.select.value || !estimate.input.value || (selectedProject?.schedulingMode !== 'template_v2' && !start.input.value)) throw new Error('업무명, 프로젝트, 담당자, 예상 작업일을 입력해주세요. 기존 프로젝트는 시작일도 필요합니다.');
-      if(selectedProject?.stageSnapshots?.length && !stage.select.value) throw new Error('업무가 포함될 프로젝트 단계를 선택해주세요.');
-      if(Boolean(start.input.value) !== Boolean(due.input.value) && selectedProject?.schedulingMode === 'template_v2') throw new Error('시작일과 마감일을 함께 입력하거나 둘 다 미정으로 두세요.');
+      const errors=[];
+      if(!title.input.value.trim())errors.push([title.input,'업무명을 입력해주세요.']);
+      if(!project.select.value)errors.push([project.select,'프로젝트를 선택해주세요.']);
+      if(selectedProject?.stageSnapshots?.length&&!stage.select.value)errors.push([stage.select,'단계를 선택해주세요.']);
+      if(!assignee.select.value)errors.push([assignee.select,'담당자를 선택해주세요.']);
+      if(!estimate.input.value||Number(estimate.input.value)<=0)errors.push([estimate.input,'작업일을 입력해주세요.']);
+      if(selectedProject&&selectedProject.schedulingMode!=='template_v2'&&!start.input.value)errors.push([start.input,'시작일을 입력해주세요.']);
+      if(Boolean(start.input.value)!==Boolean(due.input.value)&&selectedProject?.schedulingMode==='template_v2')errors.push([start.input.value?due.input:start.input,'시작일과 마감일을 함께 입력해주세요.']);
+      if(start.input.value&&due.input.value&&due.input.value<start.input.value)errors.push([due.input,'마감일은 시작일 이후로 설정해주세요.']);
+      if(errors.length){errors.forEach(([field,message])=>showFieldError(field,message));errors[0][0].focus();return;}
       if(!dependencyWarning.hidden && !dependencyConfirm.checked) throw new Error('선행 업무와 겹치는 일정을 확인해주세요.');
       if(assignmentHasChanged() && latestAssignmentAssessments.some(item => item.assessment.level === 'danger') && !capacityConfirm.checked) throw new Error('담당자 과부하 경고를 확인해주세요.');
       const datesChanged = dateOnly(task?.startDate) !== start.input.value || dateOnly(task?.dueDate) !== due.input.value;
       const stageFields = stage.select.value ? { stageId: stage.select.value, phaseId: stage.select.value } : {};
-      const saved = await saveTask({ id: task?.id, title: title.input.value, departmentId: department.select.value, assigneeId: assignee.select.value, assignees: selectedAssignees(), projectId: project.select.value || null, ...stageFields, platform: platform.select.value || null, milestoneId: milestone.select.value || null, dependsOn: [...dependsOn.select.selectedOptions].map(option => option.value), status: status.select.value, progress: Number(progress.input.value), estimatedDays: Number(estimate.input.value), startDate: start.input.value || null, dueDate: due.input.value || null, capacityConfirmed: capacityConfirm.checked, dateOverride: Boolean(task?.dateOverride || (task?.generated && datesChanged)) });
-      if(saved !== false) close();
-    } catch(error) { alert(error.message); }
+      const payload={ id: task?.id, expectedTaskSignature, title: title.input.value, departmentId: department.select.value, assigneeId: assignee.select.value, assignees: selectedAssignees(), projectId: project.select.value || null, ...stageFields, platform: platform.select.value || null, milestoneId: milestone.select.value || null, dependsOn: taskEditorDependencies(task,[...dependsOn.select.selectedOptions].map(option => option.value)), status: status.select.value, progress: Number(progress.input.value), estimatedDays: Number(estimate.input.value), startDate: start.input.value || null, dueDate: due.input.value || null, capacityConfirmed: capacityConfirm.checked, dateOverride: Boolean(task?.dateOverride || (task?.generated && datesChanged)) };
+      taskSaving=true;releaseSaving=setDialogSaving(dialog,true);
+      const saved = await saveTask(payload);
+      if(saved !== false) {releaseSaving();close(true);}
+    } catch(error) { let notice=form.querySelector('.task-save-error');if(!notice){notice=el('p','form-error task-save-error');notice.setAttribute('role','alert');form.appendChild(notice);}notice.textContent=error.message;notice.scrollIntoView({block:'nearest'}); }
+    finally {taskSaving=false;releaseSaving();}
   };
   const dialogBody=mountDialogForm(dialog,form);
+  onClose(searchableTaskSelect(supportAssignees));onClose(searchableTaskSelect(dependsOn));protectDialogForm(form);
   if(editing) renderTaskDiscussion(dialogBody, task.id, onClose);
 }
 
-function renderTaskDiscussion(dialog, taskId, onClose){
-  const section = el('section', 'discussion'); section.append(el('h3', 'small-heading', '댓글 및 참고 링크'));
+function renderTaskDiscussion(dialog, taskId, onClose, readonly=false){
+  const session=authGeneration;let active=true;
+  const current=()=>active&&session===authGeneration;
+  onClose(()=>{active=false;});
+  const section = el('details', 'discussion schedule-detail-group'); section.append(el('summary', '', '댓글 및 참고 링크'));
   const commentsBox = el('div', 'comment-list'); const linksBox = el('div', 'link-list');
   const commentForm = el('form', 'comment-form'); const commentInput = document.createElement('textarea'); commentInput.rows = 2; commentInput.placeholder = '@이름 으로 동료를 언급할 수 있습니다';
   commentForm.append(commentInput, button('댓글 등록', 'tiny primary'));
-  commentForm.onsubmit = async event => { event.preventDefault(); try { await addTaskComment(taskId, commentInput.value); commentInput.value = ''; } catch(error) { alert(error.message); } };
+  let commentSaving=false;
+  commentForm.onsubmit = async event => { event.preventDefault();if(commentSaving||!current())return;commentSaving=true;commentForm.dataset.saving='true';const submit=commentForm.querySelector('button'),text=commentInput.value;submit.disabled=true;commentInput.disabled=true;try { await addTaskComment(taskId, text); if(current())commentInput.value = ''; } catch(error) { if(current())alert(error.message); } finally {commentSaving=false;delete commentForm.dataset.saving;submit.disabled=false;commentInput.disabled=false;} };
   const linkForm = el('form', 'link-form');
   const linkLabel = document.createElement('input'); linkLabel.placeholder = '링크 제목 (선택)';
   const linkUrl = document.createElement('input'); linkUrl.type = 'url'; linkUrl.placeholder = 'https://...';
   linkForm.append(linkLabel, linkUrl, button('링크 추가', 'tiny ghost'));
-  linkForm.onsubmit = async event => { event.preventDefault(); try { await addTaskLink(taskId, { label: linkLabel.value, url: linkUrl.value }); linkLabel.value = ''; linkUrl.value = ''; } catch(error) { alert(error.message); } };
+  let linkSaving=false;
+  linkForm.onsubmit = async event => { event.preventDefault();if(linkSaving||!current())return;linkSaving=true;linkForm.dataset.saving='true';const controls=[...linkForm.querySelectorAll('input,button')];controls.forEach(node=>node.disabled=true);try { await addTaskLink(taskId, { label: linkLabel.value, url: linkUrl.value }); if(current()){linkLabel.value = ''; linkUrl.value = '';} } catch(error) { if(current())alert(error.message); } finally {linkSaving=false;delete linkForm.dataset.saving;controls.forEach(node=>node.disabled=false);} };
   section.append(commentsBox, commentForm, linkForm, linksBox);
+  if(readonly){commentForm.remove();linkForm.remove();}
+  dialog.appendChild(section);
   const unsubscribe = watchTaskDiscussion(taskId, ({ comments, links }) => {
     commentsBox.innerHTML = ''; linksBox.innerHTML = '';
     if(!comments.length) commentsBox.append(el('p', 'foot-note', '아직 댓글이 없습니다.'));
@@ -2049,7 +2297,8 @@ function renderTaskDiscussion(dialog, taskId, onClose){
 
 function openMilestoneEditor(milestone, projectId){
   const editing = !!milestone;
-  const { overlay, dialog } = openDialog(editing ? '마일스톤 수정' : '마일스톤 추가');
+  const { overlay, dialog, close } = openDialog(editing ? '마일스톤 수정' : '마일스톤 추가');
+  const expectedSignature=milestone?taskEditSignature(milestone):null;
   const form = el('form', 'form-grid');
   const title = inputField('마일스톤명', '예: 컨셉 확정'); title.input.value = milestone?.title || '';
   const version = selectField('적용 버전', [['', '공통'], ['pc', 'PC'], ['mobile', '모바일']]); version.select.value = milestone?.version || '';
@@ -2078,16 +2327,27 @@ function openMilestoneEditor(milestone, projectId){
   due.input.onchange = renderImpact;
   form.appendChild(impact);
   const actions = el('div', 'form-actions'); actions.appendChild(button('저장', 'primary'));
-  if(editing) actions.appendChild(button('보관', 'danger-button', async () => { if(confirm('이 마일스톤을 보관할까요?')) { await archiveMilestone(milestone.id); overlay.remove(); } }));
+  const error=el('p','form-error');error.setAttribute('role','alert');form.append(error);
+  if(editing) actions.appendChild(button('보관', 'danger-button', async () => {if(!allowDialogAction(dialog)||!confirm('이 마일스톤을 보관할까요?'))return;const release=setDialogSaving(dialog,true);try{await archiveMilestone(milestone.id,expectedSignature);release();close(true);}catch(cause){error.textContent=cause.message;}finally{release();}}));
   form.appendChild(actions);
-  form.onsubmit = async event => { event.preventDefault(); try { await saveMilestone({ ...milestone, projectId, title: title.input.value, version: version.select.value || null, dueDate: due.input.value || null, status: status.select.value }); overlay.remove(); } catch(error) { alert(error.message); } };
+  form.onsubmit = async event => {event.preventDefault();if(dialog.dataset.saving==='true')return;const release=setDialogSaving(dialog,true);error.textContent='';try{await saveMilestone({...milestone,expectedSignature,projectId,title:title.input.value,version:version.select.value||null,dueDate:due.input.value||null,status:status.select.value});release();close(true);}catch(cause){error.textContent=cause.message;}finally{release();}};
   mountDialogForm(dialog,form);
+  protectDialogForm(form);
 }
 
 function textareaField(label, placeholder){
   const wrap = el('label', 'field'); wrap.append(el('span', '', label));
   const textarea = document.createElement('textarea'); textarea.placeholder = placeholder || ''; textarea.rows = 3; wrap.appendChild(textarea);
   return { wrap, textarea };
+}
+function taskTitleField(value){
+  const field=textareaField('업무명','업무 내용을 입력하세요');
+  field.input=field.textarea;field.input.value=value||'';field.input.rows=3;
+  field.input.addEventListener('input',()=>resizeTaskTitle(field.input));
+  field.wrap.classList.add('task-title-field');return field;
+}
+function resizeTaskTitle(input){
+  input.style.height='auto';input.style.height=`${Math.min(160,Math.max(64,input.scrollHeight+2))}px`;
 }
 
 function openProjectUpdateEditor(project){
@@ -2131,9 +2391,40 @@ function openUserRoleEditor(user){
   mountDialogForm(dialog,form);
 }
 
+const guideScrollMemory=new Map();
+const guidePageScrollMemory=new Map();
+function renderDataNotice(main){
+  const offline=typeof navigator!=='undefined'&&navigator.onLine===false;
+  if(!offline&&!dataIssues.size&&!dataLoading.size)return;
+  const notice=el('section','data-notice');notice.setAttribute('role',dataIssues.size?'alert':'status');
+  const labels=[...new Set([...dataIssues.values()].map(item=>item.label))];
+  notice.append(el('p','',offline?'연결이 끊겼습니다. 표시된 정보가 최신이 아닐 수 있습니다. 저장은 연결 복구 후 완료됩니다.':labels.length?`${labels.join(' · ')} 정보를 불러오지 못했습니다.`:'최신 정보를 불러오는 중…'));
+  if(dataIssues.size){const retry=button('다시 연결','ghost',()=>{if(isApproved())subscribeApprovedData();});retry.disabled=offline;notice.append(retry);}
+  main.append(notice);
+}
+function captureMainFocus(main){
+  const node=document.activeElement;
+  if(!node||!main.contains(node))return null;
+  const key=element=>JSON.stringify([element.tagName,element.id||'',element.name||'',element.type||'',element.getAttribute('placeholder')||'',element.getAttribute('aria-label')||'',element.closest('[data-task-id]')?.dataset.taskId||'',element.dataset.focusTask||'',element.tagName==='BUTTON'?element.textContent:'']);
+  const matches=[...main.querySelectorAll('button,input,select,textarea,a[href],summary')].filter(item=>key(item)===key(node));
+  return {screen:main.dataset.screenKey,key:key(node),index:matches.indexOf(node),start:node.selectionStart,end:node.selectionEnd,identify:key};
+}
+function restoreMainFocus(main,focus){
+  if(!focus||focus.screen!==main.dataset.screenKey||document.activeElement!==document.body)return;
+  const node=[...main.querySelectorAll('button,input,select,textarea,a[href],summary')].filter(item=>focus.identify(item)===focus.key)[focus.index];
+  if(!node||node.disabled)return;
+  node.focus({preventScroll:true});
+  if(typeof focus.start==='number'&&typeof node.setSelectionRange==='function'){
+    try{node.setSelectionRange(focus.start,focus.end);}catch(_){/* Non-text inputs have no selection range. */}
+  }
+}
 function rerender(){
   const main = document.getElementById('main');
   if(!main || !authResolved) return;
+  const focus=captureMainFocus(main);
+  const previousScreen=main.dataset.screenKey;
+  if(previousScreen)guidePageScrollMemory.set(previousScreen,{top:window.scrollY||0,left:window.scrollX||0});
+  if(main.dataset.screenKey)guideScrollMemory.set(main.dataset.screenKey,[...main.querySelectorAll('.guide-gantt-scroll,.guide-dashboard-sidebar,.guide-dashboard-timeline-scroll')].map(node=>({top:node.scrollTop,left:node.scrollLeft})));
   try {
     if(currentUser&&currentProfile&&isApproved()&&typeof window.prepareMilestoneNavigation==='function')window.prepareMilestoneNavigation();
     main.innerHTML = '';
@@ -2141,6 +2432,7 @@ function rerender(){
     renderPrimaryNavigation();
     if(!currentUser) { loginScreen(main); return; }
     if(!currentProfile || !isApproved()) { pendingScreen(main); return; }
+    renderDataNotice(main);
     if(activeView === 'home') { renderHome(main); return; }
     if(activeView === 'my-work' || activeView === 'work') { renderWork(main); return; }
     if(activeView === 'team') { renderPeople(main); return; }
@@ -2158,6 +2450,11 @@ function rerender(){
     panel.append(el('p', 'eyebrow', 'SCREEN ERROR'), el('h2', '', '화면을 표시하지 못했습니다.'), el('p', 'sub', '오류 정보를 확인해 수정 중입니다.'), el('code', 'render-error-code', error?.message || String(error)));
     main.appendChild(panel);
   } finally {
+    const key=`${currentUser?.uid||''}:${activeView}:${selectedProjectId||''}:${typeof guidePersonalView!=='undefined'?guidePersonalView.owner||'':''}`;main.dataset.screenKey=key;
+    if(previousScreen!==key&&typeof window.scrollTo==='function')window.scrollTo(guidePageScrollMemory.get(key)||{top:0,left:0});
+    const saved=guideScrollMemory.get(key)||[];[...main.querySelectorAll('.guide-gantt-scroll,.guide-dashboard-sidebar,.guide-dashboard-timeline-scroll')].forEach((node,index)=>{if(saved[index]){node.scrollTop=saved[index].top;node.scrollLeft=saved[index].left;}});
+    restoreMainFocus(main,focus);
+    if(typeof guidePendingTaskId!=='undefined'&&guidePendingTaskId){const row=[...main.querySelectorAll('[data-task-id]')].find(node=>node.dataset.taskId===guidePendingTaskId);if(row){row.classList.add('guide-target-task');row.scrollIntoView({block:'nearest',inline:'nearest'});row.querySelector('button')?.focus({preventScroll:true});}guidePendingTaskId=null;}
     if(currentUser&&currentProfile&&isApproved()&&typeof window.syncMilestoneNavigation==='function')window.syncMilestoneNavigation();
   }
 }
