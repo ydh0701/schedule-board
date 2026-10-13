@@ -173,7 +173,7 @@ function guideDashboardSchedule(calendar,allEvents,state,today,options={}){
       bar.style.gridColumn=`${event.column+1} / span ${event.span}`;bar.style.gridRow=String(event.lane+1);colors.apply(bar,event.project);
       if(state.fields.project)bar.appendChild(el('strong','',event.project.code||event.project.name));if(state.fields.title)bar.appendChild(el('small','',event.title));if(state.fields.dates)bar.appendChild(el('small','',MilestoneDashboardModel.shortDates(event.startDate,event.dueDate,today)));bar.title=`${event.title} · ${event.startDate} ~ ${event.dueDate}`;bar.setAttribute('aria-label',`${event.project.code||event.project.name} ${event.title} ${event.startDate}부터 ${event.dueDate}까지`);bars.appendChild(bar);
     });
-    const more=button('','guide-dashboard-more',()=>{const {dialog,close}=openDialog('이 주의 일정');week.segments.forEach(event=>dialog.appendChild(button(`${event.startDate.slice(5)} · ${event.project.code||event.project.name} · ${event.title}`,'ghost',()=>{close();event.task?openGuideTaskLocation(event.task):setView('projects',event.project.id);})));});bars.appendChild(more);
+    const more=button('','guide-dashboard-more',()=>openGuideWeekSchedule(week,today));bars.appendChild(more);
     row.append(days,bars);grid.appendChild(row);
   });grid.classList.toggle('show-dates',state.fields.dates);content.appendChild(grid);
   }draw();
@@ -192,6 +192,20 @@ function openGuideDashboardTools(mode,events,state,displayOptions={},anchor){
   else options.fields.forEach(([id,label])=>{const wrap=el('label','guide-dashboard-field'),input=document.createElement('input');input.type='checkbox';input.checked=draft.fields[id];input.onchange=()=>draft.fields[id]=input.checked;wrap.append(input,el('span','',label));form.appendChild(wrap);});
   form.appendChild(button('적용','primary',()=>{if(mode==='fields'&&!Object.values(draft.fields).some(Boolean)){alert('최소 한 가지 표시 항목을 선택해 주세요.');return;}if(mode==='filter')Object.assign(state,{project:draft.project,platform:draft.platform,kind:draft.kind,status:draft.status});else if(mode==='sort')state.sort=draft.sort;else state.fields=draft.fields;close();rerender();}));mountDialogForm(dialog,form);
   if(anchor)positionGuidePopover(dialog,anchor);
+}
+function openGuideWeekSchedule(week,today){
+  const {dialog,close}=openDialog('해당 주 진행 일정');
+  dialog.appendChild(el('p','guide-footnote',`${week.days[0]} ~ ${week.days.at(-1)}`));
+  const header=el('div','guide-week-schedule-columns');header.append(el('strong','','프로젝트'),el('strong','','업무명'),el('strong','','기간'));dialog.appendChild(header);
+  const list=el('div','guide-week-schedule-list');list.setAttribute('aria-label','해당 주 일정 목록');
+  week.segments.forEach(event=>{
+    const row=button('','guide-week-schedule-row',()=>{close();event.task?openGuideTaskLocation(event.task):setView('projects',event.project.id);});
+    const project=el('span','guide-week-schedule-project',event.project.code||event.project.name),title=el('span','guide-week-schedule-title',event.title);
+    project.title=event.project.name;title.title=event.title;
+    const range=MilestoneDashboardModel.shortDates(event.startDate,event.dueDate,today);
+    row.title=`${event.project.code||event.project.name} · ${event.title} · ${event.startDate} ~ ${event.dueDate}`;row.setAttribute('aria-label',row.title);
+    row.append(project,title,el('span','guide-week-schedule-period',range));list.appendChild(row);
+  });dialog.appendChild(list);
 }
 function renderGuideDashboardTimeline(content,data,state,today,colors=guideProjectColorScope(data.rows.map(row=>row.project))){
   const scroll=el('div','guide-dashboard-timeline-scroll'),timeline=el('div','guide-dashboard-timeline');timeline.style.setProperty('--months',data.months.length);

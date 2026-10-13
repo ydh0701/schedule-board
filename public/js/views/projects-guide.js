@@ -127,10 +127,11 @@ function renderGuideProjectDetail(main,project){
     target.replaceChildren();
     const filtered=MilestoneProjectModel.filterTasks(all,state);
     if(!filtered.length){const empty=el('div','guide-empty');empty.append(el('h3','','표시할 업무가 없습니다.'),button('필터 초기화','ghost',()=>{Object.assign(state,{platform:'',department:'',assignee:'',stage:'',status:projectIsCompleted(project)?'all':'active',query:''});refresh();}));target.appendChild(empty);return;}
-    const table=el('div','guide-gantt');table.style.setProperty('--days',state.weeks*7);table.style.setProperty('--timeline-min',`${state.weeks*7*18}px`);
+    const table=el('div','guide-gantt guide-project-detail-gantt');table.style.setProperty('--days',state.weeks*7);table.style.setProperty('--timeline-min',`${state.weeks*7*18}px`);
     table.appendChild(guideTimelineHeader(state,['업무명','담당자','기간','상태']));
     const roleOrder=new Map((project.roleSnapshots||[]).map(role=>[role.id,Number(role.order||0)]));
-    const groups=MilestoneProjectModel.detailGroups(filtered,state,dateKey(todayDate()),state.expanded).sort((a,b)=>(roleOrder.get(a.id)??999)-(roleOrder.get(b.id)??999));
+    const topRoles=new Map([['video_partner',0],['business',1]]);
+    const groups=MilestoneProjectModel.detailGroups(filtered,state,dateKey(todayDate()),state.expanded).sort((a,b)=>(topRoles.get(a.id)??2)-(topRoles.get(b.id)??2)||(roleOrder.get(a.id)??999)-(roleOrder.get(b.id)??999));
     groups.filter(group=>group.scheduled.length).forEach(group=>{
       const id=group.id;
       const closed=state.closed.has(id),row=el('div','guide-gantt-row guide-gantt-group');
