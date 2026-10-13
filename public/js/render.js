@@ -1514,27 +1514,10 @@ function confirmProjectAssignmentChanges(project, assignments, parentDialog){
   });
 }
 
-function projectPeopleFields(project={},onClose){
-  const people=[...new Map([...visibleUsers.map(user=>[user.id,user]),[currentUser.uid,{id:currentUser.uid,...currentProfile}]]).values()].filter(user=>user.active);
-  const managerIds=project.managerIds ?? (project.createdBy?[project.createdBy]:[currentUser.uid]);
-  const observerIds=project.observerIds || [];
-  const options=(manager,selected)=>{
-    const rows=people.filter(user=>!manager||user.isAdmin||['admin','pm'].includes(user.role)).map(user=>[user.id,user.name||user.email||user.id]);
-    selected.filter(id=>!rows.some(row=>row[0]===id)).forEach(id=>rows.push([id,`${userName(id)} · 기존 참여자`]));return rows;
-  };
-  const managers=multiSelectField('프로젝트 관리 담당자'),observers=multiSelectField('추가 참여자 · 조회');
-  options(true,managerIds).forEach(([id,label])=>managers.select.add(new Option(label,id)));
-  options(false,observerIds).forEach(([id,label])=>observers.select.add(new Option(label,id)));
-  [...managers.select.options].forEach(option=>option.selected=managerIds.includes(option.value));
-  [...observers.select.options].forEach(option=>option.selected=observerIds.includes(option.value));
-  const wrap=el('details','schedule-detail-group');wrap.append(el('summary','','프로젝트 참여·관리'),managers.wrap,observers.wrap);
-  onClose(searchableTaskSelect(managers));onClose(searchableTaskSelect(observers));
-  return {wrap,value:()=>({managerIds:[...managers.select.selectedOptions].map(option=>option.value),observerIds:[...observers.select.selectedOptions].map(option=>option.value)})};
-}
 function openProjectEditor(project){
   if(project.schedulingMode === 'template_v2') return openTemplateProjectEditor(project);
   const { dialog, close, onClose } = openDialog('프로젝트 정보 수정');
-  const access=projectPeopleFields(project,onClose),expectedProjectSignature=taskEditSignature(project);
+  const expectedProjectSignature=taskEditSignature(project);
   const form = el('form', 'form-grid');
   const name = inputField('프로젝트명', ''); name.input.value = project.name || '';
   const code = inputField('코드', ''); code.input.value = project.code || '';
@@ -1554,7 +1537,7 @@ function openProjectEditor(project){
     staffingBox.appendChild(card);
   });
   const submit = button('저장', 'primary');
-  form.append(name.wrap, code.wrap, staffingTitle, staffingBox, access.wrap, submit);
+  form.append(name.wrap, code.wrap, staffingTitle, staffingBox, submit);
   form.onsubmit = async event => {
     event.preventDefault();
     if(dialog.dataset.saving==='true')return;
@@ -1564,7 +1547,7 @@ function openProjectEditor(project){
       const staffing=getStaffing();
       const ongoingTaskIds=await confirmProjectAssignmentChanges(project,staffing,dialog);
       if(ongoingTaskIds===null)return;
-      await syncProjectStaffing(project.id, staffing, {info:{name:name.input.value,code:code.input.value},ongoingTaskIds,...access.value(),expectedProjectSignature});
+      await syncProjectStaffing(project.id, staffing, {info:{name:name.input.value,code:code.input.value},ongoingTaskIds,expectedProjectSignature});
       release();close(true); showToast('프로젝트 정보와 자동 업무 담당자를 반영했습니다.');
     } catch(error) { alert(error.message); }
     finally {release();if(dialog.isConnected)submit.focus();}
@@ -1575,7 +1558,7 @@ function openProjectEditor(project){
 
 function openTemplateProjectEditor(project){
   const { dialog, close, onClose } = openDialog('프로젝트 정보 수정');
-  const access=projectPeopleFields(project,onClose),expectedProjectSignature=taskEditSignature(project);
+  const expectedProjectSignature=taskEditSignature(project);
   const form = el('form', 'form-grid');
   const name = inputField('프로젝트명', ''); name.input.value = project.name;
   const code = inputField('프로젝트 코드', ''); code.input.value = project.code;
@@ -1596,14 +1579,14 @@ function openTemplateProjectEditor(project){
     }
   });
   const error = el('p', 'form-error'); error.hidden = true;
-  const submit = button('저장', 'primary'); form.append(access.wrap,error, submit);
+  const submit = button('저장', 'primary'); form.append(error, submit);
   form.onsubmit = async event => {
     event.preventDefault();if(dialog.dataset.saving==='true')return;const release=setDialogSaving(dialog,true);error.hidden = true;
     try {
       if(!name.input.value.trim() || !code.input.value.trim())throw new Error('프로젝트명과 코드를 입력해주세요.');
       const ongoingTaskIds=await confirmProjectAssignmentChanges(project,assignments,dialog);
       if(ongoingTaskIds===null)return;
-      await saveTemplateProject(project.id, { name: name.input.value, code: code.input.value, assignments, ongoingTaskIds,...access.value(),expectedProjectSignature }); release();close(true); showToast('프로젝트와 담당 정보를 반영했습니다.');
+      await saveTemplateProject(project.id, { name: name.input.value, code: code.input.value, assignments, ongoingTaskIds,expectedProjectSignature }); release();close(true); showToast('프로젝트와 담당 정보를 반영했습니다.');
     }
     catch(cause) { error.textContent = cause.message; error.hidden = false; }
     finally { release();if(dialog.isConnected)submit.focus(); }
