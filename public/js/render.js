@@ -1252,7 +1252,7 @@ function openTaskDetails(task){
     detail.dependencies.forEach(item=>{const row=el('div','task-detail-dependency-row');if(item.task){const link=button(item.task.title,'guide-task-title',()=>openTaskDetails(item.task));link.title=item.task.title;row.append(link,el('span','',item.task.status==='done'?'완료':'미완료'),el('span','',fmtDate(item.task.dueDate)));}else row.append(el('span','','연결 업무 확인 불가'),el('span','','확인 필요'),el('span','','—'));section.appendChild(row);});content.appendChild(section);
   }
   (task.scheduleSteps||[]).forEach(step=>{const dates=task.scheduleStepDates?.[step.id];content.appendChild(el('p','',`${step.title} · ${dates?fmtDate(dates.startDate)+' ~ '+fmtDate(dates.dueDate):'일정 미정'}`));});
-  const actions=el('div','form-actions');actions.appendChild(button('닫기','ghost',close));content.appendChild(actions);renderTaskDiscussion(mountDialogForm(dialog,content),task.id,onClose,true);
+  const actions=el('div','form-actions');actions.appendChild(button('닫기','ghost',close));content.appendChild(actions);mountDialogForm(dialog,content);
 }
 const sessionDialogs=new Set();
 function closeSessionDialogs(){
@@ -1278,9 +1278,9 @@ function openDialog(title){
   sessionDialogs.add(dispose);
   const close = (force=false) => {
     if(closed)return;
-    if(dialog.dataset.saving==='true'||dialog.querySelector('.discussion form[data-saving]')) return;
+    if(dialog.dataset.saving==='true') return;
     const form=dialog.querySelector('form[data-protect-input]');
-    if(force!==true&&((form&&form.dataset.initialInput!==dialogInputSignature(form))||dialogHasDiscussionDraft(dialog))){
+    if(force!==true&&form&&form.dataset.initialInput!==dialogInputSignature(form)){
       let guard=dialog.querySelector('.discard-input');if(guard){guard.querySelector('button').focus();return;}
       const inputFocus=document.activeElement,body=dialog.querySelector('.modal-body'),scroll=body?.scrollTop||0;
       guard=el('section','discard-input');guard.setAttribute('role','alert');guard.append(el('p','','작성한 내용을 저장하지 않고 닫을까요?'),button('계속 작성','primary',()=>{guard.remove();if(inputFocus?.isConnected)inputFocus.focus({preventScroll:true});if(body)body.scrollTop=scroll;}),button('내용 버리고 닫기','ghost',()=>close(true)));dialog.appendChild(guard);guard.querySelector('button').focus();return;
@@ -1316,11 +1316,10 @@ function setDialogSaving(dialog, saving){
   }
 }
 function allowDialogAction(dialog){
-  if(dialog.dataset.saving==='true'||dialog.querySelector('.discussion form[data-saving]'))return false;
+  if(dialog.dataset.saving==='true')return false;
   const form=dialog.querySelector('form[data-protect-input]');
-  return ((!form||form.dataset.initialInput===dialogInputSignature(form))&&!dialogHasDiscussionDraft(dialog)) || confirm('작성한 변경 내용을 버리고 이 동작을 진행할까요?');
+  return (!form||form.dataset.initialInput===dialogInputSignature(form)) || confirm('작성한 변경 내용을 버리고 이 동작을 진행할까요?');
 }
-function dialogHasDiscussionDraft(dialog){return [...dialog.querySelectorAll('.discussion textarea,.discussion input')].some(node=>node.value.trim());}
 
 /* Mount existing forms without changing their validators or submit handlers. */
 function mountDialogForm(dialog,form){
@@ -1997,8 +1996,7 @@ function openExternalTaskEditor(task){
   form.append(title.wrap, partner.wrap, start.wrap, due.wrap, status.wrap, button('저장', 'primary'));
   form.onsubmit = async event => {
     event.preventDefault();
-    if(dialog.dataset.saving==='true'||dialog.querySelector('.discussion form[data-saving]'))return;
-    if(dialogHasDiscussionDraft(dialog)){alert('작성 중인 댓글·링크를 먼저 등록하거나 지운 뒤 업무를 저장해주세요.');return;}
+    if(dialog.dataset.saving==='true')return;
     const release=setDialogSaving(dialog,true);
     try {
       const changed = dateOnly(task.startDate) !== start.input.value || dateOnly(task.dueDate) !== due.input.value;
@@ -2007,7 +2005,7 @@ function openExternalTaskEditor(task){
     } catch(error) { alert(error.message); }
     finally {release();}
   };
-  renderTaskDiscussion(mountDialogForm(dialog,form), task.id, onClose);protectDialogForm(form);
+  mountDialogForm(dialog,form);protectDialogForm(form);
 }
 
 function taskEditorAssignees(task, primaryId, supportIds = []){
@@ -2192,9 +2190,8 @@ function openTaskEditor(task, initial = {}){
   let releaseSaving=()=>{};
   form.onsubmit = async event => {
     event.preventDefault();
-    if(taskSaving||dialog.querySelector('.discussion form[data-saving]'))return;
+    if(taskSaving)return;
     try {
-      if(dialogHasDiscussionDraft(dialog))throw new Error('작성 중인 댓글·링크를 먼저 등록하거나 지운 뒤 업무를 저장해주세요.');
       form.querySelectorAll('.field-error').forEach(node=>node.remove());form.querySelectorAll('[aria-invalid]').forEach(node=>{node.removeAttribute('aria-invalid');node.removeAttribute('aria-describedby');});
       const selectedProject = projects.find(item => item.id === project.select.value);
       const errors=[];
@@ -2218,42 +2215,8 @@ function openTaskEditor(task, initial = {}){
     } catch(error) { let notice=form.querySelector('.task-save-error');if(!notice){notice=el('p','form-error task-save-error');notice.setAttribute('role','alert');form.appendChild(notice);}notice.textContent=error.message;notice.scrollIntoView({block:'nearest'}); }
     finally {taskSaving=false;releaseSaving();}
   };
-  const dialogBody=mountDialogForm(dialog,form);
+  mountDialogForm(dialog,form);
   protectDialogForm(form);
-  if(editing) renderTaskDiscussion(dialogBody, task.id, onClose);
-}
-
-function renderTaskDiscussion(dialog, taskId, onClose, readonly=false){
-  const session=authGeneration;let active=true;
-  const current=()=>active&&session===authGeneration;
-  onClose(()=>{active=false;});
-  const section = el('details', 'discussion schedule-detail-group'); section.append(el('summary', '', '댓글 및 참고 링크'));
-  const commentsBox = el('div', 'comment-list'); const linksBox = el('div', 'link-list');
-  const commentForm = el('form', 'comment-form'); const commentInput = document.createElement('textarea'); commentInput.rows = 2; commentInput.placeholder = '@이름 으로 동료를 언급할 수 있습니다';
-  commentForm.append(commentInput, button('댓글 등록', 'tiny primary'));
-  let commentSaving=false;
-  commentForm.onsubmit = async event => { event.preventDefault();if(commentSaving||!current())return;commentSaving=true;commentForm.dataset.saving='true';const submit=commentForm.querySelector('button'),text=commentInput.value;submit.disabled=true;commentInput.disabled=true;try { await addTaskComment(taskId, text); if(current())commentInput.value = ''; } catch(error) { if(current())alert(error.message); } finally {commentSaving=false;delete commentForm.dataset.saving;submit.disabled=false;commentInput.disabled=false;} };
-  const linkForm = el('form', 'link-form');
-  const linkLabel = document.createElement('input'); linkLabel.placeholder = '링크 제목 (선택)';
-  const linkUrl = document.createElement('input'); linkUrl.type = 'url'; linkUrl.placeholder = 'https://...';
-  linkForm.append(linkLabel, linkUrl, button('링크 추가', 'tiny ghost'));
-  let linkSaving=false;
-  linkForm.onsubmit = async event => { event.preventDefault();if(linkSaving||!current())return;linkSaving=true;linkForm.dataset.saving='true';const controls=[...linkForm.querySelectorAll('input,button')];controls.forEach(node=>node.disabled=true);try { await addTaskLink(taskId, { label: linkLabel.value, url: linkUrl.value }); if(current()){linkLabel.value = ''; linkUrl.value = '';} } catch(error) { if(current())alert(error.message); } finally {linkSaving=false;delete linkForm.dataset.saving;controls.forEach(node=>node.disabled=false);} };
-  section.append(commentsBox, commentForm, linkForm, linksBox);
-  if(readonly){commentForm.remove();linkForm.remove();}
-  dialog.appendChild(section);
-  const unsubscribe = watchTaskDiscussion(taskId, ({ comments, links }) => {
-    commentsBox.innerHTML = ''; linksBox.innerHTML = '';
-    if(!comments.length) commentsBox.append(el('p', 'foot-note', '아직 댓글이 없습니다.'));
-    comments.forEach(comment => {
-      const row = el('article', 'comment-item'); row.append(el('strong', '', comment.authorName || '이름 미지정'), el('span', 'comment-text', comment.text)); commentsBox.appendChild(row);
-    });
-    if(links.length) linksBox.append(el('h4', 'small-heading', '참고 링크'));
-    links.forEach(item => {
-      const link = document.createElement('a'); link.href = item.url; link.target = '_blank'; link.rel = 'noopener noreferrer'; link.className = 'reference-link'; link.textContent = `↗ ${item.label}`; linksBox.appendChild(link);
-    });
-  });
-  onClose(unsubscribe);
 }
 
 function openMilestoneEditor(milestone, projectId){
