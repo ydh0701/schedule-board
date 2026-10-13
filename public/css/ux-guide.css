@@ -145,6 +145,12 @@ body.milestone-ui .app{width:100%;margin:0;padding:0;display:grid;grid-template-
 .milestone-ui .guide-team-weeks{display:grid;grid-template-columns:repeat(calc(var(--days) / 7),1fr);flex:1;}
 .milestone-ui .guide-team-weeks strong{display:flex;flex-direction:column;gap:4px;justify-content:center;align-items:center;border-right:1px solid var(--line);font-size:var(--ui-font-body);}.milestone-ui .guide-team-weeks small{color:var(--muted);font-size:var(--ui-font-micro);}
 .milestone-ui .guide-team-person-title{display:flex;gap:12px;align-items:center;}.milestone-ui .guide-team-person-title strong{font-size:var(--ui-font-text-normal);}.milestone-ui .guide-team-person-title span{color:var(--muted);font-size:var(--ui-font-caption);}
+.milestone-ui .guide-team-person-title{flex-wrap:wrap;gap:4px 10px;}
+.milestone-ui .guide-team-person-title>span{flex-basis:100%;}
+.milestone-ui .guide-team-person .guide-team-availability{display:grid;gap:2px;margin:8px 0 4px;}
+.milestone-ui .guide-team-availability>small{color:var(--muted);font-size:var(--ui-font-caption);}
+.milestone-ui .guide-team-availability>strong{font-weight:var(--ui-font-weight-semibold);}
+.milestone-ui .guide-team-person .guide-team-next-assignment{margin:4px 0;}
 .milestone-ui .guide-team-person p{font-size:var(--ui-font-caption);line-height:1.6;margin:8px 0 4px;word-break:keep-all;}.milestone-ui .guide-team-undated{display:block;color:var(--warn);font-size:var(--ui-font-caption);}
 .milestone-ui .guide-team-link{background:transparent!important;color:var(--accent)!important;border:0;padding:5px 0;font-size:var(--ui-font-caption);}
 .milestone-ui .guide-team-allocation{position:absolute;display:flex;flex-direction:column;align-items:flex-start;overflow:hidden;gap:4px;padding:6px 8px;height:52px;min-width:0;border:0;border-radius:5px;background:color-mix(in srgb,var(--project-color) 35%,white)!important;color:#223149!important;text-align:left;}

@@ -3,6 +3,22 @@
   const DISPLAY_POLICY={defaultWeeks:8,currentTaskLimit:2};
   function assigned(task,id){return task.assigneeId===id || (task.assigneeIds||[]).includes(id) || (task.assignees||[]).some(item=>item.userId===id);}
   function nextDay(date){const day=new Date(date+'T00:00:00Z');day.setUTCDate(day.getUTCDate()+1);return day.toISOString().slice(0,10);}
+  function validDate(date){return typeof date==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(date)&&Number.isFinite(Date.parse(date+'T00:00:00Z'))&&new Date(date+'T00:00:00Z').toISOString().slice(0,10)===date;}
+  function availability(tasks,userId,start,end,holidays=[]){
+    const active=tasks.filter(task=>!task.archivedAt&&task.status!=='done'&&assigned(task,userId));
+    const dated=active.filter(task=>validDate(task.startDate)&&validDate(task.dueDate)&&task.startDate<=task.dueDate);
+    const holidayKeys=new Set(holidays.map(item=>typeof item==='string'?item:item.date||item.id));
+    const result={gap:null,undated:active.length-dated.length,reason:'busy'};
+    if(!validDate(start)||!validDate(end)||start>end){result.reason='past';return result;}
+    for(let date=start;date<=end;date=nextDay(date)){
+      const day=new Date(date+'T00:00:00Z').getUTCDay();if(day===0||day===6||holidayKeys.has(date))continue;
+      const busy=dated.some(task=>task.startDate<=date&&task.dueDate>=date);
+      if(busy){if(result.gap)return result;continue;}
+      if(!result.gap)result.gap={startDate:date,dueDate:date,workingDays:0};
+      result.gap.dueDate=date;result.gap.workingDays++;result.reason='gap';
+    }
+    return result;
+  }
   function issuesFor(tasks,today,userIds){
     const active=tasks.filter(task=>!task.archivedAt&&task.status!=='done'),dated=active.filter(task=>task.startDate&&task.dueDate&&task.startDate<=task.dueDate&&Number.isFinite(Date.parse(task.startDate))&&Number.isFinite(Date.parse(task.dueDate)));
     const overlap=new Set();
@@ -11,13 +27,16 @@
     for(let i=0;i<dated.length;i++)for(let j=i+1;j<dated.length;j++){const a=dated[i],b=dated[j];if(a.projectId===b.projectId||a.dueDate<today||b.dueDate<today||a.startDate>b.dueDate||b.startDate>a.dueDate)continue;const ids=owners(a);if([...owners(b)].some(id=>ids.has(id))){overlap.add(a);overlap.add(b);}}
     return {overdue:active.filter(task=>task.dueDate&&task.dueDate<today),review:active.filter(task=>task.scheduleReview),undated:active.filter(task=>!dated.includes(task)),overlap:[...overlap]};
   }
-  function rows(users,projects,tasks,filters,today){
+  function rows(users,projects,tasks,filters,today,holidays=[]){
     const projectMap=new Map(projects.filter(project=>project.status!=='archived').map(project=>[project.id,project]));
     const query=String(filters.query||'').trim().toLocaleLowerCase();
     const available=tasks.filter(task=>!task.archivedAt && projectMap.has(task.projectId)&&(!filters.project||task.projectId===filters.project)&&(!filters.platform||task.platform===filters.platform));
     return users.filter(user=>user.active && (!filters.department || user.departmentId===filters.department)
       && (!query || String(user.name||user.email||'').toLocaleLowerCase().includes(query))).map(user=>{
       const items=available.filter(task=>assigned(task,user.id));
+      const planningTasks=tasks.filter(task=>!task.archivedAt&&assigned(task,user.id)&&(!task.projectId||projectMap.has(task.projectId)&&projectMap.get(task.projectId).status!=='completed'));
+      const windowStart=filters.start||today,windowEnd=new Date(windowStart+'T00:00:00Z');windowEnd.setUTCDate(windowEnd.getUTCDate()+(filters.weeks||DISPLAY_POLICY.defaultWeeks)*7-1);
+      const free=availability(planningTasks,user.id,windowStart>today?windowStart:today,windowEnd.toISOString().slice(0,10),holidays);free.issues=issuesFor(planningTasks,today,[user.id]);
       const current=items.filter(task=>task.status!=='done' && (task.status==='in_progress' || (task.startDate&&task.dueDate&&task.startDate<=today&&task.dueDate>=today)))
         .sort((a,b)=>String(a.dueDate||'9999').localeCompare(String(b.dueDate||'9999')));
       const buckets=new Map();let undated=0;
@@ -37,7 +56,7 @@
           }
         });
       });
-      return {user,current,undated,issues:issuesFor(items,today,[user.id]),periods:periods.sort((a,b)=>a.startDate.localeCompare(b.startDate))};
+      return {user,current,undated,availability:free,issues:issuesFor(items,today,[user.id]),periods:periods.sort((a,b)=>a.startDate.localeCompare(b.startDate))};
     }).sort((a,b)=>String(a.user.name||'').localeCompare(String(b.user.name||''),'ko'));
   }
   function lanes(periods,start,end){
@@ -47,6 +66,6 @@
       lanesEnd[lane]=period.dueDate;return {...period,lane};
     });
   }
-  const api={DISPLAY_POLICY,rows,lanes,issuesFor};
+  const api={DISPLAY_POLICY,rows,lanes,issuesFor,availability};
   if(typeof module==='object'&&module.exports) module.exports=api;else root.MilestoneTeamModel=api;
 })(typeof window!=='undefined'?window:globalThis);

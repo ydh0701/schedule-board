@@ -30,22 +30,22 @@ function renderGuideTeam(main,options={}){
   }
   const target=el('div','guide-gantt-scroll guide-team-scroll guide-outside-weeks');main.appendChild(target);
   function draw(){
-    target.replaceChildren();const rows=MilestoneTeamModel.rows(scope,projects,options.tasks||activeTasks(),state,dateKey(todayDate()));
+    target.replaceChildren();const rows=MilestoneTeamModel.rows(scope,projects,options.tasks||activeTasks(),state,dateKey(todayDate()),holidays);
     const colors=guideProjectColorScope(rows.flatMap(item=>MilestoneTeamModel.lanes(item.periods,state.start,endKey).map(period=>period.project)));
     if(!rows.length){target.appendChild(el('div','guide-empty','조건에 맞는 직원이 없습니다.'));return;}
     const table=el('div','guide-gantt guide-team-gantt');table.style.setProperty('--days',state.weeks*7);table.style.setProperty('--timeline-min',`${state.weeks*7*(options.dayMin||12)}px`);
-    const head=guideTimelineHeader(state,['직원 / 현재 업무'],true);head.querySelector('.guide-gantt-info').classList.add('guide-team-person-head');table.appendChild(head);
+    const head=guideTimelineHeader(state,['직원 / 계획상 빈 일정'],true);head.querySelector('.guide-gantt-info').classList.add('guide-team-person-head');table.appendChild(head);
     rows.forEach(item=>{
       const periods=MilestoneTeamModel.lanes(item.periods,state.start,endKey),laneCount=Math.max(1,...periods.map(period=>period.lane+1));
       const row=el('div','guide-gantt-row guide-team-row');row.classList.toggle('guide-team-row-empty',!periods.length);row.style.minHeight=`${periods.length?Math.max(112,laneCount*62+20):76}px`;
-      const person=el('div','guide-team-person'),title=el('div','guide-team-person-title');title.append(el('strong','',item.user.name||item.user.email),el('span','',departmentName(item.user.departmentId)));
+      const person=el('div','guide-team-person'),title=el('div','guide-team-person-title');title.append(el('strong','',item.user.name||item.user.email),el('span','',userIdentityLabel(item.user)));
       person.appendChild(title);
-      const current=item.current.slice(0,MilestoneTeamModel.DISPLAY_POLICY.currentTaskLimit);
-      current.forEach(task=>{const line=el('p','guide-team-current-task',`${projectCode(task)} · ${task.title}`);line.title=`${task.title} · ${task.startDate||'미정'} ~ ${task.dueDate||'미정'}`;person.appendChild(line);});
-      if(!current.length)person.appendChild(el('p','','현재 진행 업무 없음'));
-      if(item.current.length>current.length)person.appendChild(el('small','guide-team-current-more',`진행 업무 ${item.current.length-current.length}건 더 있음`));
-      const flags=[['overdue','지연'],['review','재확인'],['overlap','프로젝트 간 겹침'],['undated','날짜 미정']].filter(([key])=>item.issues[key].length).map(([key,label])=>`${label} ${item.issues[key].length}건`);
-      if(flags.length){const warning=button(flags.join(' · '),'guide-team-warning',()=>{const {dialog,close}=openDialog(`${item.user.name} · 확인할 업무`),list=el('div','guide-dashboard-scroll');for(const [key,label]of [['overdue','지연'],['review','재확인'],['overlap','프로젝트 간 일정 겹침'],['undated','날짜 미정']]){if(!item.issues[key].length)continue;list.appendChild(el('h3','',label));item.issues[key].forEach(task=>{const entry=guideDashboardTask(task,colors);entry.onclick=()=>{close();openGuideTaskLocation(task);};list.appendChild(entry);});}dialog.appendChild(list);});warning.title='계획 일정 겹침은 확인 후보이며 실제 과부하 판정이 아닙니다.';person.appendChild(warning);}
+      const free=item.availability,gap=free.gap,issues=free.issues;
+      const availabilityLine=el('p','guide-team-availability');
+      availabilityLine.append(el('small','','다음 빈 일정'),el('strong','',gap?`${MilestoneProjectModel.taskDateRange(gap.startDate,gap.dueDate,dateKey(todayDate()))} · ${gap.workingDays}근무일`:free.reason==='past'?'조회 기간에 향후 근무일 없음':'조회 기간 빈 일정 없음'));person.appendChild(availabilityLine);
+      if(gap)person.appendChild(el('p','guide-team-next-assignment',`배정 후보 · ${MilestoneProjectModel.taskDateRange(gap.startDate,gap.startDate,dateKey(todayDate()))}부터`));
+      const flags=[['overdue','지연'],['review','재확인'],['overlap','일정 겹침'],['undated','날짜 미정']].filter(([key])=>issues[key].length).map(([key,label])=>`${label} ${issues[key].length}건`);
+      if(flags.length){const warning=button(flags.join(' · ')+' · 확인 필요','guide-team-warning',()=>{const {dialog,close}=openDialog(`${item.user.name} · 확인할 업무`),list=el('div','guide-dashboard-scroll');for(const [key,label]of [['overdue','지연'],['review','재확인'],['overlap','프로젝트 간 일정 겹침'],['undated','날짜 미정']]){if(!issues[key].length)continue;list.appendChild(el('h3','',label));issues[key].forEach(task=>{const entry=guideDashboardTask(task,colors);entry.onclick=()=>{close();openGuideTaskLocation(task);};list.appendChild(entry);});}dialog.appendChild(list);});warning.title='등록 일정 기준의 후보입니다. 미정·지연 업무와 휴가 등 미등록 일정을 확인하세요.';person.appendChild(warning);}
       person.appendChild(button('개인 일정 ›','guide-team-link',()=>openGuidePersonSchedule(item.user.id,null,state)));
       const timeline=guideTimelineCell(null,state);timeline.classList.add('guide-team-timeline');
       periods.forEach(period=>{
