@@ -60,13 +60,19 @@ function openGuideDashboardMilestone(ownTasks){
   dialog.classList.add('guide-major-picker-dialog');
   const candidates=MilestoneDashboardModel.personalMajorCandidates(ownTasks),draft=new Set(guideDashboardMajorSelection());
   const form=el('div','guide-major-picker'),list=el('div','guide-major-picker-list'),colors=guideProjectColorScope();
+  const groupOpen=new Map();
   const count=el('p','guide-footnote');count.setAttribute('aria-live','polite');
   const updateCount=()=>{count.textContent=`선택 ${candidates.filter(task=>draft.has(task.id)).length}건`;};
   function draw(query=''){
+    const searching=Boolean(query.trim());
+    if(!list.dataset.searching)list.querySelectorAll('details').forEach(section=>groupOpen.set(section.dataset.groupKey,section.open));
+    list.dataset.searching=searching?'true':'';
     colors.release(list);list.replaceChildren();const found=candidates.filter(task=>{const project=projects.find(item=>item.id===task.projectId);return [task.title,project?.code,project?.name].some(value=>String(value||'').toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()));});
-    const groups=new Map();found.forEach(task=>{const key=JSON.stringify([task.projectId,task.platform||'']);if(!groups.has(key))groups.set(key,{project:projects.find(item=>item.id===task.projectId),platform:task.platform,tasks:[]});groups.get(key).tasks.push(task);});
-    [...groups.values()].sort((a,b)=>String(a.project?.code||a.project?.name||'').localeCompare(String(b.project?.code||b.project?.name||''),'ko',{numeric:true})).forEach(group=>{
-      const section=el('section','guide-major-picker-group'),heading=el('h3','',`${group.project?.code||group.project?.name||'개인 일정'} · ${platformName(group.platform)}`);if(group.project)colors.apply(heading,group.project);heading.title=group.project?.name||'개인 일정';section.appendChild(heading);
+    const groups=new Map();found.forEach(task=>{const key=JSON.stringify([task.projectId,task.platform||'']);if(!groups.has(key))groups.set(key,{key,project:projects.find(item=>item.id===task.projectId),platform:task.platform,tasks:[]});groups.get(key).tasks.push(task);});
+    [...groups.values()].sort((a,b)=>String(a.project?.code||a.project?.name||'').localeCompare(String(b.project?.code||b.project?.name||''),'ko',{numeric:true})).forEach((group,index)=>{
+      const section=el('details','guide-major-picker-group'),heading=el('summary','',`${group.project?.code||group.project?.name||'개인 일정'} · ${platformName(group.platform)}`);
+      section.dataset.groupKey=group.key;section.open=searching||(groupOpen.has(group.key)?groupOpen.get(group.key):index===0);
+      if(group.project)colors.apply(heading,group.project);heading.title=group.project?.name||'개인 일정';section.appendChild(heading);
       group.tasks.forEach(task=>{
         const row=el('label','guide-major-picker-row'),input=document.createElement('input');input.type='checkbox';input.checked=draft.has(task.id);input.setAttribute('aria-label',task.title);row.classList.toggle('is-selected',input.checked);
         input.onchange=()=>{if(input.checked)draft.add(task.id);else draft.delete(task.id);row.classList.toggle('is-selected',input.checked);updateCount();};

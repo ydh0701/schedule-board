@@ -72,11 +72,11 @@ function renderGuidePersonal(main){
     table.appendChild(guideTimelineHeader(state,['업무명','기간','상태'],true));
     groups.filter(group=>group.scheduled.length).forEach(group=>{
       const closed=state.closed.has(group.key),row=el('div','guide-gantt-row guide-gantt-group');colors.apply(row,group.project);
-      const toggle=button(`${closed?'›':'⌄'} ${group.project.code||group.project.name} · ${platformName(group.platform)} · ${group.scheduled.length}건`,'guide-group-toggle',()=>{closed?state.closed.delete(group.key):state.closed.add(group.key);draw();});toggle.setAttribute('aria-expanded',String(!closed));
+      const toggle=guideScheduleGroupToggle(`${group.project.code||group.project.name} · ${platformName(group.platform)} · ${group.scheduled.length}건`,!closed,()=>{closed?state.closed.delete(group.key):state.closed.add(group.key);draw();});
       toggle.title=group.project.name;row.append(toggle,guideTimelineCell(null,state));table.appendChild(row);
       if(closed) return;
       const appendTask=task=>{
-        const row=el('div','guide-gantt-row'),info=el('div','guide-gantt-info');colors.apply(row,group.project);
+        const row=el('div',guideScheduleTaskRowClass(task)),info=el('div','guide-gantt-info');colors.apply(row,group.project);
         const title=button(task.title,'guide-task-title',()=>openTaskEditor(task));title.dataset.focusTask=task.id;title.title=task.title;row.dataset.taskId=task.id;
         const range=MilestoneProjectModel.taskDateRange(task.startDate,task.dueDate,dateKey(todayDate()));
         const status=MilestoneProjectModel.taskPresentation(task,dateKey(todayDate()));

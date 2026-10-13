@@ -1232,9 +1232,27 @@ function searchableTaskSelect(field){
 function openTaskDetails(task){
   if(!task||!tasks.some(item=>item.id===task.id))return;
   const {dialog,close,onClose}=openDialog('업무 상세');
-  const content=el('div','task-readonly');content.append(el('h3','',task.title),el('p','sub',`${projectCode(task)} · ${departmentName(task.departmentId)}`),el('p','',`담당 · ${taskAssigneeName(task)}`),el('p','',`${fmtDate(task.startDate)} ~ ${fmtDate(task.dueDate)} · ${TASK_STATUS[task.status]||task.status}`));
-  const shared=(task.assigneeIds||[]).filter(id=>id!==task.assigneeId);if(shared.length)content.appendChild(el('p','',`공동 담당 · ${shared.map(userName).join(', ')}`));
-  const dependencies=taskDependencies(task);if(dependencies.length){content.appendChild(el('h4','','선행·착수 조건'));dependencies.forEach(item=>content.appendChild(button(`${item.title} · ${item.status==='done'?'완료':'미완료'} · ${fmtDate(item.dueDate)}`,'readonly-related',()=>openTaskDetails(item))));}
+  dialog.classList.add('compact-task-detail-dialog');
+  const project=projects.find(item=>item.id===task.projectId),stage=project?.stageSnapshots?.find(item=>item.id===(task.stageId||task.phaseId));
+  const detail=MilestoneProjectModel.taskDetailSummary(task,tasks),presentation=MilestoneProjectModel.taskPresentation(task,dateKey(todayDate()));
+  const content=el('div','task-readonly');content.append(el('h3','',task.title),el('p','task-detail-context',[projectCode(task),platformName(task.platform),stage?.name||'단계 미지정',project?.roleSnapshots?.find(role=>role.id===task.departmentId)?.name||departmentName(task.departmentId)].filter(Boolean).join(' · ')));
+  const summary=el('dl','task-detail-summary');
+  const info=(label,value,wide=false)=>{const row=el('div',wide?'wide':'');row.append(el('dt','',label),el('dd','',value));summary.appendChild(row);};
+  info('담당',taskAssigneeName(task));
+  const statusRow=el('div','');statusRow.append(el('dt','','상태'),el('dd',`guide-status ${presentation.key}`,presentation.label));summary.appendChild(statusRow);
+  info('기간',`${fmtDate(task.startDate)} ~ ${fmtDate(task.dueDate)}`,true);
+  info('일정',`${detail.mode}${detail.locked?' · 잠금':''}`,true);
+  if(detail.supportIds.length)info('지원',detail.supportIds.map(userName).join(', '),true);
+  info('착수',detail.readiness,true);content.appendChild(summary);
+  if(task.scheduleReview&&task.status!=='done'){
+    const review=el('section','task-detail-warning');review.append(el('strong','',task.scheduleReview.conflict?'선행 일정 충돌 · 재확인':'일정 재확인'),el('p','',task.scheduleReview.reason||'선행 일정 변경 확인 필요'));
+    if(task.scheduleReview.recommendedStartDate||task.scheduleReview.recommendedDueDate)review.appendChild(el('p','',`권장 ${fmtDate(task.scheduleReview.recommendedStartDate)} ~ ${fmtDate(task.scheduleReview.recommendedDueDate)}`));content.appendChild(review);
+  }
+  if(detail.dependencies.length){
+    const section=el('section','task-detail-dependencies');section.appendChild(el('h4','','선행·착수 조건'));
+    const header=el('div','task-detail-dependency-row task-detail-dependency-header');header.append(el('span','','업무명'),el('span','','완료 여부'),el('span','','종료일'));section.appendChild(header);
+    detail.dependencies.forEach(item=>{const row=el('div','task-detail-dependency-row');if(item.task){const link=button(item.task.title,'guide-task-title',()=>openTaskDetails(item.task));link.title=item.task.title;row.append(link,el('span','',item.task.status==='done'?'완료':'미완료'),el('span','',fmtDate(item.task.dueDate)));}else row.append(el('span','','연결 업무 확인 불가'),el('span','','확인 필요'),el('span','','—'));section.appendChild(row);});content.appendChild(section);
+  }
   (task.scheduleSteps||[]).forEach(step=>{const dates=task.scheduleStepDates?.[step.id];content.appendChild(el('p','',`${step.title} · ${dates?fmtDate(dates.startDate)+' ~ '+fmtDate(dates.dueDate):'일정 미정'}`));});
   const actions=el('div','form-actions');actions.appendChild(button('닫기','ghost',close));content.appendChild(actions);renderTaskDiscussion(mountDialogForm(dialog,content),task.id,onClose,true);
 }
@@ -1606,11 +1624,9 @@ function openProjectCreator(){
   loadProjectTemplateCatalog().then(catalog => {
     loading.remove();
     const form = el('form', 'form-grid project-create-form');
-    const access=projectPeopleFields({},onClose);
     const name = inputField('프로젝트명', '예: 하진미3');
     const code = inputField('프로젝트 코드', '예: PC17');
     name.input.required = code.input.required = true;
-    const guide = el('p', 'sub', '플랫폼과 담당자만 지정하면 단계와 업무가 생성됩니다. 업무 날짜는 생성 후 필요한 시점에 설정합니다.');
     const platformField = el('fieldset', 'platform-picker');
     platformField.appendChild(el('legend', '', '플랫폼'));
     const activeTemplatePlatforms = new Set(catalog.templates.filter(item => item.active !== false && item.status === 'active').map(item => item.platformId));
@@ -1622,24 +1638,10 @@ function openProjectCreator(){
       label.append(input, el('span', '', `${platform.name}${available ? '' : ' · 준비 중'}`)); platformField.appendChild(label); return input;
     });
     const staffingTitle = el('h3', 'small-heading', '직군별 담당자');
-    const optional = el('details','template-preview');
-    optional.appendChild(el('summary','','선택 기능·요청 업무'));
-    const optionsBox = el('div','platform-picker');
-    const featureNames = {new_features:'신규·변경 기능',dlc:'DLC',inventory:'인벤토리',ranking:'랭킹',voting:'투표',currency:'재화',notice:'공지'};
-    const featureChecks = [...new Set(catalog.templateTasks.map(task=>task.featureKey).filter(Boolean))].map(key=>{
-      const label=el('label','check-option'),input=document.createElement('input');input.type='checkbox';input.value=key;
-      label.append(input,el('span','',featureNames[key] || key));optionsBox.appendChild(label);return input;
-    });
-    const requestChecks = catalog.templateTasks.filter(task=>task.creationPolicy==='on_request').map(task=>{
-      const label=el('label','check-option'),input=document.createElement('input');input.type='checkbox';input.value=task.id;
-      label.append(input,el('span','',task.title));optionsBox.appendChild(label);return input;
-    });
-    optional.appendChild(optionsBox);
-    const currentOptions = ()=>({featureKeys:featureChecks.filter(input=>input.checked).map(input=>input.value),requestTaskKeys:requestChecks.filter(input=>input.checked).map(input=>input.value)});
+    const currentOptions = ()=>({featureKeys:[],requestTaskKeys:[]});
     const selectedTemplateTasks = () => window.ProjectTemplateEngine.selectedTasks(catalog.templateTasks,currentOptions());
     const staffingBox = el('div', 'staffing-grid');
     const staffingValues = new Map();
-    const preview = el('details', 'template-preview');
     const currentPlatforms = () => platformChecks.filter(input => input.checked).map(input => input.value);
     const requiredRoleIds = () => {
       const templateIds = new Set(catalog.templates.filter(item => currentPlatforms().includes(item.platformId) && item.active !== false && item.status === 'active').map(item => item.id));
@@ -1649,13 +1651,6 @@ function openProjectCreator(){
     const renderStaffing = () => {
       staffingBox.innerHTML = '';
       const roles = catalog.roles.filter(role => role.active !== false && requiredRoleIds().has(role.id)).sort((a, b) => Number(a.order || 0) - Number(b.order || 0));
-      const templateIds = new Set(catalog.templates.filter(item => currentPlatforms().includes(item.platformId) && item.active !== false && item.status === 'active').map(item => item.id));
-      const templateTasks = selectedTemplateTasks().filter(item => templateIds.has(item.templateId));
-      const templateStages = catalog.templateStages.filter(item => templateIds.has(item.templateId) && item.active !== false).sort((a,b) => a.order-b.order);
-      preview.replaceChildren(el('summary', '', `생성할 단계 ${templateStages.length}개 · 기본 업무 ${templateTasks.length}개`));
-      const stageList = el('ol', '');
-      templateStages.forEach(stage => stageList.appendChild(el('li', '', `${stage.name} · ${templateTasks.filter(task => task.stageId === stage.id).length}개 업무`)));
-      preview.appendChild(stageList);
       if(!roles.length) { staffingBox.appendChild(el('p', 'sub', '플랫폼을 선택하면 필요한 담당자 항목이 표시됩니다.')); return; }
       roles.forEach(role => {
         if(role.assignmentType === 'external_text') {
@@ -1670,7 +1665,6 @@ function openProjectCreator(){
       });
     };
     platformChecks.forEach(input => { input.onchange = renderStaffing; });
-    [...featureChecks,...requestChecks].forEach(input=>{input.onchange=renderStaffing;});
     renderStaffing();
     const actions = el('div', 'form-actions project-create-actions');
     const submit = button('프로젝트 생성', 'primary');
@@ -1678,7 +1672,7 @@ function openProjectCreator(){
     name.input.oninput = code.input.oninput = () => { error.hidden = true; };
     actions.appendChild(submit);
     const basics=el('div','project-create-basics');basics.append(name.wrap,code.wrap);
-    form.append(basics, platformField, optional, staffingTitle, staffingBox, access.wrap, preview, guide, error, actions);
+    form.append(basics, platformField, staffingTitle, staffingBox, error, actions);
     form.onsubmit = async event => {
       event.preventDefault();
       if(dialog.dataset.saving==='true')return;
@@ -1688,7 +1682,8 @@ function openProjectCreator(){
         const assignments = roles.map(role => role.assignmentType === 'external_text'
           ? { roleId: role.id, assignmentType: role.assignmentType, externalName: staffingValues.get(role.id) || '' }
           : { roleId: role.id, assignmentType: role.assignmentType, userId: staffingValues.get(role.id) || '' });
-        await createProjectFromTemplate({ name: name.input.value, code: code.input.value, platformIds: currentPlatforms(), assignments, ...currentOptions(),...access.value() });
+        const access=window.ProjectTemplateEngine.defaultProjectPeople(activeUsers());
+        await createProjectFromTemplate({ name: name.input.value, code: code.input.value, platformIds: currentPlatforms(), assignments, ...currentOptions(),...access });
         release();close(true); showToast('프로젝트와 기본 업무를 생성했습니다.');
       } catch(cause) {
         error.textContent = cause.message || '프로젝트를 생성하지 못했습니다.'; error.hidden = false;
@@ -2046,6 +2041,7 @@ function openTaskEditor(task, initial = {}){
   const editing = !!task;
   const expectedTaskSignature=task?taskEditSignature(task):null;
   const { dialog, close, onClose } = openDialog(editing ? '업무 수정' : '업무 추가');
+  dialog.classList.add('compact-task-editor-dialog');
   appendScheduleReview(dialog, task, close);
   if(task?.dateOverride && !task.scheduleReview && task.datePolicy !== 'anchor' && ['after_task','before_task','during_task'].includes(task.scheduleRule?.type)) {
     dialog.appendChild(button('자동 일정으로 되돌리기', 'ghost', async () => {
@@ -2075,7 +2071,7 @@ function openTaskEditor(task, initial = {}){
     assignee.select.value = [...assignee.select.options].some(option => option.value === selectedId) ? selectedId : '';
   };
   refreshAssigneeOptions();
-  if(editing) assignee.select.disabled = true;
+  if(editing) assignee.select.disabled = !canManageTaskAssignment(task);
   // 공동 지원 배정은 여러 부서의 업무량과 접근 권한에 영향을 주므로 PM/관리자만 처리합니다.
   const canManageSupport = isAdmin() || isPM();
   const supportAssignees = multiSelectField('지원 담당자 (선택)');
@@ -2152,13 +2148,13 @@ function openTaskEditor(task, initial = {}){
     assignmentWarning.className = `assignment-assessment ${assessment.level}`;
     assignmentWarning.innerHTML = '';
     assignmentWarning.append(el('strong', '', assessment.level === 'danger' ? '과부하 예상' : assessment.level === 'warn' ? '배정 주의' : assessment.level === 'ok' ? '배정 가능' : '계산 필요'));
-    assignmentWarning.append(el('span', '', assessment.level === 'unknown' ? '기간 입력 후 계산' : `최대 주간 ${assessment.weeklyLoad}%`));
-    if(['danger','warn'].includes(assessment.level))assignmentWarning.appendChild(el('p','',assessment.label));
+    assignmentWarning.hidden=!['danger','warn'].includes(assessment.level);
+    assignmentWarning.append(el('span', '', `최대 주간 ${assessment.weeklyLoad}%`));
     const assessmentDetails=el('details','assignment-assessment-details');assessmentDetails.appendChild(el('summary','','배정 상세'));
     assessmentDetails.append(el('p', '', `${assignees.length > 1 ? `${assignees.length}명 공동 배정 · ` : ''}${assessment.label}`));
     if(assessment.nextDate)assessmentDetails.appendChild(el('p','',`다음 가능일 ${fmtDate(assessment.nextDate)}`));assignmentWarning.appendChild(assessmentDetails);
     capacityConfirm.checked = false;
-    capacityConfirmLabel.hidden = assessment.level !== 'danger';
+    capacityConfirmLabel.hidden = assessment.level !== 'danger'||!assignmentHasChanged();
   };
   const dependencyWarning = el('section', 'dependency-warning'); dependencyWarning.hidden = true;
   const dependencyConfirm = document.createElement('input'); dependencyConfirm.type = 'checkbox'; dependencyConfirm.id = `dependency-confirm-${task?.id || 'new'}`;
@@ -2177,18 +2173,18 @@ function openTaskEditor(task, initial = {}){
   start.input.onchange = refreshDependencyWarning;
   assignee.select.onchange = () => { refreshSupportOptions(); refreshAssignmentWarning(); };
   supportAssignees.select.onchange = refreshAssignmentWarning;
+  status.select.onchange = refreshAssignmentWarning;
   estimate.input.oninput = refreshAssignmentWarning;
   start.input.onchange = () => { refreshDependencyWarning(); refreshAssignmentWarning(); };
   due.input.onchange = refreshAssignmentWarning;
-  if(task?.generated&&task.datePolicy!=='anchor') form.append(el('p', 'sub', '날짜를 직접 변경하면 수동 일정으로 유지됩니다.'));
   const basic = el('section', 'task-editor-section');
-  if(editing){form.appendChild(el('p','sub',`${projectCode(task)} · ${stage.select.selectedOptions[0]?.text||''} · ${departmentName(task.departmentId)}${task.datePolicy==='anchor'?' · 기준 일정':''}`));basic.append(title.wrap,assignee.wrap,estimate.wrap,start.wrap,due.wrap,status.wrap);}
+  if(editing){form.appendChild(el('p','sub task-editor-context',`${projectCode(task)} · ${stage.select.selectedOptions[0]?.text||''} · ${departmentName(task.departmentId)}`));basic.append(title.wrap,assignee.wrap,status.wrap,start.wrap,due.wrap);}
   else basic.append(title.wrap, project.wrap, stage.wrap, department.wrap, assignee.wrap, estimate.wrap, start.wrap, due.wrap, status.wrap);
   const advanced = el('details', 'task-editor-advanced');
   advanced.open = initial.showAdvanced === true;
   advanced.appendChild(el('summary', '', '추가 설정'));
   const advancedGrid = el('div', 'task-editor-advanced-grid');
-  if(editing)advancedGrid.append(project.wrap,stage.wrap,department.wrap);
+  if(editing)advancedGrid.append(estimate.wrap,project.wrap,stage.wrap,department.wrap);
   advancedGrid.append(platform.wrap, progress.wrap, supportAssignees.wrap, milestone.wrap, dependsOn.wrap);
   const advancedSummary=el('p','sub task-advanced-summary');
   const refreshAdvancedSummary=()=>{
@@ -2213,11 +2209,6 @@ function openTaskEditor(task, initial = {}){
   form.append(basic, dependencyWarning, assignmentWarning, capacityConfirmLabel, advancedSummary, advanced);
   refreshDependencyWarning();
   refreshAssignmentWarning();
-  if(editing && canManageTaskAssignment(task)) {
-    const assignRow = el('div', 'assignment-editor-row');
-    assignRow.append(button('담당자 변경', 'tiny ghost', () => openAssignmentEditor(task)));
-    basic.appendChild(assignRow);
-  }
   const actions = el('div', 'form-actions'); actions.appendChild(button('저장', 'primary'));
   if(editing) actions.prepend(button('업무 보관', 'danger-button dialog-secondary-action', async () => {
     if(!allowDialogAction(dialog)||!confirm('이 업무를 보관할까요?'))return;
@@ -2245,7 +2236,7 @@ function openTaskEditor(task, initial = {}){
       if(selectedProject&&selectedProject.schedulingMode!=='template_v2'&&!start.input.value)errors.push([start.input,'시작일을 입력해주세요.']);
       if(Boolean(start.input.value)!==Boolean(due.input.value)&&selectedProject?.schedulingMode==='template_v2')errors.push([start.input.value?due.input:start.input,'시작일과 마감일을 함께 입력해주세요.']);
       if(start.input.value&&due.input.value&&due.input.value<start.input.value)errors.push([due.input,'마감일은 시작일 이후로 설정해주세요.']);
-      if(errors.length){errors.forEach(([field,message])=>showFieldError(field,message));errors[0][0].focus();return;}
+      if(errors.length){errors.forEach(([field,message])=>{const details=field.closest('details');if(details)details.open=true;showFieldError(field,message);});errors[0][0].focus();return;}
       if(!dependencyWarning.hidden && !dependencyConfirm.checked) throw new Error('선행 업무와 겹치는 일정을 확인해주세요.');
       if(assignmentHasChanged() && latestAssignmentAssessments.some(item => item.assessment.level === 'danger') && !capacityConfirm.checked) throw new Error('담당자 과부하 경고를 확인해주세요.');
       const datesChanged = dateOnly(task?.startDate) !== start.input.value || dateOnly(task?.dueDate) !== due.input.value;
@@ -2342,12 +2333,12 @@ function textareaField(label, placeholder){
 }
 function taskTitleField(value){
   const field=textareaField('업무명','업무 내용을 입력하세요');
-  field.input=field.textarea;field.input.value=value||'';field.input.rows=3;
+  field.input=field.textarea;field.input.value=value||'';field.input.rows=1;
   field.input.addEventListener('input',()=>resizeTaskTitle(field.input));
   field.wrap.classList.add('task-title-field');return field;
 }
 function resizeTaskTitle(input){
-  input.style.height='auto';input.style.height=`${Math.min(160,Math.max(64,input.scrollHeight+2))}px`;
+  input.style.height='auto';input.style.height=`${Math.min(160,Math.max(42,input.scrollHeight+2))}px`;
 }
 
 function openProjectUpdateEditor(project){

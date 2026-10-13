@@ -400,12 +400,18 @@
     return writes;
   }
 
+  function defaultProjectPeople(users){
+    const active=rows(users).filter(user=>user.active);
+    const managerIds=[...new Set(active.filter(user=>user.isAdmin||['admin','pm'].includes(user.role)).map(user=>user.id).filter(Boolean))];
+    const observerIds=[...new Set(active.filter(user=>user.role==='lead'&&!managerIds.includes(user.id)).map(user=>user.id).filter(Boolean))];
+    return {managerIds,observerIds};
+  }
   return {
     validateTemplateCatalog,
     assertValidCatalog,
     getTemplateForPlatform,
     buildProjectSnapshot,
     createProjectWritePlan,
-    selectedTasks, dependencyIds
+    selectedTasks, dependencyIds, defaultProjectPeople
   };
 });

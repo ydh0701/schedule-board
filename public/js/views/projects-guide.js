@@ -1,11 +1,9 @@
 /* Guide-based project screens. Editors and scheduling stay in the existing state layer. */
 const guideProjectView={query:'',platform:'',list:'active',originProject:null,expanded:new Map(),detail:new Map()};
 let guidePendingTaskId=null;
-let guideTaskReturnView=null;
 function openGuideTaskLocation(task){
-  guideTaskReturnView=activeView;
   const project=projects.find(item=>item.id===task.projectId);if(!project)return openTaskDetails(task);
-  const state=guideDetailState(project.id);Object.assign(state,{query:'',platform:'',department:'',assignee:'',stage:'',status:'all',followToday:false,start:task.startDate||dateKey(todayDate()),undatedExpanded:!task.startDate});
+  const state=guideDetailState(project.id);Object.assign(state,{query:'',platform:'',department:'',departments:null,statuses:null,assignee:'',stage:'',status:'all',followToday:false,start:task.startDate||dateKey(todayDate()),undatedExpanded:!task.startDate});
   state.closed.delete(task.departmentId);if(!state.expanded)state.expanded=new Set();state.expanded.add(task.departmentId);guidePendingTaskId=task.id;
   if(task.status==='done'){if(!state.completedExpanded)state.completedExpanded=new Set();state.completedExpanded.add(task.departmentId);}
   setView('projects',project.id);
@@ -76,7 +74,7 @@ function guideProjectCard(project,defaultExpanded){
   toggle.setAttribute('aria-label',`${project.code||project.name} 단계 ${expanded?'접기':'펼치기'}`);
   toggle.append(el('strong','',project.code||project.name),el('span','guide-project-name',project.code?project.name:''));
   const platforms=el('span','guide-platforms',(project.platforms||[]).map(platformName).join(' / '));toggle.appendChild(platforms);
-  toggle.appendChild(el('span','guide-chevron',expanded?'⌃':'⌄'));head.appendChild(toggle);
+  const chevron=el('span','guide-chevron');chevron.setAttribute('aria-hidden','true');toggle.appendChild(chevron);head.appendChild(toggle);
   head.appendChild(button('세부 일정 보기 →','ghost tiny guide-project-detail-link',()=>openGuideProjectDetail(project)));
   card.appendChild(head);
   if(expanded){
@@ -91,6 +89,12 @@ function guideProjectCard(project,defaultExpanded){
   return card;
 }
 // Shared project/personal schedule folds: completed above, three active rows, extra below.
+function guideScheduleTaskRowClass(task){
+  return `guide-gantt-row${task.status==='done'?' guide-schedule-muted-task guide-schedule-done-task':!task.status||task.status==='todo'?' guide-schedule-muted-task guide-schedule-waiting-task':''}`;
+}
+function guideScheduleGroupToggle(label,opened,onClick){
+  const toggle=button(label,'guide-group-toggle guide-stable-group-toggle',onClick);toggle.setAttribute('aria-expanded',String(opened));return toggle;
+}
 function guideAppendSchedulePreview(table,group,state,key,appendTask){
   if(!state.completedExpanded)state.completedExpanded=new Set();
   if(group.completed.length){
@@ -110,23 +114,27 @@ function renderGuideProjectDetail(main,project){
   if(!state.expanded)state.expanded=new Set();
   if(!state.completedExpanded)state.completedExpanded=new Set();
   const header=el('div','guide-detail-heading guide-project-detail-heading');header.append(el('h2','',project.name),el('span','guide-project-code',`${project.code||''}${projectIsCompleted(project)?' · 완료 프로젝트':''}`));
-  if(guideTaskReturnView&&guideTaskReturnView!=='projects')header.prepend(button('‹ 이전 화면','ghost tiny',()=>{const view=guideTaskReturnView;guideTaskReturnView=null;setView(view);}));
-  if(canManageProjects()) header.appendChild(button('프로젝트 설정','ghost tiny',()=>openProjectEditor(project)));main.appendChild(header);
   const actions=el('div','guide-inline-actions');
-  actions.appendChild(button('주요 일정','ghost tiny',()=>{const {dialog}=openDialog('프로젝트 주요 일정');renderProjectMilestoneList(dialog,project);}));
+  if(canManageProjects()) actions.appendChild(button('프로젝트 설정','ghost tiny',()=>openProjectEditor(project)));
   if(canManageProjects()) actions.appendChild(button(project.status==='completed'?'프로젝트 재개':'프로젝트 완료','ghost tiny',async()=>{
     if(!confirm(project.status==='completed'?'이 프로젝트를 다시 진행할까요?':'모든 업무를 확인했나요? 프로젝트를 완료 처리합니다.')) return;
     try {project.status==='completed'?await reopenProject(project.id):await completeProject(project.id);showToast('프로젝트 상태를 변경했습니다.');}
     catch(error){showToast(error.message,'error');}
-  }));header.appendChild(actions);
+  }));if(actions.childElementCount)header.appendChild(actions);main.appendChild(header);
   const tools=el('div','guide-detail-tools guide-project-detail-tools'),filters=el('div','guide-detail-filters'),secondary=el('div','guide-detail-filters guide-detail-secondary-filters'),period=el('div','guide-period');
   const refresh=()=>rerender();
+  const roles=[...new Set(all.map(task=>task.departmentId))];
+  if(!Array.isArray(state.departments))state.departments=state.department?[state.department]:roles.slice();
+  if(!Array.isArray(state.statuses))state.statuses=state.status==='all'?['progress','upcoming','done']:['progress','upcoming'];
+  state.department='';state.assignee='';state.stage='';state.status='all';
   if((project.platforms||[]).length>1)secondary.appendChild(guideSelect('플랫폼',[['','전체 플랫폼'],...(project.platforms||[]).map(id=>[id,platformName(id)])],state.platform,value=>{state.platform=value;refresh();}));
-  filters.append(guideSelect('직군',[['','전체 직군'],...[...new Set(all.map(t=>t.departmentId))].map(id=>[id,guideRoleName(project,id)])],state.department,value=>{state.department=value;refresh();}));
-  secondary.appendChild(guideSelect('담당자',[['','전체 담당자'],...[...new Set(all.flatMap(t=>[t.assigneeId,...(t.assigneeIds||[]),...(t.assignees||[]).map(item=>item.userId)]).filter(Boolean))].map(id=>[id,userName(id)])],state.assignee,value=>{state.assignee=value;refresh();}));
-  secondary.appendChild(guideSelect('일정 상태',[['active','진행 중 · 예정'],['review','일정 재확인'],['all','완료 포함']],state.status,value=>{state.status=value;refresh();}));
+  function choices(title,options,key){
+    const field=el('fieldset','guide-filter-choices');field.appendChild(el('legend','',title));
+    options.forEach(([id,label])=>{const row=el('label',''),input=document.createElement('input');input.type='checkbox';input.checked=state[key].includes(id);input.onchange=()=>{state[key]=input.checked?[...state[key],id]:state[key].filter(value=>value!==id);updateFilterSummary();draw();};row.append(input,document.createTextNode(label));field.appendChild(row);});secondary.appendChild(field);
+  }
+  choices('직군',roles.map(id=>[id,guideRoleName(project,id)]),'departments');
+  choices('상태',[['progress','진행 중'],['upcoming','예정'],['done','완료']],'statuses');
   const search=guideSearch('업무 검색',state.query,value=>{state.query=value;draw();});filters.prepend(search);
-  if(project.stageSnapshots?.length) secondary.appendChild(guideSelect('단계',[['','전체 단계'],...project.stageSnapshots.map(s=>[s.id,s.name])],state.stage,value=>{state.stage=value;refresh();}));
   function move(days){const date=localDate(state.start);date.setDate(date.getDate()+days);state.start=dateKey(date);state.followToday=false;refresh();}
   period.append(button('‹ 이전','ghost tiny',()=>move(-state.weeks*7)),button('오늘','ghost tiny',()=>{state.start=dateKey(todayDate());state.followToday=true;refresh();}),button('다음 ›','ghost tiny',()=>move(state.weeks*7)),
     guideSelect('표시 기간',[[4,'4주'],[8,'8주'],[12,'12주']],String(state.weeks),value=>{state.weeks=Number(value);refresh();}));
@@ -135,15 +143,17 @@ function renderGuideProjectDetail(main,project){
   const extra=el('details','guide-extra-filters');extra.open=Boolean(state.filtersExpanded);
   const fitFilterPanel=()=>{if(!extra.open||!extra.isConnected)return;extra.style.setProperty('--filter-panel-shift','0px');const rect=secondary.getBoundingClientRect(),shift=rect.right>window.innerWidth-16?window.innerWidth-16-rect.right:rect.left<16?16-rect.left:0;extra.style.setProperty('--filter-panel-shift',shift+'px');};
   extra.ontoggle=()=>{state.filtersExpanded=extra.open;if(extra.open)requestAnimationFrame(fitFilterPanel);};
-  const applied=[state.platform?platformName(state.platform):'',state.assignee?userName(state.assignee):'',state.stage?project.stageSnapshots?.find(item=>item.id===state.stage)?.name:'',state.status==='all'?'완료 포함':state.status==='review'?'일정 재확인':''].filter(Boolean);
-  extra.append(el('summary','',`필터${applied.length?' · '+applied.join(' · '):''}`),secondary);filters.appendChild(extra);
-  if(state.platform||state.assignee||state.stage||state.department||state.query||state.status!=='all')filters.appendChild(button('초기화','ghost tiny',()=>{Object.assign(state,{platform:'',assignee:'',stage:'',department:'',query:'',status:'all'});refresh();}));
+  const summary=el('summary','');
+  function updateFilterSummary(){const selected=state.departments.length===roles.length?'전체 직군':state.departments.length?state.departments.map(id=>guideRoleName(project,id)).join(', '):'직군 선택 없음';const statuses=state.statuses.length===3?'전체 상태':state.statuses.map(id=>({progress:'진행 중',upcoming:'예정',done:'완료'})[id]).join(', ')||'상태 선택 없음';summary.textContent=`필터 · ${selected} · ${statuses}`;summary.title=summary.textContent;}
+  updateFilterSummary();extra.append(summary,secondary);filters.appendChild(extra);
+  const resetFilters=()=>{Object.assign(state,{platform:'',assignee:'',stage:'',department:'',departments:null,statuses:null,query:'',status:'all'});refresh();};
+  filters.appendChild(button('초기화','ghost tiny',resetFilters));
   tools.append(filters,period);main.appendChild(tools);
   const target=el('div','guide-gantt-scroll guide-outside-weeks');main.appendChild(target);
   const draw=()=>{
     target.replaceChildren();
     const filtered=MilestoneProjectModel.filterTasks(all,state);
-    if(!filtered.length){const empty=el('div','guide-empty');empty.append(el('h3','','표시할 업무가 없습니다.'),button('필터 초기화','ghost',()=>{Object.assign(state,{platform:'',department:'',assignee:'',stage:'',status:projectIsCompleted(project)?'all':'active',query:''});refresh();}));target.appendChild(empty);return;}
+    if(!filtered.length){const empty=el('div','guide-empty');empty.append(el('h3','','표시할 업무가 없습니다.'),button('필터 초기화','ghost',resetFilters));target.appendChild(empty);return;}
     const table=el('div','guide-gantt guide-project-detail-gantt');table.style.setProperty('--days',state.weeks*7);table.style.setProperty('--timeline-min',`${state.weeks*7*18}px`);
     table.appendChild(guideTimelineHeader(state,['업무명','담당자','기간','상태'],true));
     const roleOrder=new Map((project.roleSnapshots||[]).map(role=>[role.id,Number(role.order||0)]));
@@ -152,10 +162,10 @@ function renderGuideProjectDetail(main,project){
     groups.filter(group=>group.scheduled.length).forEach(group=>{
       const id=group.id;
       const closed=state.closed.has(id),row=el('div','guide-gantt-row guide-gantt-group');
-      const toggle=button(`${closed?'›':'⌄'} ${guideRoleName(project,id)} · ${group.scheduled.length}건`,'guide-group-toggle',()=>{closed?state.closed.delete(id):state.closed.add(id);draw();});toggle.setAttribute('aria-expanded',String(!closed));
+      const toggle=guideScheduleGroupToggle(`${guideRoleName(project,id)} · ${group.scheduled.length}건`,!closed,()=>{closed?state.closed.delete(id):state.closed.add(id);draw();});
       const timeline=guideTimelineCell(null,state);row.append(toggle,timeline);table.appendChild(row);
       const appendTask=task=>{
-        const row=el('div','guide-gantt-row'),info=el('div','guide-gantt-info');row.dataset.taskId=task.id;
+        const row=el('div',guideScheduleTaskRowClass(task)),info=el('div','guide-gantt-info');row.dataset.taskId=task.id;
         const taskName=button(task.title,'guide-task-title',()=>openTaskEditor(task));taskName.dataset.focusTask=task.id;taskName.title=task.title;
         const range=MilestoneProjectModel.taskDateRange(task.startDate,task.dueDate,dateKey(todayDate()));
         const status=MilestoneProjectModel.taskPresentation(task,dateKey(todayDate()));

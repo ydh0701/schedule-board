@@ -16,10 +16,10 @@
   function filterTasks(tasks, filters={}){
     const q=String(filters.query || '').trim().toLocaleLowerCase();
     return tasks.filter(task=>(!filters.platform || task.platform===filters.platform)
-      && (!filters.department || task.departmentId===filters.department)
+      && (Array.isArray(filters.departments)?filters.departments.includes(task.departmentId):!filters.department || task.departmentId===filters.department)
       && (!filters.assignee || task.assigneeId===filters.assignee || (task.assigneeIds||[]).includes(filters.assignee) || (task.assignees||[]).some(item=>item.userId===filters.assignee))
       && (!filters.stage || (task.stageId||task.phaseId)===filters.stage)
-      && (filters.status==='all' || (filters.status==='review'?!!task.scheduleReview:task.status!=='done'))
+      && (Array.isArray(filters.statuses)?filters.statuses.includes(task.status==='done'?'done':task.status==='in_progress'?'progress':'upcoming'):filters.status==='all' || (filters.status==='review'?!!task.scheduleReview:task.status!=='done'))
       && (!q || [task.title,task.externalAssigneeName,task.assigneeName].filter(Boolean).join(' ').toLocaleLowerCase().includes(q)));
   }
   function filterProjects(projects,tasks,filters={}){
@@ -73,7 +73,16 @@
     state.today=today;
     return state;
   }
-  const api={stageSummary,filterTasks,filterProjects,timelinePosition,taskPresentation,taskDateRange,syncToday,detailGroups,DETAIL_DISPLAY_POLICY};
+  function taskDetailSummary(task,all){
+    const supportIds=[...new Set([...(task.assigneeIds||[]),...(task.assignees||[]).map(item=>item.userId)].filter(id=>id&&id!==task.assigneeId))];
+    const ids=[...new Set([...(task.readinessDependsOn||[]),...(['before_task','during_task'].includes(task.scheduleRule?.type)?[]:task.dependsOn||[])])];
+    const dependencies=ids.map(id=>({id,task:all.find(item=>item.id===id&&item.projectId===task.projectId&&!item.archivedAt)||null}));
+    const missing=dependencies.filter(item=>!item.task).length,pending=dependencies.filter(item=>item.task&&item.task.status!=='done').length;
+    const readiness=task.status==='done'?'완료된 업무':task.status==='in_progress'?'진행 중':task.status==='blocked'?'차단 상태 · 착수 확인 필요':missing?`선행 조건 확인 불가 ${missing}건`:pending?`미완료 선행 ${pending}건`:ids.length?'선행 완료 · 결과물 확인 필요':'등록된 선행 없음 · 착수 확인 필요';
+    const mode=task.datePolicy==='anchor'?'기준 일정':task.dateOverride||task.scheduleMode==='manual'?'수동 일정':task.scheduleMode==='automatic'||task.generated?'자동 일정':'일정 방식 미지정';
+    return {supportIds,dependencies,readiness,mode,locked:Boolean(task.dateLocked)};
+  }
+  const api={stageSummary,filterTasks,filterProjects,timelinePosition,taskPresentation,taskDateRange,syncToday,detailGroups,taskDetailSummary,DETAIL_DISPLAY_POLICY};
   if(typeof module==='object' && module.exports) module.exports=api;
   else root.MilestoneProjectModel=api;
 })(typeof window!=='undefined'?window:globalThis);
