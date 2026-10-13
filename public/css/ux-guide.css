@@ -578,6 +578,7 @@ body.milestone-ui{--sidebar-rail:72px;}
 .milestone-ui .guide-management-table{min-width:600px;}
 .milestone-ui .guide-history-controls{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin:12px 0;}
 .milestone-ui .task-title-field{grid-column:1/-1;}
-.milestone-ui .guide-gantt-info>.guide-task-title,.milestone-ui .guide-undated-row>.guide-task-title{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;max-height:62px;word-break:normal;overflow-wrap:anywhere;}
+.milestone-ui .guide-gantt-info>.guide-task-title{display:block;min-width:0;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.milestone-ui .guide-undated-row>.guide-task-title{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;max-height:62px;word-break:normal;overflow-wrap:anywhere;}
 @media(max-width:1100px){.milestone-ui .guide-dashboard-layout{grid-template-columns:minmax(240px,30%) minmax(0,1fr);overflow:visible;}.milestone-ui .guide-dashboard-toolbar{flex-wrap:wrap;}}
 @media(max-width:800px){.milestone-ui .guide-dashboard-layout{grid-template-columns:1fr;}.milestone-ui .guide-dashboard-calendar-panel{min-width:0;}}
