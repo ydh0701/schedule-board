@@ -222,7 +222,14 @@ body.milestone-ui .app{width:100%;margin:0;padding:0;display:grid;grid-template-
 .milestone-ui .guide-dashboard-add svg{display:block;width:18px;height:18px;flex-shrink:0;stroke-width:2.2;}
 .milestone-ui .guide-major-picker-list{max-height:360px;overflow-y:auto;}
 .milestone-ui .modal.guide-major-picker-dialog{width:min(440px,100%);}
-.milestone-ui .guide-major-picker-row{display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:var(--ui-border-module) solid var(--line);cursor:pointer;}
+.milestone-ui .guide-major-picker-toolbar{display:flex;align-items:center;gap:10px;margin-bottom:12px;}
+.milestone-ui .guide-major-picker-toolbar .guide-search{flex:1;min-width:0;width:auto;}
+.milestone-ui .guide-major-picker-toolbar .guide-footnote{margin:0;white-space:nowrap;color:var(--text);}
+.milestone-ui .guide-major-picker-group>h3{margin:0;padding:9px 10px;border-left:3px solid var(--project-color,var(--accent));background:var(--surface-soft);font-size:var(--ui-font-caption);font-weight:var(--ui-font-weight-semibold);}
+.milestone-ui .guide-major-picker-row{display:grid;grid-template-columns:18px minmax(0,1fr) 125px;align-items:center;gap:8px;padding:12px 8px;border-bottom:var(--ui-border-module) solid var(--line);cursor:pointer;}
+.milestone-ui .guide-major-picker-row.is-selected{background:var(--ui-color-selection-soft);}
+.milestone-ui .guide-major-picker-title{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:var(--ui-font-body);font-weight:var(--ui-font-weight-semibold);}
+.milestone-ui .guide-major-picker-row .guide-major-picker-date{font-size:var(--ui-font-caption);text-align:right;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .milestone-ui .guide-major-picker-content{display:flex;flex-direction:column;gap:4px;flex:1;min-width:0;}
 .milestone-ui .guide-major-picker-content>strong,.milestone-ui .guide-major-picker-content>small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .milestone-ui .guide-major-picker-content small,.milestone-ui .guide-major-picker-date{color:var(--muted);font-size:var(--ui-font-micro);}

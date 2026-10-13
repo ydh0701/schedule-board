@@ -59,19 +59,21 @@ function openGuideDashboardMilestone(ownTasks){
   const {dialog,close}=openDialog('주요 일정 편집 · 내 일정');
   dialog.classList.add('guide-major-picker-dialog');
   const candidates=MilestoneDashboardModel.personalMajorCandidates(ownTasks),draft=new Set(guideDashboardMajorSelection());
-  const form=el('div','guide-major-picker'),list=el('div','guide-major-picker-list'),note=el('p','guide-footnote');
-  note.textContent='담당·지원 중인 미완료 일정입니다. 선택한 일정은 내 주요 일정에만 추가됩니다. 이 브라우저에 저장됩니다.';
+  const form=el('div','guide-major-picker'),list=el('div','guide-major-picker-list'),colors=guideProjectColorScope();
   const count=el('p','guide-footnote');count.setAttribute('aria-live','polite');
   const updateCount=()=>{count.textContent=`선택 ${candidates.filter(task=>draft.has(task.id)).length}건`;};
   function draw(query=''){
-    list.replaceChildren();const found=candidates.filter(task=>{const project=projects.find(item=>item.id===task.projectId);return [task.title,project?.code,project?.name].some(value=>String(value||'').toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()));});
-    found.forEach(task=>{
-      const row=el('label','guide-major-picker-row'),input=document.createElement('input');input.type='checkbox';input.checked=draft.has(task.id);input.setAttribute('aria-label',task.title);
-      input.onchange=()=>{if(input.checked)draft.add(task.id);else draft.delete(task.id);updateCount();};
-      const content=el('span','guide-major-picker-content'),project=projects.find(item=>item.id===task.projectId);
-      const projectLabel=el('small','',`${project?.code||project?.name||'개인 일정'} · ${platformName(task.platform)}`),title=el('strong','',task.title);
-      projectLabel.title=projectLabel.textContent;title.title=task.title;content.append(projectLabel,title);
-      row.append(input,content,el('small','guide-major-picker-date',MilestoneDashboardModel.shortDates(task.startDate,task.dueDate,dateKey(todayDate()))));list.appendChild(row);
+    colors.release(list);list.replaceChildren();const found=candidates.filter(task=>{const project=projects.find(item=>item.id===task.projectId);return [task.title,project?.code,project?.name].some(value=>String(value||'').toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()));});
+    const groups=new Map();found.forEach(task=>{const key=JSON.stringify([task.projectId,task.platform||'']);if(!groups.has(key))groups.set(key,{project:projects.find(item=>item.id===task.projectId),platform:task.platform,tasks:[]});groups.get(key).tasks.push(task);});
+    [...groups.values()].sort((a,b)=>String(a.project?.code||a.project?.name||'').localeCompare(String(b.project?.code||b.project?.name||''),'ko',{numeric:true})).forEach(group=>{
+      const section=el('section','guide-major-picker-group'),heading=el('h3','',`${group.project?.code||group.project?.name||'개인 일정'} · ${platformName(group.platform)}`);if(group.project)colors.apply(heading,group.project);heading.title=group.project?.name||'개인 일정';section.appendChild(heading);
+      group.tasks.forEach(task=>{
+        const row=el('label','guide-major-picker-row'),input=document.createElement('input');input.type='checkbox';input.checked=draft.has(task.id);input.setAttribute('aria-label',task.title);row.classList.toggle('is-selected',input.checked);
+        input.onchange=()=>{if(input.checked)draft.add(task.id);else draft.delete(task.id);row.classList.toggle('is-selected',input.checked);updateCount();};
+        const title=el('strong','guide-major-picker-title',task.title);title.title=task.title;
+        const dates=el('small','guide-major-picker-date',MilestoneDashboardModel.shortDates(task.startDate,task.dueDate,dateKey(todayDate())));dates.title=`${task.startDate||'미정'} ~ ${task.dueDate||'미정'}`;
+        row.append(input,title,dates);section.appendChild(row);
+      });list.appendChild(section);
     });
     if(!found.length)list.appendChild(el('p','guide-empty',candidates.length?'검색 결과가 없습니다.':'본인에게 배정된 미완료 일정이 없습니다.'));
   }
@@ -81,7 +83,8 @@ function openGuideDashboardMilestone(ownTasks){
     try{MilestoneDashboardModel.writeMajorSelection(localStorage,location.pathname,currentUser.uid,ids);}catch{error.textContent='브라우저 저장소를 사용할 수 없습니다. 설정을 확인한 뒤 다시 시도해 주세요.';return;}
     close();rerender();
   }));
-  form.append(note,guideSearch('내 일정 검색', '',draw),count,list,error,actions);mountDialogForm(dialog,form);draw();updateCount();
+  const toolbar=el('div','guide-major-picker-toolbar');toolbar.append(guideSearch('내 일정 검색','',draw),count);
+  form.append(toolbar,list,error,actions);mountDialogForm(dialog,form);draw();updateCount();
 }
 function renderGuideDashboard(main){
   if(!workDataReadiness.tasks){main.appendChild(el('p','guide-empty','업무 데이터를 불러오는 중입니다.'));return;}
