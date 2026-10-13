@@ -4,7 +4,7 @@ const guideDashboardView={owner:null,month:null,today:null,followToday:true,proj
 const guideManagerDashboardView={owner:null,mode:'projects',view:'calendar',today:null,month:null,followToday:true,query:'',project:'',platform:'',kind:'all',status:'all',sort:'start',fields:{project:true,title:true,dates:false}};
 function guideRelatedProjects(){
   const teamIds=activeUsers().filter(user=>user.departmentId===currentProfile.departmentId).map(user=>user.id);
-  return MilestoneDashboardModel.relatedProjects(projects,activeTasks(),{id:currentUser.uid,...currentProfile,isAdmin:isAdmin()},projectMemberships,teamIds);
+  return MilestoneDashboardModel.relatedProjects(projects,activeTasks(),{id:currentUser.uid,...currentProfile,role:workRole(),isAdmin:false},projectMemberships,teamIds);
 }
 function guideRelatedProjectCards(container,related,title,overview){
   const section=el('details','guide-dashboard-panel guide-dashboard-projects');section.open=true;section.append(el('summary','',`${title} · ${related.length}개`));
@@ -94,7 +94,7 @@ function openGuideDashboardMilestone(ownTasks){
 }
 function renderGuideDashboard(main){
   if(!workDataReadiness.tasks){main.appendChild(el('p','guide-empty','업무 데이터를 불러오는 중입니다.'));return;}
-  if((isAdmin()||isPM())&&renderGuideManagementDashboard(main))return;
+  if(isPM()&&renderGuideManagementDashboard(main))return;
   if(isLead()){renderGuideLeadDashboard(main);return;}
   const today=dateKey(todayDate()),state=guideDashboardView;
   if(state.owner!==currentUser.uid)Object.assign(state,{owner:currentUser.uid,projectsExpanded:null,workProjectOpen:new Map(),month:null,timelineStart:null,timelineQuery:'',timelineIncludeCompleted:false,query:'',project:'',platform:'',followToday:true});

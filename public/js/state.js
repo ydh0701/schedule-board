@@ -220,7 +220,7 @@ function mergeTaskSnapshots(...sources){
   }
   return [...merged.values()];
 }
-function workRole(profile = currentProfile){ return profile?.role === 'admin' ? 'pm' : profile?.role || 'member'; }
+function workRole(profile = currentProfile){ return profile?.role === 'admin' ? 'member' : profile?.role || 'member'; }
 // 관리자 권한은 시스템 관리 권한이고, PM은 프로젝트 운영 역할입니다.
 // 이전 role: admin 문서는 전환 기간 동안 관리자 권한으로 취급합니다.
 function isAdmin(){ return currentProfile?.isAdmin === true || currentProfile?.role === 'admin'; }
@@ -229,10 +229,12 @@ function isLead(){ return workRole() === 'lead'; }
 function isMember(){ return workRole() === 'member'; }
 function isApproved(){ return !!currentProfile?.active; }
 function userRoleLabel(profile){
-  const title = workRole(profile) === 'pm' ? 'PM' : workRole(profile) === 'lead' ? '팀장' : '팀원';
-  return profile?.isAdmin === true || profile?.role === 'admin' ? `관리자 · ${title}` : title;
+  const title = ['director','실장'].includes(profile?.position) ? '실장' : workRole(profile) === 'pm' ? 'PM' : workRole(profile) === 'lead' ? '팀장' : '팀원';
+  return profile?.isAdmin === true || profile?.role==='admin' ? `${title} · 툴 관리자` : title;
 }
 function departmentName(id){ return DEPARTMENTS.find(x => x.id === id)?.name || id || '미지정'; }
+function userDepartmentLabel(profile){return {planning:'기획팀',ui:'UI팀',development:'개발팀',qa:'QA팀',business:'글로벌비즈니스실'}[profile?.departmentId]||departmentName(profile?.departmentId);}
+function userIdentityLabel(profile){return workRole(profile)==='pm'?userRoleLabel(profile):`${userDepartmentLabel(profile)} · ${userRoleLabel(profile)}`;}
 function platformName(id){ return PLATFORMS.find(item => item.id === id)?.name || id || '공통'; }
 function dateOnly(value){
   if(!value) return '';

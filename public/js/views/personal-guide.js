@@ -41,7 +41,7 @@ function guidePersonalState(userId){
   return MilestonePersonalModel.syncToday(guidePersonalView.states.get(userId),dateKey(todayDate()));
 }
 function renderGuidePersonal(main){
-  const allowed=MilestonePersonalModel.viewers(activeUsers(),{...currentProfile,id:currentUser.uid},{all:isAdmin()||isPM(),team:isLead()});
+  const allowed=MilestonePersonalModel.viewers(activeUsers(),{...currentProfile,id:currentUser.uid},{all:isPM(),team:isLead()});
   if(!allowed.some(user=>user.id===guidePersonalView.owner)) guidePersonalView.owner=currentUser.uid;
   const owner=guidePersonalView.owner,state=guidePersonalState(owner);
   const all=MilestonePersonalModel.personalTasks(activeTasks(),projects,owner);

@@ -8,7 +8,9 @@ if(testControls&&testSidebar){
 }
 visibleUsers = [
   {id:'planning_lead',name:'테스트 기획팀장',departmentId:'planning',active:true,role:'lead'},
-  {id:'admin',name:'테스트 관리자',departmentId:'planning',active:true,role:'admin'},
+  {id:'planning_director',name:'테스트 기획실장',departmentId:'planning',active:true,role:'lead',position:'director'},
+  {id:'admin',name:'테스트 관리자',departmentId:'planning',active:true,role:'member',isAdmin:true},
+  {id:'planning_lead_admin',name:'테스트 기획팀장 관리자',departmentId:'planning',active:true,role:'lead',isAdmin:true},
   {id:'pm_01',name:'테스트 PM',departmentId:'pm',active:true,role:'pm'},
   {id:'observer_01',name:'추가 조회 참여자',departmentId:'studio',active:true,role:'member'},
   {id:'planning_01',name:'기획 담당자',departmentId:'planning',active:true,role:'member'},
@@ -42,6 +44,7 @@ window.refreshTestData=()=>{
   requestDataRender();
 };
 document.getElementById('testIdentity').onchange=event=>testIdentity(event.target.value);
-for(const user of visibleUsers.filter(user=>!document.querySelector(`#testIdentity option[value="${user.id}"]`))){const option=new Option(user.name,user.id);document.getElementById('testIdentity').add(option);}
+const identityPicker=document.getElementById('testIdentity');
+for(const user of visibleUsers){let option=[...identityPicker.options].find(item=>item.value===user.id);if(!option){option=new Option('',user.id);identityPicker.add(option);}option.textContent=userIdentityLabel(user);}
 document.getElementById('testCreate').onclick=openProjectCreator;
 window.refreshTestData();testIdentity('admin');

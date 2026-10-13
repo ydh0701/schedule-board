@@ -65,7 +65,7 @@ function renderAccountActions(){
   if(!target) return;
   target.innerHTML = '';
   if(currentUser){
-    if(currentProfile) target.append(el('span', 'account-name', `${currentProfile.name || currentUser.displayName || ''} · ${userRoleLabel(currentProfile)}`));
+    if(currentProfile){const identity=el('span','account-name',userIdentityLabel(currentProfile));identity.title=currentProfile.name||currentUser.displayName||'';target.append(identity);}
     const profile = el('span', 'account-chip', (currentProfile?.name || currentUser.displayName || currentUser.email || '?').slice(0, 1).toUpperCase());
     profile.title = currentUser.email || '';
     target.append(profile);
@@ -1103,7 +1103,7 @@ function adminAccessPanel(){
       const actions=el('div','guide-row-actions');
       if(isAdmin())actions.appendChild(button('권한 수정','tiny ghost',()=>openUserRoleEditor(user)));
       if(canManageOffboarding(user))actions.appendChild(guideActionMenu('더보기',[{label:'퇴사 처리',className:'danger-button',action:()=>openOffboardingEditor(user)}]));
-      return [user.name||user.email,departmentName(user.departmentId),userRoleLabel(user),actions];
+      return [user.name||user.email,userDepartmentLabel(user),userRoleLabel(user),actions];
     });
     list.replaceChildren(guideManagementTable(['이름','직군','권한',{label:'작업',align:'right'}],rows));
   };

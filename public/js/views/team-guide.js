@@ -8,9 +8,9 @@ function openGuidePersonSchedule(id,period,teamState=guideTeamView){
   setView('my-work');
 }
 function renderGuideTeam(main,options={}){
-  if(!isLead()&&!isPM()&&!isAdmin()){main.appendChild(el('p','guide-empty','팀별 현황을 볼 권한이 없습니다.'));return;}
+  if(!isLead()&&!isPM()){main.appendChild(el('p','guide-empty','팀별 현황을 볼 권한이 없습니다.'));return;}
   const state=MilestonePersonalModel.syncToday(options.state||guideTeamView,dateKey(todayDate()));
-  const scope=options.scope||MilestonePersonalModel.viewers(activeUsers(),{...currentProfile,id:currentUser.uid},{all:isAdmin()||isPM(),team:isLead()});
+  const scope=options.scope||MilestonePersonalModel.viewers(activeUsers(),{...currentProfile,id:currentUser.uid},{all:isPM(),team:isLead()});
   const tools=el('div','guide-team-tools'),filters=el('div','guide-detail-filters'),period=el('div','guide-period');
   if(!options.compactTools){
   filters.append(guideSelect('직군',[['','전체 직군'],...[...new Set(scope.map(user=>user.departmentId))].map(id=>[id,departmentName(id)])],state.department,value=>{state.department=value;rerender();}),

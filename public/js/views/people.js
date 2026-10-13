@@ -68,7 +68,7 @@ function renderPeople(main){
   visible.forEach(user => {
     const summary = summaries.get(user.id); const assessment = summary.assessment;
     const card = el('article', `person-row ${assessment.level}`);
-    const identity = el('div', 'person-identity'); identity.append(el('strong', '', user.name || user.email), el('span', 'foot-note', `${departmentName(user.departmentId)} · ${userRoleLabel(user)}`));
+    const identity = el('div', 'person-identity'); identity.append(el('strong', '', user.name || user.email), el('span', 'foot-note', userIdentityLabel(user)));
     const workload = el('div', 'person-workload'); workload.append(el('span', `tag ${assessment.level}`, assessment.weeklyLoad > 100 ? '과부하' : assessment.weeklyLoad >= 80 ? '주의' : '여유'), el('strong', '', `${assessment.weeklyLoad}%`), el('span', 'foot-note', `다음 가능일 ${fmtDate(assessment.nextDate)}`));
     const currentTasks = tasksByUser.get(user.id) || [];
     const reason = el('p', 'foot-note', currentTasks.length ? `현재 업무 · ${currentTasks.slice(0, 2).map(task => `${task.title} (${fmtDate(task.dueDate)}까지)`).join(' · ')}` : '진행 중인 업무가 없습니다.');
