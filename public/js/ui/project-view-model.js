@@ -43,13 +43,14 @@
   }
   const DETAIL_DISPLAY_POLICY={previewLimit:3};
   function detailGroups(tasks,filters,today,expanded=new Set()){
-    const full=Boolean(String(filters.query||'').trim()||['all','review'].includes(filters.status));
+    const full=Boolean(String(filters.query||'').trim()||filters.status==='review');
     const priority=task=>task.status==='done'?3:task.status==='in_progress'||task.startDate<=today&&task.dueDate>=today?0:task.dueDate<today?1:2;
     return [...new Set(tasks.map(task=>task.departmentId))].map(id=>{
       const items=tasks.filter(task=>task.departmentId===id),scheduled=items.filter(task=>Boolean(task.startDate&&task.dueDate&&task.startDate<=task.dueDate&&Number.isFinite(Date.parse(task.startDate+'T00:00:00Z'))&&Number.isFinite(Date.parse(task.dueDate+'T00:00:00Z'))));
       const datedIds=new Set(scheduled);scheduled.sort((a,b)=>priority(a)-priority(b)||a.startDate.localeCompare(b.startDate)||String(a.title).localeCompare(String(b.title)));
+      const completed=scheduled.filter(task=>task.status==='done'),active=scheduled.filter(task=>task.status!=='done');
       const showAll=full||expanded.has(id);
-      return {id,scheduled,undated:items.filter(task=>!datedIds.has(task)),visible:showAll?scheduled:scheduled.slice(0,DETAIL_DISPLAY_POLICY.previewLimit),expanded:showAll,full};
+      return {id,scheduled,completed,active,remaining:active.slice(DETAIL_DISPLAY_POLICY.previewLimit),undated:items.filter(task=>!datedIds.has(task)),visible:showAll?active:active.slice(0,DETAIL_DISPLAY_POLICY.previewLimit),expanded:showAll,full};
     });
   }
   function taskPresentation(task,today){
