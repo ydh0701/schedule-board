@@ -31,10 +31,11 @@
     });
     return [...buckets.values()].map(group=>{
       group.tasks.sort((a,b)=>priority(a,today)-priority(b,today) || String(a.startDate||a.dueDate||'9999').localeCompare(String(b.startDate||b.dueDate||'9999')) || String(a.title).localeCompare(String(b.title)));
-      // Search/review/completed filters explicitly request results: do not hide matches behind a preview.
-      const full=expanded.has(group.key) || !!query || filters.status==='all' || filters.status==='review';
+      // Completed inclusion does not mean expanding every row.
+      const full=!!query || filters.status==='review';
       const scheduled=group.tasks.filter(hasSchedule),undated=group.tasks.filter(task=>!hasSchedule(task));
-      return {...group,scheduled,undated,expanded:full,visible:full?scheduled:scheduled.slice(0,DISPLAY_POLICY.previewLimit)};
+      const completed=scheduled.filter(task=>task.status==='done'),active=scheduled.filter(task=>task.status!=='done'),showAll=full||expanded.has(group.key);
+      return {...group,scheduled,completed,active,remaining:active.slice(DISPLAY_POLICY.previewLimit),undated,full,expanded:showAll,visible:showAll?active:active.slice(0,DISPLAY_POLICY.previewLimit)};
     }).sort((a,b)=>String(a.project?.code||a.project?.name).localeCompare(String(b.project?.code||b.project?.name),undefined,{numeric:true}) || a.platform.localeCompare(b.platform));
   }
   function syncToday(state,today){

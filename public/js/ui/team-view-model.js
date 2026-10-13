@@ -3,6 +3,14 @@
   const DISPLAY_POLICY={defaultWeeks:8,currentTaskLimit:2};
   function assigned(task,id){return task.assigneeId===id || (task.assigneeIds||[]).includes(id) || (task.assignees||[]).some(item=>item.userId===id);}
   function nextDay(date){const day=new Date(date+'T00:00:00Z');day.setUTCDate(day.getUTCDate()+1);return day.toISOString().slice(0,10);}
+  function issuesFor(tasks,today,userIds){
+    const active=tasks.filter(task=>!task.archivedAt&&task.status!=='done'),dated=active.filter(task=>task.startDate&&task.dueDate&&task.startDate<=task.dueDate&&Number.isFinite(Date.parse(task.startDate))&&Number.isFinite(Date.parse(task.dueDate)));
+    const overlap=new Set();
+    const scope=userIds?new Set(userIds):null;
+    const owners=task=>new Set([task.assigneeId,...(task.assigneeIds||[]),...(task.assignees||[]).map(item=>item.userId)].filter(id=>id&&(!scope||scope.has(id))));
+    for(let i=0;i<dated.length;i++)for(let j=i+1;j<dated.length;j++){const a=dated[i],b=dated[j];if(a.projectId===b.projectId||a.dueDate<today||b.dueDate<today||a.startDate>b.dueDate||b.startDate>a.dueDate)continue;const ids=owners(a);if([...owners(b)].some(id=>ids.has(id))){overlap.add(a);overlap.add(b);}}
+    return {overdue:active.filter(task=>task.dueDate&&task.dueDate<today),review:active.filter(task=>task.scheduleReview),undated:active.filter(task=>!dated.includes(task)),overlap:[...overlap]};
+  }
   function rows(users,projects,tasks,filters,today){
     const projectMap=new Map(projects.filter(project=>project.status!=='archived').map(project=>[project.id,project]));
     const query=String(filters.query||'').trim().toLocaleLowerCase();
@@ -29,7 +37,7 @@
           }
         });
       });
-      return {user,current,undated,periods:periods.sort((a,b)=>a.startDate.localeCompare(b.startDate))};
+      return {user,current,undated,issues:issuesFor(items,today,[user.id]),periods:periods.sort((a,b)=>a.startDate.localeCompare(b.startDate))};
     }).sort((a,b)=>String(a.user.name||'').localeCompare(String(b.user.name||''),'ko'));
   }
   function lanes(periods,start,end){
@@ -39,6 +47,6 @@
       lanesEnd[lane]=period.dueDate;return {...period,lane};
     });
   }
-  const api={DISPLAY_POLICY,rows,lanes};
+  const api={DISPLAY_POLICY,rows,lanes,issuesFor};
   if(typeof module==='object'&&module.exports) module.exports=api;else root.MilestoneTeamModel=api;
 })(typeof window!=='undefined'?window:globalThis);

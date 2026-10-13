@@ -41,7 +41,7 @@ function renderGuideManagementDashboard(main){
   else if(!related.length)sidebar.append(button('프로젝트 현황에서 관리 담당 지정','guide-team-link',()=>setView('projects')));
   layout.append(sidebar,calendar);main.append(layout);return true;
 }
-function openGuideMyWork(full=false){guidePersonalView.owner=currentUser.uid;Object.assign(guidePersonalState(currentUser.uid),{project:'',platform:'',status:full===true?'all':'active',query:''});setView('my-work');}
+function openGuideMyWork(full=false){guidePersonalView.owner=currentUser.uid;Object.assign(guidePersonalState(currentUser.uid),{project:'',platform:'',status:'all',query:''});setView('my-work');}
 // Size by actual rows, including group headings; keep every task available by scrolling.
 function guideLimitDashboardWorkList(list){
   const rows=[...list.querySelectorAll('.guide-dashboard-task')];
@@ -196,15 +196,18 @@ function openGuideDashboardTools(mode,events,state,displayOptions={},anchor){
 function openGuideWeekSchedule(week,today){
   const {dialog,close}=openDialog('해당 주 진행 일정');
   dialog.appendChild(el('p','guide-footnote',`${week.days[0]} ~ ${week.days.at(-1)}`));
-  const header=el('div','guide-week-schedule-columns');header.append(el('strong','','프로젝트'),el('strong','','업무명'),el('strong','','기간'));dialog.appendChild(header);
+  const header=el('div','guide-week-schedule-columns');header.append(el('strong','','업무명'),el('strong','','기간'));dialog.appendChild(header);
   const list=el('div','guide-week-schedule-list');list.setAttribute('aria-label','해당 주 일정 목록');
-  week.segments.forEach(event=>{
-    const row=button('','guide-week-schedule-row',()=>{close();event.task?openGuideTaskLocation(event.task):setView('projects',event.project.id);});
-    const project=el('span','guide-week-schedule-project',event.project.code||event.project.name),title=el('span','guide-week-schedule-title',event.title);
-    project.title=event.project.name;title.title=event.title;
-    const range=MilestoneDashboardModel.shortDates(event.startDate,event.dueDate,today);
-    row.title=`${event.project.code||event.project.name} · ${event.title} · ${event.startDate} ~ ${event.dueDate}`;row.setAttribute('aria-label',row.title);
-    row.append(project,title,el('span','guide-week-schedule-period',range));list.appendChild(row);
+  const groups=new Map(),colors=guideProjectColorScope(week.segments.map(event=>event.project));
+  week.segments.forEach(event=>{if(!groups.has(event.project.id))groups.set(event.project.id,{project:event.project,events:[]});groups.get(event.project.id).events.push(event);});
+  [...groups.values()].sort((a,b)=>String(a.project.code||a.project.name).localeCompare(String(b.project.code||b.project.name),'ko',{numeric:true})).forEach(group=>{
+    const section=el('section','guide-week-schedule-group'),heading=el('h3','guide-week-schedule-group-head',`${group.project.code||group.project.name} · ${group.events.length}건`);heading.title=group.project.name;colors.apply(heading,group.project);section.appendChild(heading);
+    group.events.sort((a,b)=>a.startDate.localeCompare(b.startDate)||a.dueDate.localeCompare(b.dueDate)).forEach(event=>{
+      const row=button('','guide-week-schedule-row',()=>{close();event.task?openGuideTaskLocation(event.task):setView('projects',event.project.id);}),title=el('span','guide-week-schedule-title',event.title);title.title=event.title;
+      const range=MilestoneDashboardModel.shortDates(event.startDate,event.dueDate,today);
+      row.title=`${event.project.code||event.project.name} · ${event.title} · ${event.startDate} ~ ${event.dueDate}`;row.setAttribute('aria-label',row.title);
+      row.append(title,el('span','guide-week-schedule-period',range));section.appendChild(row);
+    });list.appendChild(section);
   });dialog.appendChild(list);
 }
 function renderGuideDashboardTimeline(content,data,state,today,colors=guideProjectColorScope(data.rows.map(row=>row.project))){

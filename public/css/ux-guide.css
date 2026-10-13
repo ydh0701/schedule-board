@@ -95,7 +95,7 @@ body.milestone-ui .app{width:100%;margin:0;padding:0;display:grid;grid-template-
 .milestone-ui .guide-gantt-row{display:grid;grid-template-columns:430px minmax(var(--timeline-min),1fr);min-height:var(--row-height);border-bottom:1px solid #eceff3;}
 .milestone-ui .guide-gantt-info{position:sticky;left:0;z-index:3;display:grid;grid-template-columns:minmax(0,1fr) 82px 104px 58px;align-items:center;background:var(--surface);padding:0 12px;gap:8px;border-right:1px solid var(--line);font-size:var(--ui-font-caption);}
 .milestone-ui .guide-gantt-info>strong{text-align:center;color:#46566b;}.milestone-ui .guide-gantt-info>strong:first-child{text-align:left;}
-.milestone-ui .guide-gantt-head{position:sticky;top:0;z-index:6;min-height:82px;}
+.milestone-ui .guide-gantt-head{position:sticky;top:0;z-index:6;min-height:64px;}
 .milestone-ui .guide-gantt-head .guide-gantt-info{background:#fafbfd;}
 .milestone-ui .guide-gantt-dates{display:grid;grid-template-columns:repeat(var(--days),1fr);background:#fafbfd;}
 .milestone-ui .guide-gantt-week{grid-column:span 7;text-align:center;border-right:1px solid var(--line);border-bottom:1px solid var(--line);padding:9px 0;font-size:var(--ui-font-caption);}
@@ -147,6 +147,11 @@ body.milestone-ui .app{width:100%;margin:0;padding:0;display:grid;grid-template-
 .milestone-ui .guide-team-allocation{position:absolute;display:flex;flex-direction:column;align-items:flex-start;overflow:hidden;gap:4px;padding:6px 8px;height:52px;min-width:0;border:0;border-radius:5px;background:color-mix(in srgb,var(--project-color) 35%,white)!important;color:#223149!important;text-align:left;}
 .milestone-ui .guide-team-allocation strong,.milestone-ui .guide-team-allocation small{white-space:nowrap;max-width:100%;overflow:hidden;text-overflow:ellipsis;}.milestone-ui .guide-team-allocation strong{font-size:var(--ui-font-caption);}.milestone-ui .guide-team-allocation small{font-size:var(--ui-font-micro);}.milestone-ui .guide-team-no-period{display:block;padding:24px;color:var(--muted);font-size:var(--ui-font-caption);}
 .milestone-ui .guide-team-allocation.narrow{padding:6px 3px;justify-content:center;height:32px;}.milestone-ui .guide-team-allocation.narrow strong{font-size:var(--ui-font-micro);}
+.milestone-ui .guide-team-row-empty .guide-team-person{padding:10px 16px;}
+.milestone-ui .guide-team-row-empty .guide-team-no-period{padding:16px;}
+.milestone-ui .guide-team-current-task{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.milestone-ui .guide-team-current-more{display:block;font-size:var(--ui-font-caption);color:var(--muted);}
+.milestone-ui .guide-team-warning{display:block;text-align:left;border:0;background:transparent;color:var(--warn);padding:4px 0;font-size:var(--ui-font-caption);}
 .milestone-ui .guide-dashboard-layout{display:grid;grid-template-columns:clamp(320px,28vw,380px) minmax(0,1fr);gap:20px;align-items:start;}
 .milestone-ui .guide-lead-dashboard .guide-dashboard-calendar-panel{min-width:0;}
 .milestone-ui .guide-mention-tabs{padding:0 16px;margin:0;gap:12px;}
@@ -289,7 +294,7 @@ body.milestone-ui .app{width:100%;margin:0;padding:0;display:grid;grid-template-
 .milestone-ui .guide-dashboard-tools{flex-wrap:wrap;}
 .milestone-ui .guide-dashboard-tools .guide-search{min-width:150px;width:180px;height:36px;}
 .milestone-ui .guide-dashboard-filter-note{height:28px;min-height:28px;margin:0;overflow:hidden;}
-.milestone-ui .guide-lead-dashboard{grid-template-columns:240px minmax(0,1fr);gap:16px;}
+.milestone-ui .guide-chat-status{font-size:var(--ui-font-caption);color:var(--muted);}
 .milestone-ui .guide-lead-content{--team-person-width:200px;}
 .milestone-ui .guide-team-gantt{min-width:calc(var(--team-person-width,280px) + var(--timeline-min));}
 .milestone-ui .guide-team-gantt .guide-gantt-row{grid-template-columns:var(--team-person-width,280px) minmax(var(--timeline-min),1fr);}
@@ -416,11 +421,11 @@ body.milestone-ui.sidebar-collapsed{--sidebar-width:72px;}.sidebar-collapsed .si
 .milestone-ui .guide-team-person,
 .milestone-ui .guide-team-person-head{border-right-color:var(--ui-color-region-border);}
 .milestone-ui .guide-group-toggle{background:var(--ui-color-selection-soft)!important;color:var(--text)!important;}
-.milestone-ui .guide-project-detail-gantt .guide-gantt-group>.guide-group-toggle{font-weight:var(--ui-font-weight-semibold);}
-.milestone-ui .guide-project-detail-gantt .guide-gantt-group>.guide-timeline-cell{background:var(--ui-color-selection-soft);background-image:none;}
-.milestone-ui .guide-project-detail-gantt .guide-preview-row>.guide-group-toggle{text-align:left;padding:6px 16px 6px 28px;font-weight:var(--ui-font-weight-regular);background:var(--surface-soft)!important;color:var(--muted)!important;}
-.milestone-ui .guide-project-detail-gantt .guide-preview-row>.guide-timeline-cell{background:var(--surface-soft);background-image:none;min-height:32px;}
-.milestone-ui .guide-project-detail-gantt .guide-gantt-group .guide-weekend,.milestone-ui .guide-project-detail-gantt .guide-preview-row .guide-weekend{display:none;}
+.milestone-ui :is(.guide-project-detail-gantt,.guide-personal-gantt) .guide-gantt-group>.guide-group-toggle{font-weight:var(--ui-font-weight-semibold);}
+.milestone-ui :is(.guide-project-detail-gantt,.guide-personal-gantt) .guide-gantt-group>.guide-timeline-cell{background:var(--ui-color-selection-soft);background-image:none;}
+.milestone-ui :is(.guide-project-detail-gantt,.guide-personal-gantt) .guide-preview-row>.guide-group-toggle{text-align:left;padding:6px 16px 6px 28px;font-weight:var(--ui-font-weight-regular);background:var(--surface-soft)!important;color:var(--muted)!important;}
+.milestone-ui :is(.guide-project-detail-gantt,.guide-personal-gantt) .guide-preview-row>.guide-timeline-cell{background:var(--surface-soft);background-image:none;min-height:32px;}
+.milestone-ui :is(.guide-project-detail-gantt,.guide-personal-gantt) .guide-gantt-group .guide-weekend,.milestone-ui :is(.guide-project-detail-gantt,.guide-personal-gantt) .guide-preview-row .guide-weekend{display:none;}
 .milestone-ui .guide-page-tabs button.active{background:var(--ui-color-selection-soft)!important;box-shadow:inset 0 -2px var(--accent);}
 .milestone-ui .guide-filter select,
 .milestone-ui .guide-search,
@@ -464,7 +469,18 @@ body.milestone-ui{--sidebar-rail:72px;}
 .milestone-ui .guide-timeline-bar{color:var(--text)!important;text-align:left;padding:0 4px;}
 .milestone-ui .guide-gantt-head .guide-gantt-info{align-items:center;padding-top:0;padding-bottom:0;}
 .milestone-ui .guide-team-gantt .guide-gantt-head .guide-gantt-info{grid-template-columns:1fr;}
-.milestone-ui .guide-gantt-dates{grid-template-rows:40px 42px;}
+.milestone-ui .guide-gantt-dates{grid-template-rows:30px 34px;}
+.milestone-ui .guide-gantt-week{padding:5px 0;}
+.milestone-ui .guide-outside-weeks{border:0;border-radius:0;background:transparent;}
+.milestone-ui .guide-gantt-header-stack{position:sticky;top:0;z-index:6;background:var(--bg,#fafafa);}
+.milestone-ui .guide-gantt-week-ribbon{min-height:30px;height:30px;border:0;}
+.milestone-ui .guide-gantt-week-spacer{position:sticky;left:0;z-index:3;background:var(--bg,#fafafa);}
+.milestone-ui .guide-gantt-weeks-outside{display:grid;grid-template-columns:repeat(var(--days),1fr);}
+.milestone-ui .guide-gantt-weeks-outside>.guide-gantt-week{border:0;display:flex;align-items:center;justify-content:center;padding:0;}
+.milestone-ui .guide-gantt-header-stack .guide-gantt-head{position:relative;top:auto;min-height:34px;border:1px solid var(--line);border-radius:var(--ui-radius-module) var(--ui-radius-module) 0 0;overflow:clip;}
+.milestone-ui .guide-gantt-header-stack .guide-gantt-dates{grid-template-rows:34px;}
+.milestone-ui .guide-outside-weeks .guide-gantt>.guide-gantt-row{border-left:1px solid var(--line);border-right:1px solid var(--line);}
+.milestone-ui .guide-outside-weeks .guide-gantt>.guide-gantt-row:last-child{border-bottom:1px solid var(--line);}
 .milestone-ui .guide-gantt-days .sunday small{color:inherit;}
 .milestone-ui .guide-gantt-days .saturday small{color:inherit;}
 .milestone-ui .guide-dashboard-week,.milestone-ui .guide-dashboard-week:has(.guide-dashboard-more){height:var(--calendar-week-height,80px);min-height:0;overflow:hidden;}
@@ -513,8 +529,8 @@ body.milestone-ui{--sidebar-rail:72px;}
 .milestone-ui [aria-invalid=true]{border-color:var(--danger);}
 .milestone-ui .readonly-related{display:block;text-align:left;white-space:normal;background:var(--surface-soft);color:var(--text);margin:8px 0;padding:10px;}
 .milestone-ui .task-readonly{line-height:1.6;overflow-wrap:anywhere;}
-.milestone-ui .guide-extra-filters{position:relative;}.milestone-ui .guide-extra-filters>summary{cursor:pointer;padding:10px 14px;border:1px solid var(--ui-color-control-border);border-radius:var(--ui-radius-control);font-size:var(--ui-font-body);}
-.milestone-ui .guide-extra-filters[open]>.guide-detail-filters{display:flex;flex-wrap:wrap;gap:10px;padding:12px;background:var(--surface);border:1px solid var(--ui-color-group-border);border-radius:var(--ui-radius-module);}
+.milestone-ui .guide-extra-filters{position:relative;flex:none;}.milestone-ui .guide-extra-filters>summary{cursor:pointer;padding:10px 14px;border:1px solid var(--ui-color-control-border);border-radius:var(--ui-radius-control);font-size:var(--ui-font-body);max-width:240px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.milestone-ui .guide-extra-filters[open]>.guide-detail-filters{position:absolute;top:calc(100% + 6px);left:var(--filter-panel-shift,0px);z-index:20;display:flex;flex-wrap:wrap;gap:10px;padding:12px;width:min(460px,calc(100vw - 32px));box-sizing:border-box;background:var(--surface);border:1px solid var(--ui-color-group-border);border-radius:var(--ui-radius-module);box-shadow:0 6px 18px #17254020;}
 .milestone-ui .guide-target-task{outline:2px solid var(--accent);outline-offset:-2px;}
 .milestone-ui .guide-task-title{font-size:var(--ui-font-body);padding:10px 4px;line-height:1.5;}
 .milestone-ui .guide-task-period,.milestone-ui .guide-assignee{color:var(--text);}
@@ -525,14 +541,22 @@ body.milestone-ui{--sidebar-rail:72px;}
 .milestone-ui .guide-dashboard-major .guide-dashboard-scroll{max-height:250px;flex:none;}
 .milestone-ui .guide-dashboard-sidebar>.guide-dashboard-panel:not(.guide-dashboard-major):not(.guide-dashboard-projects){min-height:300px;flex:none;}
 .milestone-ui .guide-dashboard-work-scroll{max-height:420px;flex:none;}
-.milestone-ui .guide-week-schedule-columns,.milestone-ui .guide-week-schedule-row{display:grid;grid-template-columns:100px minmax(0,1fr) 145px;gap:12px;align-items:center;padding:12px;width:100%;box-sizing:border-box;text-align:left;font-size:var(--ui-font-caption);}
+.milestone-ui .guide-week-schedule-columns,.milestone-ui .guide-week-schedule-row{display:grid;grid-template-columns:minmax(0,1fr) 145px;gap:12px;align-items:center;padding:12px;width:100%;box-sizing:border-box;text-align:left;font-size:var(--ui-font-caption);}
 .milestone-ui .guide-week-schedule-columns{background:var(--surface-soft);border-bottom:1px solid var(--line);}
-.milestone-ui .guide-week-schedule-list{max-height:60dvh;overflow-y:auto;overflow-x:hidden;}
+.milestone-ui .guide-week-schedule-list{max-height:min(48dvh,420px);overflow-y:auto;overflow-x:hidden;}
+.milestone-ui .guide-week-schedule-group-head{margin:0;padding:9px 12px;border-left:3px solid var(--project-color);background:var(--surface-soft);font-size:var(--ui-font-caption);font-weight:var(--ui-font-weight-semibold);}
+.milestone-ui .guide-week-schedule-columns>strong:last-child{text-align:right;}
 .milestone-ui .guide-week-schedule-row{border:0;border-bottom:1px solid var(--line);border-radius:0;background:var(--surface);color:var(--text);}
 .milestone-ui .guide-week-schedule-row:hover{background:var(--surface-soft);}
 .milestone-ui .guide-week-schedule-project,.milestone-ui .guide-week-schedule-title{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .milestone-ui .guide-week-schedule-period{white-space:nowrap;text-align:right;color:var(--muted);}
-@media(max-width:600px){.milestone-ui .guide-week-schedule-columns,.milestone-ui .guide-week-schedule-row{grid-template-columns:75px minmax(0,1fr) 125px;gap:6px;padding:10px 6px;}}
+@media(max-width:600px){.milestone-ui .guide-week-schedule-columns,.milestone-ui .guide-week-schedule-row{grid-template-columns:minmax(0,1fr) 125px;gap:6px;padding:10px 6px;}}
+.milestone-ui .guide-dashboard-my-work .guide-dashboard-task{display:grid;grid-template-columns:minmax(0,1fr) max-content;column-gap:12px;row-gap:4px;align-items:center;}
+.milestone-ui .guide-dashboard-my-work .guide-dashboard-task-meta,.milestone-ui .guide-dashboard-my-work .guide-dashboard-task-detail{display:contents;}
+.milestone-ui .guide-dashboard-my-work .guide-dashboard-project-label{grid-column:1;grid-row:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.milestone-ui .guide-dashboard-my-work .guide-dashboard-status{grid-column:2;grid-row:1;justify-self:end;}
+.milestone-ui .guide-dashboard-my-work .guide-dashboard-task-detail>strong{grid-column:1;grid-row:2;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.milestone-ui .guide-dashboard-my-work .guide-dashboard-task-detail>small{grid-column:2;grid-row:2;justify-self:end;text-align:right;line-height:1.5;}
 .milestone-ui .guide-dashboard-sidebar>.guide-dashboard-my-work{min-height:0!important;}
 .milestone-ui .guide-dashboard-my-work .guide-dashboard-work-scroll{max-height:258px;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;scrollbar-gutter:stable;}
 .milestone-ui .guide-dashboard-week,.milestone-ui .guide-dashboard-week:has(.guide-dashboard-more){min-height:110px;height:var(--calendar-week-height,110px);}

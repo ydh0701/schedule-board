@@ -90,6 +90,21 @@ function guideProjectCard(project,defaultExpanded){
   }
   return card;
 }
+// Shared project/personal schedule folds: completed above, three active rows, extra below.
+function guideAppendSchedulePreview(table,group,state,key,appendTask){
+  if(!state.completedExpanded)state.completedExpanded=new Set();
+  if(group.completed.length){
+    const opened=group.full||state.completedExpanded.has(key),row=el('div','guide-gantt-row guide-preview-row');
+    const toggle=button(`${opened?'⌄':'›'} 완료 · ${group.completed.length}건`,'guide-group-toggle',()=>{state.completedExpanded.has(key)?state.completedExpanded.delete(key):state.completedExpanded.add(key);rerender();});toggle.setAttribute('aria-expanded',String(opened));
+    row.append(toggle,guideTimelineCell(null,state));table.appendChild(row);if(opened)group.completed.forEach(appendTask);
+  }
+  (group.full?group.active:group.active.slice(0,MilestoneProjectModel.DETAIL_DISPLAY_POLICY.previewLimit)).forEach(appendTask);
+  if(!group.full&&group.remaining.length){
+    const opened=state.expanded.has(key),row=el('div','guide-gantt-row guide-preview-row'),label=group.remaining.some(task=>task.status==='in_progress')?'진행 중·대기':'대기';
+    const toggle=button(`${opened?'⌄':'›'} ${label} · ${group.remaining.length}건`,'guide-group-toggle',()=>{opened?state.expanded.delete(key):state.expanded.add(key);rerender();});toggle.setAttribute('aria-expanded',String(opened));
+    row.append(toggle,guideTimelineCell(null,state));table.appendChild(row);if(opened)group.remaining.forEach(appendTask);
+  }
+}
 function renderGuideProjectDetail(main,project){
   const state=guideDetailState(project.id),all=tasksForProject(project.id);
   if(!state.expanded)state.expanded=new Set();
@@ -117,18 +132,20 @@ function renderGuideProjectDetail(main,project){
     guideSelect('표시 기간',[[4,'4주'],[8,'8주'],[12,'12주']],String(state.weeks),value=>{state.weeks=Number(value);refresh();}));
   const end=localDate(state.start);end.setDate(end.getDate()+state.weeks*7-1);period.appendChild(el('span','guide-period-label',`${state.start} ~ ${dateKey(end)}`));
   if(canManageProjects()) period.appendChild(button('+ 업무 추가','primary tiny',()=>openTaskEditor(null,{projectId:project.id,platform:state.platform||project.platforms?.[0]})));
-  const extra=el('details','guide-extra-filters');extra.open=Boolean(state.filtersExpanded);extra.ontoggle=()=>state.filtersExpanded=extra.open;
+  const extra=el('details','guide-extra-filters');extra.open=Boolean(state.filtersExpanded);
+  const fitFilterPanel=()=>{if(!extra.open||!extra.isConnected)return;extra.style.setProperty('--filter-panel-shift','0px');const rect=secondary.getBoundingClientRect(),shift=rect.right>window.innerWidth-16?window.innerWidth-16-rect.right:rect.left<16?16-rect.left:0;extra.style.setProperty('--filter-panel-shift',shift+'px');};
+  extra.ontoggle=()=>{state.filtersExpanded=extra.open;if(extra.open)requestAnimationFrame(fitFilterPanel);};
   const applied=[state.platform?platformName(state.platform):'',state.assignee?userName(state.assignee):'',state.stage?project.stageSnapshots?.find(item=>item.id===state.stage)?.name:'',state.status==='all'?'완료 포함':state.status==='review'?'일정 재확인':''].filter(Boolean);
   extra.append(el('summary','',`필터${applied.length?' · '+applied.join(' · '):''}`),secondary);filters.appendChild(extra);
   if(state.platform||state.assignee||state.stage||state.department||state.query||state.status!=='all')filters.appendChild(button('초기화','ghost tiny',()=>{Object.assign(state,{platform:'',assignee:'',stage:'',department:'',query:'',status:'all'});refresh();}));
   tools.append(filters,period);main.appendChild(tools);
-  const target=el('div','guide-gantt-scroll');main.appendChild(target);
+  const target=el('div','guide-gantt-scroll guide-outside-weeks');main.appendChild(target);
   const draw=()=>{
     target.replaceChildren();
     const filtered=MilestoneProjectModel.filterTasks(all,state);
     if(!filtered.length){const empty=el('div','guide-empty');empty.append(el('h3','','표시할 업무가 없습니다.'),button('필터 초기화','ghost',()=>{Object.assign(state,{platform:'',department:'',assignee:'',stage:'',status:projectIsCompleted(project)?'all':'active',query:''});refresh();}));target.appendChild(empty);return;}
     const table=el('div','guide-gantt guide-project-detail-gantt');table.style.setProperty('--days',state.weeks*7);table.style.setProperty('--timeline-min',`${state.weeks*7*18}px`);
-    table.appendChild(guideTimelineHeader(state,['업무명','담당자','기간','상태']));
+    table.appendChild(guideTimelineHeader(state,['업무명','담당자','기간','상태'],true));
     const roleOrder=new Map((project.roleSnapshots||[]).map(role=>[role.id,Number(role.order||0)]));
     const topRoles=new Map([['video_partner',0],['business',1]]);
     const groups=MilestoneProjectModel.detailGroups(filtered,state,dateKey(todayDate()),state.expanded).sort((a,b)=>(topRoles.get(a.id)??2)-(topRoles.get(b.id)??2)||(roleOrder.get(a.id)??999)-(roleOrder.get(b.id)??999));
@@ -145,23 +162,7 @@ function renderGuideProjectDetail(main,project){
         info.append(taskName,el('span','guide-assignee',taskAssigneeName(task)),el('span','guide-task-period',range),el('span',`guide-status ${status.key}`,status.label));
         row.append(info,guideTimelineCell(task,state));table.appendChild(row);
       };
-      if(!closed){
-        if(group.completed.length){
-          const opened=group.full||state.completedExpanded.has(id),completed=el('div','guide-gantt-row guide-preview-row');
-          const toggle=button(`${opened?'⌄':'›'} 완료 · ${group.completed.length}건`,'guide-group-toggle',()=>{state.completedExpanded.has(id)?state.completedExpanded.delete(id):state.completedExpanded.add(id);draw();});toggle.setAttribute('aria-expanded',String(opened));
-          completed.append(toggle,guideTimelineCell(null,state));table.appendChild(completed);
-          if(opened)group.completed.forEach(appendTask);
-        }
-        // Always preview up to three active rows; extra rows are a separate fold below.
-        (group.full?group.active:group.active.slice(0,MilestoneProjectModel.DETAIL_DISPLAY_POLICY.previewLimit)).forEach(appendTask);
-        if(!group.full&&group.remaining.length){
-          const opened=state.expanded.has(id),more=el('div','guide-gantt-row guide-preview-row');
-          const label=group.remaining.some(task=>task.status==='in_progress')?'진행 중·대기':'대기';
-          const toggle=button(`${opened?'⌄':'›'} ${label} · ${group.remaining.length}건`,'guide-group-toggle',()=>{opened?state.expanded.delete(id):state.expanded.add(id);draw();});toggle.setAttribute('aria-expanded',String(opened));
-          more.append(toggle,guideTimelineCell(null,state));table.appendChild(more);
-          if(opened)group.remaining.forEach(appendTask);
-        }
-      }
+      if(!closed)guideAppendSchedulePreview(table,group,state,id,appendTask);
     });
     if(groups.some(group=>group.scheduled.length)){target.appendChild(table);}
     else target.appendChild(el('p','guide-empty','날짜가 설정된 업무가 없습니다. 아래 일정 미정 업무를 확인해주세요.'));
@@ -171,7 +172,7 @@ function renderGuideProjectDetail(main,project){
       groups.filter(group=>group.undated.length).forEach(group=>{const section=el('section','guide-undated-group');section.appendChild(el('h3','',`${guideRoleName(project,group.id)} · ${group.undated.length}건`));
         group.undated.forEach(task=>{const row=el('div','guide-undated-row'),title=button(`${task.title} · ${taskAssigneeName(task)}`,'guide-task-title',()=>openTaskEditor(task));row.dataset.taskId=task.id;title.dataset.focusTask=task.id;const status=MilestoneProjectModel.taskPresentation(task,dateKey(todayDate()));row.append(title,el('small','',task.startDate&&task.dueDate?'날짜 확인 필요':'일정 미정'),el('span',`guide-status ${status.key}`,status.label));section.appendChild(row);});details.appendChild(section);});target.appendChild(details);
     }
-  };draw();
+  };draw();if(extra.open)requestAnimationFrame(fitFilterPanel);
 }
 function guideTimelineCell(task,state){
   const cell=el('div','guide-timeline-cell');
@@ -184,12 +185,13 @@ function guideTimelineCell(task,state){
   if(position){const bar=button(task.startDate<state.start?'‹':'','guide-timeline-bar '+(task.status==='done'?'done':task.scheduleReview?'review':''),()=>openTaskEditor(task));bar.dataset.focusTask=task.id;bar.style.left=`${position.left}%`;bar.style.width=`${position.width}%`;bar.setAttribute('aria-label',`${task.title} ${task.startDate}부터 ${task.dueDate}까지`);bar.title=`${task.title} · ${task.startDate} ~ ${task.dueDate}`;cell.appendChild(bar);}
   return cell;
 }
-function guideTimelineHeader(state,labels){
+function guideTimelineHeader(state,labels,separateWeeks=false){
   const row=el('div','guide-gantt-head guide-gantt-row'),info=el('div','guide-gantt-info'),dates=el('div','guide-gantt-dates');
+  const weeks=separateWeeks?el('div','guide-gantt-weeks-outside'):dates;
   labels.forEach(label=>info.appendChild(el('strong','',label)));
   for(let week=0;week<state.weeks;week++){
     const from=localDate(state.start);from.setDate(from.getDate()+week*7);const until=new Date(from);until.setDate(until.getDate()+6);
-    dates.appendChild(el('strong','guide-gantt-week',`${from.getMonth()+1}/${from.getDate()} ~ ${until.getMonth()+1}/${until.getDate()}`));
+    weeks.appendChild(el('strong','guide-gantt-week',`${from.getMonth()+1}/${from.getDate()} ~ ${until.getMonth()+1}/${until.getDate()}`));
   }
   const days=el('div','guide-gantt-days');
   for(let i=0;i<state.weeks*7;i++){
@@ -198,7 +200,10 @@ function guideTimelineHeader(state,labels){
     if(dateKey(date)===dateKey(todayDate())){cell.classList.add('guide-today-date');cell.setAttribute('aria-current','date');cell.setAttribute('aria-label',`${dateKey(date)} 오늘`);cell.title+=' · 오늘';}
     days.appendChild(cell);
   }
-  dates.appendChild(days);row.append(info,dates);return row;
+  dates.appendChild(days);row.append(info,dates);
+  if(!separateWeeks)return row;
+  const header=el('div','guide-gantt-header-stack'),ribbon=el('div','guide-gantt-row guide-gantt-week-ribbon');
+  ribbon.append(el('div','guide-gantt-week-spacer'),weeks);header.append(ribbon,row);return header;
 }
 function refreshGuideProjectToday(){
   if(activeView!=='projects'||!selectedProjectId)return;
