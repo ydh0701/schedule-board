@@ -102,6 +102,15 @@
     const completedToday=tasks.filter(task=>task.status==='done'&&completionDate(task.completedAt)===today);
     return {attention:attention.sort((a,b)=>String(a.dueDate||'9999').localeCompare(String(b.dueDate||'9999'))),current:[...current,...completedToday],next,undated};
   }
+  function workProjectGroups(tasks,projects,today){
+    const projectMap=new Map(projects.map(project=>[project.id,project])),buckets=new Map();
+    tasks.forEach(task=>{if(!projectMap.has(task.projectId))return;if(!buckets.has(task.projectId))buckets.set(task.projectId,[]);buckets.get(task.projectId).push(task);});
+    return [...buckets].map(([id,items])=>{
+      const data=summary(items,today),active=[...data.current.filter(task=>task.status!=='done'),...data.attention,...data.next];
+      return {id,project:projectMap.get(id),active,visible:active.slice(0,DISPLAY_POLICY.summaryLimit),remaining:active.slice(DISPLAY_POLICY.summaryLimit),undated:data.undated,completedToday:data.current.filter(task=>task.status==='done')};
+    }).filter(group=>group.active.length||group.undated.length||group.completedToday.length)
+      .sort((a,b)=>String(a.project.code||a.project.name).localeCompare(String(b.project.code||b.project.name),'ko',{numeric:true}));
+  }
   function participation(projects,tasks,relatedIds=[]){
     return projects.filter(project=>project.status!=='archived' && project.status!=='completed' && (relatedIds.includes(project.id)||tasks.some(task=>task.projectId===project.id))).map(project=>{
       const own=tasks.filter(task=>task.projectId===project.id);
@@ -192,6 +201,6 @@
     }
     return result;
   }
-  const api={DISPLAY_POLICY,VIEW_OPTIONS,summary,participation,events,calendarWeeks,completionDate,shortDates,filterEvents,timeline,eventStatus,upcomingMajorEvents,personalMajorCandidates,selectedMajorTasks,readMajorSelection,writeMajorSelection,majorDateMarkers,markerLayout,markerGroups,teamOverview,teamIssueItems,relatedProjects,projectOverview,recentChanges};
+  const api={DISPLAY_POLICY,VIEW_OPTIONS,summary,workProjectGroups,participation,events,calendarWeeks,completionDate,shortDates,filterEvents,timeline,eventStatus,upcomingMajorEvents,personalMajorCandidates,selectedMajorTasks,readMajorSelection,writeMajorSelection,majorDateMarkers,markerLayout,markerGroups,teamOverview,teamIssueItems,relatedProjects,projectOverview,recentChanges};
   if(typeof module==='object'&&module.exports) module.exports=api;else root.MilestoneDashboardModel=api;
 })(typeof window!=='undefined'?window:globalThis);

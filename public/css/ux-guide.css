@@ -90,7 +90,6 @@ body.milestone-ui .app{width:100%;margin:0;padding:0;display:grid;grid-template-
 .milestone-ui .guide-filter select{max-width:190px;padding:7px 10px;min-height:36px;font-size:var(--ui-font-caption);}
 .milestone-ui .guide-period-label{font-size:var(--ui-font-caption);color:var(--muted);margin:0 4px;}
 .milestone-ui .guide-gantt-scroll{max-height:calc(100dvh - 370px);min-height:270px;overflow:auto;border:var(--ui-border-module) solid var(--line);border-radius:var(--ui-radius-module);background:var(--surface);}
-.milestone-ui.browser-fixture .guide-gantt-scroll{max-height:calc(100dvh - 424px);}
 .milestone-ui .guide-gantt{position:relative;min-width:calc(430px + var(--timeline-min));--row-height:48px;}
 .milestone-ui .guide-gantt-row{display:grid;grid-template-columns:430px minmax(var(--timeline-min),1fr);min-height:var(--row-height);border-bottom:1px solid #eceff3;}
 .milestone-ui .guide-gantt-info{position:sticky;left:0;z-index:3;display:grid;grid-template-columns:minmax(0,1fr) 82px 104px 58px;align-items:center;background:var(--surface);padding:0 12px;gap:8px;border-right:1px solid var(--line);font-size:var(--ui-font-caption);}
@@ -131,7 +130,7 @@ body.milestone-ui .app{width:100%;margin:0;padding:0;display:grid;grid-template-
 .milestone-ui .guide-personal-gantt .guide-gantt-group .guide-group-toggle{border-left:4px solid var(--project-color);}
 .milestone-ui .guide-team-tools{display:flex;flex-wrap:wrap;gap:12px;align-items:center;margin-bottom:18px;}.milestone-ui .guide-team-tools .guide-period{margin-left:auto;}
 .milestone-ui .guide-team-tools .guide-detail-filters{flex:1 1 auto;}.milestone-ui .guide-team-gantt{min-width:calc(280px + var(--timeline-min));}
-.milestone-ui .guide-team-scroll{max-height:calc(100dvh - 230px);}.milestone-ui.browser-fixture .guide-team-scroll{max-height:calc(100dvh - 284px);}
+.milestone-ui .guide-team-scroll{max-height:calc(100dvh - 230px);}
 .milestone-ui .guide-team-gantt .guide-gantt-row{grid-template-columns:280px minmax(var(--timeline-min),1fr);}
 .milestone-ui .guide-team-person-head,.milestone-ui .guide-team-person{position:sticky;left:0;z-index:4;background:var(--surface);border-right:1px solid var(--line);padding:16px 20px;}
 .milestone-ui .guide-team-person-head{display:flex;align-items:center;background:#fafbfd;font-size:var(--ui-font-body);font-weight:var(--ui-font-weight-bold);}
@@ -267,7 +266,6 @@ body.milestone-ui .app{width:100%;margin:0;padding:0;display:grid;grid-template-
 @media(max-width:900px){.milestone-ui .guide-dashboard-layout{grid-template-columns:300px minmax(360px,1fr);overflow:auto;}}
 @media(max-width:600px){.milestone-ui .guide-dashboard-layout{grid-template-columns:1fr;}.milestone-ui .guide-dashboard-sidebar{max-height:none;}.milestone-ui .guide-dashboard-calendar-panel{min-width:360px;}.milestone-ui .guide-dashboard-role-note{flex-wrap:wrap;}}
 .milestone-ui .guide-personal-scroll{max-height:calc(100dvh - 310px);}
-.milestone-ui.browser-fixture .guide-personal-scroll{max-height:calc(100dvh - 364px);}
 .milestone-ui .guide-preview-row{min-height:32px;}.milestone-ui .guide-preview-row .guide-group-toggle{font-size:var(--ui-font-caption);color:var(--accent)!important;background:var(--surface)!important;text-align:center;}
 .milestone-ui .modal-backdrop{background:#0006;backdrop-filter:none;}
 .milestone-ui .modal{background:var(--surface);border:var(--ui-border-module) solid var(--line);border-radius:var(--ui-radius-module);box-shadow:0 20px 70px color-mix(in srgb,var(--ui-color-module-shade) 14.509804%,transparent);}
@@ -362,7 +360,16 @@ body:has(.modal-backdrop){overflow:hidden;}
 @media(max-width:600px){.milestone-ui .project-create-basics{grid-template-columns:1fr;}.milestone-ui .sidebar-child{padding:12px 0;}.milestone-ui .sidebar-group summary:after{display:none;}.milestone-ui .guide-management-table-scroll:has(.guide-action-menu){overflow:auto;}}
 body.milestone-ui.sidebar-collapsed{--sidebar-width:72px;}.sidebar-collapsed .sidebar-brand{padding:22px;justify-content:center;}.sidebar-collapsed .sidebar-brand>span,.sidebar-collapsed .sidebar-link>span,.sidebar-collapsed .sidebar-section,.sidebar-collapsed .sidebar-bottom{display:none;}.sidebar-collapsed .sidebar-link{justify-content:center;padding:14px 0;}
 .milestone-ui .test-controls{padding:8px 16px;min-height:44px;gap:12px;flex-wrap:wrap;font-size:var(--ui-font-caption);}.milestone-ui .test-controls select{width:180px;min-height:32px;}.milestone-ui .test-controls button{min-height:32px;}
-.milestone-ui.browser-fixture .app{min-height:calc(100vh - 54px);}.milestone-ui.browser-fixture .app-sidebar{height:calc(100vh - 54px);min-height:calc(100vh - 54px);}
+.milestone-ui.browser-fixture .app{min-height:100dvh;}.milestone-ui.browser-fixture .app-sidebar{height:100dvh;min-height:100dvh;display:flex;flex-direction:column;}
+.milestone-ui.browser-fixture .guide-test-dock{margin-top:auto;padding:12px;flex-shrink:0;}
+.milestone-ui.browser-fixture .guide-test-dock>summary{cursor:pointer;padding:10px;border:1px solid #ffffff40;border-radius:var(--ui-radius-control);font-size:var(--ui-font-caption);color:var(--ui-color-on-strong);}
+.milestone-ui.browser-fixture .guide-test-dock .test-controls{display:flex;flex-direction:column;align-items:stretch;gap:8px;padding:12px;margin-top:8px;max-height:40dvh;overflow:auto;border-radius:var(--ui-radius-control);box-sizing:border-box;min-width:0;background:#fff3cd;color:#172540;font-size:var(--ui-font-caption);}
+.milestone-ui.browser-fixture .guide-test-dock .test-controls select,.milestone-ui.browser-fixture .guide-test-dock .test-controls button{width:100%;min-width:0;max-width:100%;box-sizing:border-box;white-space:normal;}
+.milestone-ui.browser-fixture .guide-test-dock .test-controls p{margin:0;line-height:1.5;}
+.milestone-ui.browser-fixture.sidebar-collapsed .guide-test-dock>summary>span{display:none;}
+.milestone-ui.browser-fixture.sidebar-collapsed .guide-test-dock>summary::after{content:'⚙';}
+.milestone-ui.browser-fixture.sidebar-collapsed .guide-test-dock[open] .test-controls{position:fixed;left:76px;bottom:12px;width:220px;z-index:50;box-shadow:0 6px 18px #17254020;}
+@media(max-width:600px){.milestone-ui.browser-fixture .guide-test-dock>summary>span{display:none;}.milestone-ui.browser-fixture .guide-test-dock>summary::after{content:'⚙';}.milestone-ui.browser-fixture .guide-test-dock[open] .test-controls{position:fixed;left:68px;bottom:12px;width:min(220px,calc(100vw - 80px));z-index:50;}}
 @media(max-width:900px){body.milestone-ui{--sidebar-width:180px;}.milestone-ui .app-workspace{padding:22px 18px;}.milestone-ui .sidebar-brand{padding:24px 15px;font-size:var(--ui-font-body);}.milestone-ui .sidebar-link{padding:14px 16px;font-size:var(--ui-font-body);}.milestone-ui .topbar h1{font-size:var(--ui-font-page-title-compact);}.milestone-ui .account-name{display:none;}.milestone-ui .guide-project-card-foot{align-items:flex-start;flex-direction:column;}.milestone-ui .guide-stage{min-width:110px;}}
 @media(max-width:600px){body.milestone-ui{--sidebar-width:64px;}.milestone-ui .sidebar-brand{justify-content:center;padding:20px 10px;}.milestone-ui .sidebar-brand>span,.milestone-ui .sidebar-link>span,.milestone-ui .sidebar-section,.milestone-ui .sidebar-bottom{display:none;}.milestone-ui .sidebar-link{justify-content:center;padding:14px 0;}.milestone-ui .app-workspace{padding:16px 12px;}.milestone-ui .topbar{flex-wrap:wrap;gap:6px;margin-bottom:16px;}.milestone-ui .topbar h1{font-size:var(--ui-font-page-title-compact);}.milestone-ui #accountActions .ghost{display:none;}.milestone-ui .guide-project-tools>.primary{margin-left:0;}.milestone-ui .guide-project-toggle{flex-wrap:wrap;gap:8px;padding:14px;}.milestone-ui .guide-project-name{font-size:var(--ui-font-caption);}.milestone-ui .guide-gantt-scroll{max-height:65vh;}.milestone-ui .project-create-form .staffing-grid{grid-template-columns:1fr;}.milestone-ui .guide-period-label{width:100%;}.milestone-ui .guide-detail-heading{flex-wrap:wrap;}.milestone-ui .modal{padding:18px;}}
 .assignment-impact-row{display:flex;align-items:flex-start;gap:8px;padding:8px 0;border-top:1px solid var(--guide-divider,#E3E3E3);font-size:14px;line-height:1.5;overflow-wrap:anywhere;}
@@ -557,6 +564,12 @@ body.milestone-ui{--sidebar-rail:72px;}
 .milestone-ui .guide-dashboard-my-work .guide-dashboard-status{grid-column:2;grid-row:1;justify-self:end;}
 .milestone-ui .guide-dashboard-my-work .guide-dashboard-task-detail>strong{grid-column:1;grid-row:2;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .milestone-ui .guide-dashboard-my-work .guide-dashboard-task-detail>small{grid-column:2;grid-row:2;justify-self:end;text-align:right;line-height:1.5;}
+.milestone-ui .guide-dashboard-work-projects{overflow:visible;}
+.milestone-ui .guide-dashboard-work-project>summary{padding:10px 16px;border-left:3px solid var(--project-color);border-bottom:1px solid var(--line);background:var(--surface-soft);font-size:var(--ui-font-caption);font-weight:var(--ui-font-weight-semibold);cursor:pointer;}
+.milestone-ui .guide-dashboard-work-project-more>summary{padding:8px 16px 8px 24px;color:var(--muted);font-size:var(--ui-font-caption);cursor:pointer;border-bottom:1px solid var(--line);}
+.milestone-ui .guide-dashboard-project-extra-list{max-height:260px;overflow-y:auto;}
+.milestone-ui .guide-dashboard-work-project .guide-dashboard-project-label{display:none;}
+.milestone-ui .guide-dashboard-work-project .guide-dashboard-task-detail>strong{grid-row:1 / span 2;}
 .milestone-ui .guide-dashboard-sidebar>.guide-dashboard-my-work{min-height:0!important;}
 .milestone-ui .guide-dashboard-my-work .guide-dashboard-work-scroll{max-height:258px;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;scrollbar-gutter:stable;}
 .milestone-ui .guide-dashboard-week,.milestone-ui .guide-dashboard-week:has(.guide-dashboard-more){min-height:110px;height:var(--calendar-week-height,110px);}

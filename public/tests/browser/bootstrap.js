@@ -1,3 +1,11 @@
+// Move the actual fixture controls; existing handlers and later opt-in buttons stay attached.
+const testControls=document.querySelector('.test-controls'),testSidebar=document.querySelector('.app-sidebar');
+if(testControls&&testSidebar){
+  const dock=document.createElement('details');dock.className='guide-test-dock';
+  const summary=document.createElement('summary');summary.title='샘플 테스트 도구';summary.setAttribute('aria-label','샘플 테스트 도구');
+  const label=document.createElement('span');label.textContent='테스트 도구';summary.appendChild(label);
+  dock.append(summary,testControls);testSidebar.appendChild(dock);
+}
 visibleUsers = [
   {id:'planning_lead',name:'테스트 기획팀장',departmentId:'planning',active:true,role:'lead'},
   {id:'admin',name:'테스트 관리자',departmentId:'planning',active:true,role:'admin'},
