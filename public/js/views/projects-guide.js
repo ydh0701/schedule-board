@@ -123,7 +123,7 @@ function renderGuideProjectDetail(main,project){
   }));if(actions.childElementCount)header.appendChild(actions);main.appendChild(header);
   const tools=el('div','guide-detail-tools guide-project-detail-tools'),filters=el('div','guide-detail-filters'),secondary=el('div','guide-detail-filters guide-detail-secondary-filters'),period=el('div','guide-period');
   const refresh=()=>rerender();
-  const roles=[...new Set(all.map(task=>task.departmentId))];
+  const roles=MilestoneProjectModel.orderedRoleIds(project,all.map(task=>task.departmentId));
   if(!Array.isArray(state.departments))state.departments=state.department?[state.department]:roles.slice();
   if(!Array.isArray(state.statuses))state.statuses=state.status==='all'?['progress','upcoming','done']:['progress','upcoming'];
   state.department='';state.assignee='';state.stage='';state.status='all';
@@ -143,8 +143,8 @@ function renderGuideProjectDetail(main,project){
   const extra=el('details','guide-extra-filters');extra.open=Boolean(state.filtersExpanded);
   const fitFilterPanel=()=>{if(!extra.open||!extra.isConnected)return;extra.style.setProperty('--filter-panel-shift','0px');const rect=secondary.getBoundingClientRect(),shift=rect.right>window.innerWidth-16?window.innerWidth-16-rect.right:rect.left<16?16-rect.left:0;extra.style.setProperty('--filter-panel-shift',shift+'px');};
   extra.ontoggle=()=>{state.filtersExpanded=extra.open;if(extra.open)requestAnimationFrame(fitFilterPanel);};
-  const summary=el('summary','');
-  function updateFilterSummary(){const selected=state.departments.length===roles.length?'전체 직군':state.departments.length?state.departments.map(id=>guideRoleName(project,id)).join(', '):'직군 선택 없음';const statuses=state.statuses.length===3?'전체 상태':state.statuses.map(id=>({progress:'진행 중',upcoming:'예정',done:'완료'})[id]).join(', ')||'상태 선택 없음';summary.textContent=`필터 · ${selected} · ${statuses}`;summary.title=summary.textContent;}
+  const summary=el('summary','','필터');
+  function updateFilterSummary(){const selected=state.departments.length===roles.length?'전체 직군':state.departments.length?roles.filter(id=>state.departments.includes(id)).map(id=>guideRoleName(project,id)).join(', '):'직군 선택 없음';const statuses=state.statuses.length===3?'전체 상태':state.statuses.map(id=>({progress:'진행 중',upcoming:'예정',done:'완료'})[id]).join(', ')||'상태 선택 없음';summary.title=`필터 · ${selected} · ${statuses}`;}
   updateFilterSummary();extra.append(summary,secondary);filters.appendChild(extra);
   const resetFilters=()=>{Object.assign(state,{platform:'',assignee:'',stage:'',department:'',departments:null,statuses:null,query:'',status:'all'});refresh();};
   filters.appendChild(button('초기화','ghost tiny',resetFilters));
@@ -156,9 +156,8 @@ function renderGuideProjectDetail(main,project){
     if(!filtered.length){const empty=el('div','guide-empty');empty.append(el('h3','','표시할 업무가 없습니다.'),button('필터 초기화','ghost',resetFilters));target.appendChild(empty);return;}
     const table=el('div','guide-gantt guide-project-detail-gantt');table.style.setProperty('--days',state.weeks*7);table.style.setProperty('--timeline-min',`${state.weeks*7*18}px`);
     table.appendChild(guideTimelineHeader(state,['업무명','담당자','기간','상태'],true));
-    const roleOrder=new Map((project.roleSnapshots||[]).map(role=>[role.id,Number(role.order||0)]));
-    const topRoles=new Map([['video_partner',0],['business',1]]);
-    const groups=MilestoneProjectModel.detailGroups(filtered,state,dateKey(todayDate()),state.expanded).sort((a,b)=>(topRoles.get(a.id)??2)-(topRoles.get(b.id)??2)||(roleOrder.get(a.id)??999)-(roleOrder.get(b.id)??999));
+    const roleOrder=new Map(roles.map((id,index)=>[id,index]));
+    const groups=MilestoneProjectModel.detailGroups(filtered,state,dateKey(todayDate()),state.expanded).sort((a,b)=>roleOrder.get(a.id)-roleOrder.get(b.id));
     groups.filter(group=>group.scheduled.length).forEach(group=>{
       const id=group.id;
       const closed=state.closed.has(id),row=el('div','guide-gantt-row guide-gantt-group');

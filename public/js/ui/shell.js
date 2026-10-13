@@ -63,7 +63,7 @@ function guideFitScrollAreas(){
     const weeks=target.querySelectorAll('.guide-dashboard-week').length;if(!weeks)return;
     const header=target.querySelector('.guide-dashboard-weekdays').getBoundingClientRect().height;
     const available=window.innerHeight-target.getBoundingClientRect().top-window.scrollY-header-40;
-    const height=Math.max(110,Math.floor(available/weeks));
+    const height=Math.max(window.innerWidth>800?48:110,Math.floor(available/weeks));
     target.style.setProperty('--calendar-week-height',`${height}px`);
     target.querySelectorAll('.guide-dashboard-week').forEach(row=>{
       const capacity=Math.max(0,Math.min(3,Math.floor((height-50)/(target.classList.contains('show-dates')?49:36))));
@@ -74,7 +74,9 @@ function guideFitScrollAreas(){
   });
   document.querySelectorAll('#main .guide-dashboard-layout:not(.guide-lead-dashboard) .guide-dashboard-sidebar').forEach(sidebar=>{
     if(window.innerWidth<=600){sidebar.style.removeProperty('height');return;}
-    sidebar.style.height=`${Math.max(300,window.innerHeight-sidebar.getBoundingClientRect().top-window.scrollY-40)}px`;
+    const available=Math.max(100,window.innerHeight-sidebar.getBoundingClientRect().top-window.scrollY-40);
+    sidebar.style.height=`${available}px`;
+    sidebar.style.setProperty('--dashboard-sidebar-height',`${available}px`);
   });
 }
 /* Tool dialogs float over content instead of inserting rows above the calendar. */

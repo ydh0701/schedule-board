@@ -82,7 +82,11 @@
     const mode=task.datePolicy==='anchor'?'기준 일정':task.dateOverride||task.scheduleMode==='manual'?'수동 일정':task.scheduleMode==='automatic'||task.generated?'자동 일정':'일정 방식 미지정';
     return {supportIds,dependencies,readiness,mode,locked:Boolean(task.dateLocked)};
   }
-  const api={stageSummary,filterTasks,filterProjects,timelinePosition,taskPresentation,taskDateRange,syncToday,detailGroups,taskDetailSummary,DETAIL_DISPLAY_POLICY};
+  function orderedRoleIds(project,ids){
+    const priority=new Map([['video_partner',0],['business',1],['development',2]]),order=new Map((project.roleSnapshots||[]).map(role=>[role.id,Number(role.order||0)]));
+    return [...new Set(ids)].sort((a,b)=>(priority.get(a)??3)-(priority.get(b)??3)||(order.get(a)??999)-(order.get(b)??999));
+  }
+  const api={stageSummary,filterTasks,filterProjects,timelinePosition,taskPresentation,taskDateRange,syncToday,detailGroups,taskDetailSummary,orderedRoleIds,DETAIL_DISPLAY_POLICY};
   if(typeof module==='object' && module.exports) module.exports=api;
   else root.MilestoneProjectModel=api;
 })(typeof window!=='undefined'?window:globalThis);
