@@ -24,6 +24,7 @@ function milestoneIcon(name){
   const path=document.createElementNS(icon.namespaceURI,'path');path.setAttribute('d',MILESTONE_ICONS[name]||MILESTONE_ICONS.projects);icon.appendChild(path);return icon;
 }
 function renderMilestoneNavigation(nav){
+  nav.closest('.app-sidebar')?.querySelector('.sidebar-bottom')?.remove();
   nav.innerHTML='';
   if(!currentProfile || !isApproved()) return;
   MILESTONE_NAVIGATION.filter(item=>item.visible()).forEach(item=>{

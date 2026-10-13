@@ -82,7 +82,6 @@ function loginScreen(main){
   logo.onerror = () => { logo.remove(); logoWrap.classList.add('logo-missing'); logoWrap.textContent = 'STORYTACO'; };
   logoWrap.appendChild(logo);
   intro.append(logoWrap, el('p', 'eyebrow', 'STORYTACO INTERNAL'), el('h2', '', '사내 일정 관리'));
-  intro.append(el('p', 'sub', '프로젝트와 실무 일정을 한곳에서 실시간으로 관리합니다.'));
   panel.appendChild(intro);
   const login = button('Google 계정으로 로그인', 'primary auth-login-button', requestGoogleLogin);
   wrap.append(panel, login, el('p', 'auth-help', '처음 로그인한 계정은 관리자 승인이 필요합니다.'));
@@ -112,7 +111,7 @@ function pendingScreen(main){
 function renderHome(main){
   if(typeof renderGuideDashboard==='function'&&document.body.classList.contains('milestone-ui')){renderGuideDashboard(main);return;}
   const intro = el('section', 'workspace-intro');
-  intro.append(el('p', 'eyebrow', 'STORYTACO WORKSPACE'), el('h2', '', '어떤 일정을 관리할까요?'), el('p', 'sub', '프로젝트 흐름과 팀 실무를 목적에 맞게 나누어 관리합니다.'));
+  intro.append(el('p', 'eyebrow', 'STORYTACO WORKSPACE'), el('h2', '', '어떤 일정을 관리할까요?'));
   const modules = el('div', 'workspace-modules');
   const open = view => { activeView = view; selectedProjectId = null; rerender(); };
   const project = button('', 'workspace-card project-workspace', () => open('projects'));
@@ -535,7 +534,6 @@ function renderProjectTaskList(main, project){
       grid.appendChild(cell);
     }
     calendar.appendChild(grid);
-    calendar.appendChild(el('p', 'foot-note', '날짜를 누르면 일정 조율에서 상세 업무를 확인합니다.'));
   };
   const moveCalendarToStageStart = stageTasks => {
     const first = stageTasks.map(task => task.startDate || task.dueDate).filter(Boolean).sort()[0];
@@ -586,7 +584,7 @@ function renderProjectTaskList(main, project){
 
 function renderProjectMilestoneList(main, project){
   const section = el('section', 'panel project-task-panel');
-  const head = el('div', 'section-title-row'); const copy = el('div', ''); copy.append(el('h2', '', '마일스톤'), el('p', 'sub', '고정 일정과 연결된 업무의 진행 상태를 확인합니다.')); head.append(copy);
+  const head = el('div', 'section-title-row'); const copy = el('div', ''); copy.append(el('h2', '', '마일스톤')); head.append(copy);
   if(canManageProjects()) head.appendChild(button('+ 마일스톤', 'tiny primary', () => openMilestoneEditor(null, project.id))); section.appendChild(head);
   const list = el('div', 'milestone-list');
   const items = milestonesForProject(project.id).sort((a,b) => String(a.dueDate).localeCompare(String(b.dueDate)));
@@ -601,7 +599,7 @@ function renderProjectMilestoneList(main, project){
 }
 
 function renderProjectHistory(main, project){
-  const section = el('section', 'panel project-task-panel'); section.append(el('h2', '', '변경 이력'), el('p', 'sub', '담당자 이관과 과부하 경고 확인 기록입니다.'));
+  const section = el('section', 'panel project-task-panel'); section.append(el('h2', '', '변경 이력'));
   const list = el('div', 'history-list');
   const items = assignmentHistory.filter(item => item.projectId === project.id).sort((a,b) => timestampMillis(b.changedAt) - timestampMillis(a.changedAt));
   if(!items.length) list.appendChild(el('div', 'empty', '아직 담당자 변경 이력이 없습니다.'));
@@ -1012,7 +1010,7 @@ function renderCapacity(main, list){
   nav.append(el('strong', '', `${fmtDate(dateKey(days[0]))} ~ ${fmtDate(dateKey(days[4]))}`));
   nav.appendChild(button('▶', 'tiny ghost', () => { capacityWeekCursor.setDate(capacityWeekCursor.getDate() + 7); rerender(); }));
   title.appendChild(nav); heading.append(title);
-  heading.append(el('p', 'sub', '예상 작업일을 업무 기간의 평일에 균등 배분합니다. 1일 초과 배정은 경고로 표시됩니다.')); main.appendChild(heading);
+  main.appendChild(heading);
   const assignees = [...new Set(list.flatMap(task => task.assigneeIds || task.assignees?.map(item => item.userId) || [task.assigneeId]).filter(Boolean))];
   const tableWrap = el('div', 'table-wrap panel'); const table = document.createElement('table');
   const thead = document.createElement('thead'); const headRow = document.createElement('tr');
@@ -1343,7 +1341,6 @@ function mountDialogForm(dialog,form){
 
 function openQuickTaskEditor(){
   const { dialog, close } = openDialog('빠른 개인 업무 추가');
-  dialog.append(el('p', 'sub', '프로젝트와 연결하지 않는 개인 실무를 바로 등록합니다. 프로젝트·마일스톤·지원 담당자가 필요하면 상세 업무 추가를 사용하세요.'));
   const form = el('form', 'form-grid');
   const title = inputField('업무명', '예: 회의 자료 정리');
   const due = inputField('완료 예정일', '', 'date'); due.input.value = dateKey(new Date());
@@ -1531,7 +1528,7 @@ function projectPeopleFields(project={},onClose){
   options(false,observerIds).forEach(([id,label])=>observers.select.add(new Option(label,id)));
   [...managers.select.options].forEach(option=>option.selected=managerIds.includes(option.value));
   [...observers.select.options].forEach(option=>option.selected=observerIds.includes(option.value));
-  const wrap=el('details','schedule-detail-group');wrap.append(el('summary','','프로젝트 참여·관리'),el('p','sub','직군 담당자는 자동 참여합니다. 추가 참여자는 전체 일정을 조회하고, 관리 담당자는 관리 대시보드에서 확인합니다.'),managers.wrap,observers.wrap);
+  const wrap=el('details','schedule-detail-group');wrap.append(el('summary','','프로젝트 참여·관리'),managers.wrap,observers.wrap);
   onClose(searchableTaskSelect(managers));onClose(searchableTaskSelect(observers));
   return {wrap,value:()=>({managerIds:[...managers.select.selectedOptions].map(option=>option.value),observerIds:[...observers.select.selectedOptions].map(option=>option.value)})};
 }
@@ -1789,7 +1786,6 @@ function openImportEditor(){
   if(!canManageProjects()){showToast('엑셀 이관은 PM 또는 관리자만 사용할 수 있습니다.','danger');return;}
   const { dialog, close } = openDialog('엑셀 업무 이관');
   dialog.classList.add('import-dialog');
-  dialog.append(el('p', 'sub', '파일을 분석한 뒤 오류 행을 먼저 확인합니다. 실제 저장은 미리보기를 확인한 뒤에만 실행됩니다.'));
   const input = document.createElement('input'); input.type = 'file'; input.accept = '.xlsx,.xls,.csv';
   const fileField = el('label', 'file-field'); fileField.append(el('span', '', '엑셀 또는 CSV 파일'), input);
   const sheetPicker = selectField('시트 선택', []); sheetPicker.wrap.hidden = true;
@@ -1819,7 +1815,7 @@ function openImportEditor(){
       ['assignee', '담당자', ['담당자', '작업자', '담당']], ['platform', '플랫폼', ['플랫폼']], ['department', '직군', ['직군', '부서', '분류']], ['status', '상태', ['상태', '진행 상태', '진행', '완료']],
       ['system', '시스템/화면', ['시스템', '화면', '영역']], ['buildVersion', '빌드 버전', ['빌드 버전', '버전']], ['taskGroup', '업무 묶음', ['업무 묶음', '세부내용', '분류', '단계']]
     ];
-    mappingBox.append(el('strong', '', '열 매핑'), el('p', 'foot-note', '자동 인식 결과가 맞지 않으면 원본 열을 직접 바꾸세요. 프로젝트와 업무명은 필수입니다.'));
+    mappingBox.append(el('strong', '', '열 매핑'));
     const grid = el('div', 'mapping-grid');
     fields.forEach(([key, label, aliases]) => {
       const detected = importColumn(headers, aliases); const field = selectField(label, [['-1', '연결하지 않음'], ...headers.map((header, index) => [String(index), `${String(header || '(빈 열)')} (${index + 1}열)`])]);
@@ -2178,35 +2174,9 @@ function openTaskEditor(task, initial = {}){
   start.input.onchange = () => { refreshDependencyWarning(); refreshAssignmentWarning(); };
   due.input.onchange = refreshAssignmentWarning;
   const basic = el('section', 'task-editor-section');
-  if(editing){form.appendChild(el('p','sub task-editor-context',`${projectCode(task)} · ${stage.select.selectedOptions[0]?.text||''} · ${departmentName(task.departmentId)}`));basic.append(title.wrap,assignee.wrap,status.wrap,start.wrap,due.wrap);}
+  if(editing){form.appendChild(el('p','sub task-editor-context',`${projectCode(task)} · ${stage.select.selectedOptions[0]?.text||''} · ${departmentName(task.departmentId)}`));basic.append(title.wrap,assignee.wrap,status.wrap,start.wrap,due.wrap,estimate.wrap);}
   else basic.append(title.wrap, project.wrap, stage.wrap, department.wrap, assignee.wrap, estimate.wrap, start.wrap, due.wrap, status.wrap);
-  const advanced = el('details', 'task-editor-advanced');
-  advanced.open = initial.showAdvanced === true;
-  advanced.appendChild(el('summary', '', '추가 설정'));
-  const advancedGrid = el('div', 'task-editor-advanced-grid');
-  if(editing)advancedGrid.append(estimate.wrap,project.wrap,stage.wrap,department.wrap);
-  advancedGrid.append(platform.wrap, progress.wrap, supportAssignees.wrap, milestone.wrap, dependsOn.wrap);
-  const advancedSummary=el('p','sub task-advanced-summary');
-  const refreshAdvancedSummary=()=>{
-    const parts=[];
-    if(supportAssignees.select.selectedOptions.length)parts.push(`지원 ${supportAssignees.select.selectedOptions.length}명`);
-    if(dependsOn.select.selectedOptions.length)parts.push(`선행 ${dependsOn.select.selectedOptions.length}개`);
-    if(milestone.select.value)parts.push('마일스톤 연결');advancedSummary.textContent=parts.join(' · ');advancedSummary.hidden=!parts.length;
-  };
-  [supportAssignees.select,dependsOn.select,milestone.select].forEach(select=>select.addEventListener('change',refreshAdvancedSummary));refreshAdvancedSummary();
-  advanced.appendChild(advancedGrid);
-  if(task?.scheduleSteps?.length || task?.readinessDependsOn?.length){
-    const connections=el('details','template-preview');connections.appendChild(el('summary','','착수 조건·후속 작업'));
-    taskDependencies(task).forEach(item=>connections.appendChild(el('p','sub',`${item.title} · ${item.status==='done'?'완료':'완료 확인 필요'}`)));
-    (task.scheduleSteps || []).forEach(step=>{
-      const dates=task.scheduleStepDates?.[step.id],row=el('section','task-editor-section');
-      row.append(el('strong','',step.title),el('p','',dates?.startDate ? `${dates.startDate} ~ ${dates.dueDate}` : '일정 미정'));
-      const titles=window.DependencyScheduler.dependencies({scheduleRule:step.scheduleRule}).map(id=>tasks.find(item=>item.id===id)?.title).filter(Boolean);
-      row.appendChild(el('p','sub',`선행: ${titles.join(' · ')}`));connections.appendChild(row);
-    });
-    advanced.appendChild(connections);
-  }
-  form.append(basic, dependencyWarning, assignmentWarning, capacityConfirmLabel, advancedSummary, advanced);
+  form.append(basic, dependencyWarning, assignmentWarning, capacityConfirmLabel);
   refreshDependencyWarning();
   refreshAssignmentWarning();
   const actions = el('div', 'form-actions'); actions.appendChild(button('저장', 'primary'));
@@ -2249,7 +2219,7 @@ function openTaskEditor(task, initial = {}){
     finally {taskSaving=false;releaseSaving();}
   };
   const dialogBody=mountDialogForm(dialog,form);
-  onClose(searchableTaskSelect(supportAssignees));onClose(searchableTaskSelect(dependsOn));protectDialogForm(form);
+  protectDialogForm(form);
   if(editing) renderTaskDiscussion(dialogBody, task.id, onClose);
 }
 

@@ -14,7 +14,7 @@ function renderGuideLeadDashboard(main){
   const mentionTabs=el('div','guide-page-tabs guide-mention-tabs');mentionTabs.setAttribute('role','tablist');mentionTabs.setAttribute('aria-label','멘션 대상');
   [['direct','나에게 온 멘션'],['all','@모두']].forEach(([id,label])=>{const tab=button(label,state.mentionTab===id?'active':'',()=>{state.mentionTab=id;rerender();});tab.setAttribute('role','tab');tab.setAttribute('aria-selected',String(id===state.mentionTab));mentionTabs.appendChild(tab);});
   mentions.appendChild(mentionTabs);
-  const empty=el('div','guide-mention-connection');empty.append(el('strong','','아직 연결되지 않았습니다.'),el('p','','Google Chat 연결 후 받은 멘션을 확인할 수 있습니다.'));
+  const empty=el('div','guide-mention-connection');empty.append(el('strong','','아직 연결되지 않았습니다.'));
   mentions.appendChild(empty);sidebar.appendChild(mentions);
   const teamIssues=MilestoneTeamModel.issuesFor(data.tasks,today,scope.map(user=>user.id));
   const issues=MilestoneDashboardModel.teamIssueItems(data.issues);

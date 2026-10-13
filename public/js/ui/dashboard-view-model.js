@@ -78,6 +78,13 @@
     const columns=months.map((month,index)=>{const from=Date.parse(month+'-01T00:00:00Z'),to=index+1<months.length?Date.parse(months[index+1]+'-01T00:00:00Z'):end.getTime();return {month,left:(from-first)/length*100,width:(to-from)/length*100};});
     return {months,columns,rows,startDate:key(first),endDate:key(new Date(end-86400000)),markers:majorDateMarkers(events,key(first),key(new Date(end-86400000)))};
   }
+  function timelineEvents(events,settings={}){
+    const query=String(settings.query||'').trim().toLocaleLowerCase();
+    return events.filter(event=>event.project.status!=='archived'&&(settings.includeCompleted||event.project.status!=='completed')&&(!query||[event.project.code,event.project.name].some(value=>String(value||'').toLocaleLowerCase().includes(query))));
+  }
+  function calendarEvents(events,settings={}){
+    return filterEvents(events,{query:settings.query,status:settings.includeCompleted===false?'active':'all',sort:'start'});
+  }
   function completionDate(value){
     if(!value)return '';
     if(typeof value==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(value))return value;
@@ -201,6 +208,6 @@
     }
     return result;
   }
-  const api={DISPLAY_POLICY,VIEW_OPTIONS,summary,workProjectGroups,participation,events,calendarWeeks,completionDate,shortDates,filterEvents,timeline,eventStatus,upcomingMajorEvents,personalMajorCandidates,selectedMajorTasks,readMajorSelection,writeMajorSelection,majorDateMarkers,markerLayout,markerGroups,teamOverview,teamIssueItems,relatedProjects,projectOverview,recentChanges};
+  const api={DISPLAY_POLICY,VIEW_OPTIONS,summary,workProjectGroups,participation,events,calendarWeeks,completionDate,shortDates,filterEvents,timeline,timelineEvents,calendarEvents,eventStatus,upcomingMajorEvents,personalMajorCandidates,selectedMajorTasks,readMajorSelection,writeMajorSelection,majorDateMarkers,markerLayout,markerGroups,teamOverview,teamIssueItems,relatedProjects,projectOverview,recentChanges};
   if(typeof module==='object'&&module.exports) module.exports=api;else root.MilestoneDashboardModel=api;
 })(typeof window!=='undefined'?window:globalThis);

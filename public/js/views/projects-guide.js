@@ -57,7 +57,7 @@ function renderGuideProjects(main){
     const active=matched.filter(project=>projectIsCompleted(project)===completed);
     count.textContent=`${label} ${active.length}개`;
     if(!active.length) {
-      const empty=el('div','guide-empty');empty.append(el('h3','',completed?'표시할 완료 프로젝트가 없습니다.':projects.length?'조건에 맞는 진행 프로젝트가 없습니다.':'첫 프로젝트를 만들어주세요.'),el('p','',completed?'완료 처리된 프로젝트를 이곳에서 확인할 수 있습니다. 검색어와 플랫폼 조건도 확인해주세요.':projects.length?'검색어와 플랫폼 조건을 확인해주세요.':'플랫폼과 직군별 담당자를 선택하면 기본 단계와 업무를 생성합니다.'));
+      const empty=el('div','guide-empty');empty.append(el('h3','',completed?'표시할 완료 프로젝트가 없습니다.':projects.length?'조건에 맞는 진행 프로젝트가 없습니다.':'등록된 프로젝트가 없습니다.'));
       if(guideProjectView.query||guideProjectView.platform)empty.appendChild(button('필터 초기화','ghost',()=>{Object.assign(guideProjectView,{query:'',platform:''});rerender();}));
       if(!completed&&!projects.length && canManageProjects()) empty.appendChild(button('프로젝트 생성','primary',openProjectCreator));drawTarget.appendChild(empty);
     }
@@ -174,7 +174,7 @@ function renderGuideProjectDetail(main,project){
       if(!closed)guideAppendSchedulePreview(table,group,state,id,appendTask);
     });
     if(groups.some(group=>group.scheduled.length)){target.appendChild(table);}
-    else target.appendChild(el('p','guide-empty','날짜가 설정된 업무가 없습니다. 아래 일정 미정 업무를 확인해주세요.'));
+    else target.appendChild(el('p','guide-empty','날짜가 설정된 업무가 없습니다.'));
     const undatedCount=groups.reduce((total,group)=>total+group.undated.length,0);
     if(undatedCount){
       const details=el('details','guide-personal-undated');details.open=Boolean(state.undatedExpanded||state.query.trim());details.ontoggle=()=>state.undatedExpanded=details.open;details.appendChild(el('summary','',`일정 미정 업무 · ${undatedCount}건`));

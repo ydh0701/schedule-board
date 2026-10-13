@@ -648,3 +648,19 @@ body.milestone-ui{--sidebar-rail:72px;}
 .milestone-ui .guide-undated-row>.guide-task-title{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;max-height:62px;word-break:normal;overflow-wrap:anywhere;}
 @media(max-width:1100px){.milestone-ui .guide-dashboard-layout{grid-template-columns:minmax(240px,30%) minmax(0,1fr);overflow:visible;}.milestone-ui .guide-dashboard-toolbar{flex-wrap:wrap;}}
 @media(max-width:800px){.milestone-ui .guide-dashboard-layout{grid-template-columns:1fr;}.milestone-ui .guide-dashboard-calendar-panel{min-width:0;}}
+/* Shared toolbar sizing: search, actions and date navigation share one center line. */
+.milestone-ui{--ui-toolbar-control-height:38px;}
+.milestone-ui :is(.guide-detail-tools,.guide-team-tools,.guide-project-tools,.guide-dashboard-month-controls){align-items:center;column-gap:8px;row-gap:8px;}
+.milestone-ui :is(.guide-detail-filters,.guide-period,.guide-dashboard-tools){align-items:center;gap:8px;}
+.milestone-ui :is(.guide-detail-tools,.guide-team-tools,.guide-project-tools,.guide-dashboard-month-controls) .guide-search{height:var(--ui-toolbar-control-height);box-sizing:border-box;margin-block:0;}
+.milestone-ui :is(.guide-detail-tools,.guide-team-tools,.guide-project-tools,.guide-dashboard-month-controls) button:not(.guide-team-link){height:var(--ui-toolbar-control-height);min-height:var(--ui-toolbar-control-height);box-sizing:border-box;padding-block:0;display:inline-flex;align-items:center;justify-content:center;font-size:var(--ui-font-control);line-height:1.2;white-space:nowrap;}
+.milestone-ui :is(.guide-detail-tools,.guide-team-tools,.guide-project-tools,.guide-dashboard-month-controls) .guide-filter select{height:var(--ui-toolbar-control-height);min-height:var(--ui-toolbar-control-height);box-sizing:border-box;padding-block:0;font-size:var(--ui-font-control);}
+.milestone-ui .guide-extra-filters>summary{height:var(--ui-toolbar-control-height);box-sizing:border-box;line-height:calc(var(--ui-toolbar-control-height) - 2px);padding:0 12px;}
+.milestone-ui .guide-dashboard-tools>.guide-dashboard-tool{padding-inline:10px;}
+.milestone-ui .guide-dashboard-month-controls>.guide-dashboard-month-arrow{width:32px;padding:0;font-size:var(--ui-font-heading-5);}
+.milestone-ui .guide-dashboard-month-controls>.guide-dashboard-today{padding-inline:18px;}
+.milestone-ui .guide-dashboard-month-controls h2{line-height:var(--ui-toolbar-control-height);margin-block:0;}
+.milestone-ui .guide-project-detail-tools>.guide-detail-filters{flex:0 0 auto;flex-wrap:nowrap;}
+.milestone-ui .guide-dashboard-tools{flex-wrap:nowrap;}
+.milestone-ui .guide-dashboard-completed-toggle{display:flex;align-items:center;gap:6px;min-height:var(--ui-toolbar-control-height);white-space:nowrap;font-size:var(--ui-font-caption);cursor:pointer;}
+@media(min-width:801px) and (max-width:1400px){.milestone-ui .guide-dashboard-tools .guide-search{min-width:120px;width:140px;}.milestone-ui .guide-dashboard-tools>.guide-dashboard-tool{padding-inline:8px;font-size:var(--ui-font-caption);}.milestone-ui .guide-dashboard-month-controls{gap:6px;}}

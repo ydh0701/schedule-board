@@ -66,7 +66,7 @@ function renderGuidePersonal(main){
     target.replaceChildren();
     const groups=MilestonePersonalModel.groups(all,projects,state,dateKey(todayDate()),state.expanded);
     const colors=guideProjectColorScope(groups.map(group=>group.project));
-    if(!groups.length){const empty=el('div','guide-empty');empty.append(el('h3','',all.length?'조건에 맞는 업무가 없습니다.':'배정된 프로젝트 업무가 없습니다.'),el('p','','담당자로 지정되거나 지원 업무에 참여하면 여기에 표시됩니다.'));
+    if(!groups.length){const empty=el('div','guide-empty');empty.append(el('h3','',all.length?'조건에 맞는 업무가 없습니다.':'배정된 프로젝트 업무가 없습니다.'));
       if(all.length) empty.appendChild(button('필터 초기화','ghost',()=>{Object.assign(state,{project:'',platform:'',status:'all',query:''});refresh();}));target.appendChild(empty);return;}
     const table=el('div','guide-gantt guide-personal-gantt');table.style.setProperty('--days',state.weeks*7);table.style.setProperty('--timeline-min',`${state.weeks*7*18}px`);
     table.appendChild(guideTimelineHeader(state,['업무명','기간','상태'],true));
@@ -85,7 +85,7 @@ function renderGuidePersonal(main){
       guideAppendSchedulePreview(table,group,state,group.key,appendTask);
     });
     if(groups.some(group=>group.scheduled.length)){target.appendChild(table);}
-    else target.appendChild(el('p','guide-empty','날짜가 설정된 업무가 없습니다. 아래 일정 미정 업무에서 날짜를 설정할 수 있습니다.'));
+    else target.appendChild(el('p','guide-empty','날짜가 설정된 업무가 없습니다.'));
     const undatedCount=groups.reduce((total,group)=>total+group.undated.length,0);
     if(undatedCount){
       const details=el('details','guide-personal-undated');details.open=Boolean(state.undatedExpanded||state.query.trim());details.ontoggle=()=>{state.undatedExpanded=details.open;};

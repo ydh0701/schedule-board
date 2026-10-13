@@ -37,13 +37,13 @@ function renderGuideAssignmentHistory(main){
 function renderGuideImportManagement(main){
   if(!canManageProjects()){main.appendChild(el('p','guide-empty','관리 화면을 볼 권한이 없습니다.'));return;}
   const panel=el('section','guide-dashboard-panel'),head=el('div','guide-dashboard-panel-head');
-  const intro=el('div','guide-management-intro');intro.append(el('h2','','엑셀 이관'),el('p','guide-management-copy','엑셀·CSV 분석 → 열 연결·오류 확인 → 미리보기 → 이관. 미리보기만으로 저장되지 않습니다.'));
+  const intro=el('div','guide-management-intro');intro.append(el('h2','','엑셀 이관'));
   head.append(intro,button('파일 가져오기','primary',openImportEditor));panel.appendChild(head);main.appendChild(panel);
   const imported=activeTasks().filter(task=>task.importBatchId),groups=new Map();
   imported.forEach(task=>{const id=task.importBatchId;if(!groups.has(id))groups.set(id,{source:task.importSource||'출처 미기록',count:0,projects:new Set()});const item=groups.get(id);item.count++;item.projects.add(task.projectId);});
   const status=el('section','guide-dashboard-panel guide-management-section');status.appendChild(el('h2','','이관된 업무 현황'));
   status.appendChild(guideManagementTable(['이관 묶음','원본 파일','프로젝트 수','현재 업무 수'],[...groups].sort(([a],[b])=>b.localeCompare(a)).map(([id,item])=>[id,item.source,item.projects.size,item.count])));
-  status.appendChild(el('p','guide-management-copy','현재 남아 있는 이관 업무를 기준으로 집계합니다. 삭제·보관된 업무나 실패한 이관 기록은 포함하지 않습니다. 오류는 파일 분석 화면에서 확인합니다.'));main.appendChild(status);
+  main.appendChild(status);
 }
 function guideMajorRows(state,records,projectRecords){
   const projectMap=new Map(projectRecords.map(project=>[project.id,project])),query=String(state.query||'').trim().toLocaleLowerCase();
@@ -109,7 +109,7 @@ async function renderGuideTemplateManagement(main){
     if(!catalog.templates.some(template=>template.id===state.selected))state.selected=catalog.templates[0]?.id||'';
     const template=catalog.templates.find(item=>item.id===state.selected);if(!template)return;
     const head=el('div','guide-dashboard-panel-head guide-template-head');head.append(el('h2','',template.name),guideSelect('템플릿 선택',catalog.templates.map(template=>[template.id,`${template.name} · v${template.version}`]),state.selected,value=>{state.selected=value;rerender();}));target.appendChild(head);
-    target.appendChild(el('p','guide-management-copy','조회 전용 · 변경은 JSON 테이블에서 진행하며 기존 프로젝트는 생성 당시 구성을 유지합니다.'));
+    target.appendChild(el('p','guide-management-copy','조회 전용'));
     head.appendChild(el('span','guide-management-meta',`${catalog.platforms.find(item=>item.id===template.platformId)?.name||template.platformId} · ${template.status==='active'&&template.active!==false?'사용 중':'초안 또는 미사용'}`));
     const tabs=el('div','guide-page-tabs guide-management-tabs');tabs.setAttribute('role','tablist');tabs.setAttribute('aria-label','템플릿 항목');
     [['stages','단계'],['tasks','기본 업무'],['rules','일정 연결 규칙']].forEach(([id,label])=>{const tab=button(label,state.tab===id?'active':'',()=>{state.tab=id;rerender();});tab.setAttribute('role','tab');tab.setAttribute('aria-selected',String(state.tab===id));tabs.appendChild(tab);});target.appendChild(tabs);
