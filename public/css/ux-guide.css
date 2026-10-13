@@ -607,8 +607,8 @@ body.milestone-ui{--sidebar-rail:72px;}
   .milestone-ui .guide-dashboard-layout:has(.guide-dashboard-my-work)>.guide-dashboard-sidebar{height:var(--dashboard-sidebar-height,calc(100dvh - 200px))!important;overflow:hidden;}
   .milestone-ui .guide-dashboard-layout:has(.guide-dashboard-my-work) .guide-dashboard-major{max-height:40%;min-height:0;flex:0 1 auto;}
   .milestone-ui .guide-dashboard-layout:has(.guide-dashboard-my-work) .guide-dashboard-major .guide-dashboard-scroll{flex:1;min-height:0;max-height:none;overflow:auto;}
-  .milestone-ui .guide-dashboard-layout:has(.guide-dashboard-my-work)>.guide-dashboard-sidebar>.guide-dashboard-my-work{flex:1;min-height:0;}
-  .milestone-ui .guide-dashboard-my-work .guide-dashboard-work-projects{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;scrollbar-gutter:stable;}
+  .milestone-ui .guide-dashboard-layout:has(.guide-dashboard-my-work)>.guide-dashboard-sidebar>.guide-dashboard-my-work{flex:0 1 auto;min-height:0;}
+  .milestone-ui .guide-dashboard-my-work .guide-dashboard-work-projects{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;scrollbar-gutter:auto;}
   .milestone-ui .guide-dashboard-calendar>.guide-dashboard-week,.milestone-ui .guide-dashboard-calendar>.guide-dashboard-week:has(.guide-dashboard-more){min-height:0;}
 }
 .milestone-ui .guide-dashboard-work-project>summary{padding:10px 16px;border-left:3px solid var(--project-color);border-bottom:1px solid var(--line);background:var(--surface-soft);font-size:var(--ui-font-caption);font-weight:var(--ui-font-weight-semibold);cursor:pointer;}
