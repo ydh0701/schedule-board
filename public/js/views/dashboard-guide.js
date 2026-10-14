@@ -158,7 +158,12 @@ function guideDashboardSchedule(calendar,allEvents,state,today,options={}){
   const filtered=Boolean(timelineMode?state.timelineQuery:state.query);
   applied.replaceChildren();applied.hidden=!filtered;
   if(filtered)applied.append(el('span','',timelineMode?`프로젝트 ${new Set(events.map(event=>event.project.id)).size}개`:`결과 ${events.length}건`),button('조건 초기화','guide-team-link',()=>{if(timelineMode)state.timelineQuery='';else state.query='';rerender();}));
-  if(timelineMode){const data=MilestoneDashboardModel.timeline(events,state.timelineStart,state.timelineMonths||GUIDE_TIMELINE_DEFAULT_MONTHS,'start');colors.setOrder(data.rows.map(row=>row.project));heading.textContent=`${data.months[0].replace('-','년 ')}월 ~ ${data.months.at(-1).replace('-','년 ')}월`;renderGuideDashboardTimeline(content,data,{...state,fields:{project:true,title:true,dates:false}},today,colors);return;}
+  if(timelineMode){
+    // Use the accessible project's full stage periods, not just the viewer's assigned tasks.
+    const projectMap=new Map(events.map(event=>[event.project.id,event.project])),periodEvents=[...events];
+    projectMap.forEach(project=>tasksForProject(project.id).forEach(task=>{if(task.startDate&&task.dueDate&&task.startDate<=task.dueDate)periodEvents.push({project,task,kind:'task',startDate:task.startDate,dueDate:task.dueDate});}));
+    const data=MilestoneDashboardModel.timeline(periodEvents,state.timelineStart,state.timelineMonths||GUIDE_TIMELINE_DEFAULT_MONTHS,'start');colors.setOrder(data.rows.map(row=>row.project));heading.textContent=`${data.months[0].replace('-','년 ')}월 ~ ${data.months.at(-1).replace('-','년 ')}월`;renderGuideDashboardTimeline(content,data,{...state,fields:{project:true,title:true,dates:false}},today,colors);return;
+  }
   heading.textContent=`${state.month.slice(0,4)}년 ${Number(state.month.slice(5))}월`;
   const grid=el('div','guide-dashboard-calendar');grid.setAttribute('aria-label',options.label||'내 업무와 참여 프로젝트 주요 일정 달력');
   const weekday=el('div','guide-dashboard-weekdays');['일','월','화','수','목','금','토'].forEach(label=>weekday.appendChild(el('strong','',label)));grid.appendChild(weekday);
@@ -220,10 +225,24 @@ function renderGuideDashboardTimeline(content,data,state,today,colors=guideProje
   const months=el('div','guide-dashboard-timeline-months');data.columns.forEach(column=>{const label=el('span','',`${column.month.slice(2,4)}년 ${Number(column.month.slice(5))}월`);label.style.width=`${column.width}%`;months.appendChild(label);const line=el('div','guide-dashboard-month-line');line.style.left=`${column.left}%`;timeline.appendChild(line);});timeline.appendChild(months);
   const markerRow=el('div','guide-dashboard-timeline-markers');markerRow.setAttribute('aria-label','등록된 주요 날짜');
   timeline.appendChild(markerRow);
-  data.rows.forEach(row=>{const track=el('div','guide-dashboard-timeline-row'),bar=button('','guide-dashboard-project-period',()=>setView('projects',row.project.id));bar.style.left=`${row.left}%`;bar.style.width=`${row.width}%`;colors.apply(bar,row.project);
-    if(state.fields.project)bar.appendChild(el('strong','',row.project.code||row.project.name));if(state.fields.title)bar.appendChild(el('small','',row.project.name));if(state.fields.dates)bar.appendChild(el('small','',MilestoneDashboardModel.shortDates(row.startDate,row.dueDate,today)));
-    bar.title=`${row.project.name} · 조회 가능한 일정 ${row.startDate} ~ ${row.dueDate}`;bar.setAttribute('aria-label',bar.title);
-    track.appendChild(bar);timeline.appendChild(track);});
+  data.rows.forEach(row=>{
+    const track=el('section','guide-dashboard-stage-project'),items=tasksForProject(row.project.id),stages=MilestoneProjectModel.stageSummary(row.project,items);
+    colors.apply(track,row.project);
+    const heading=button(`${row.project.code||row.project.name} · ${row.project.name}`,'guide-dashboard-stage-heading',()=>setView('projects',row.project.id));
+    heading.appendChild(el('span','guide-current-stage',MilestoneProjectModel.currentStageLabel(row.project,items)));track.appendChild(heading);
+    const days=Math.round((Date.parse(data.endDate+'T00:00:00Z')-Date.parse(data.startDate+'T00:00:00Z'))/86400000)+1;
+    stages.forEach(stage=>{
+      const lane=el('div','guide-dashboard-stage-lane'),label=el('span',`guide-dashboard-stage-label ${stage.state}`,stage.name);
+      label.title=`${stage.name} · ${stage.done}/${stage.total} 완료`;lane.appendChild(label);
+      const position=MilestoneProjectModel.timelinePosition(stage,data.startDate,days);
+      if(position){
+        const bar=button('','guide-dashboard-stage-bar '+stage.state,()=>setView('projects',row.project.id));bar.style.left=`${position.left}%`;bar.style.width=`${position.width}%`;
+        bar.title=`${stage.name} · ${stage.startDate} ~ ${stage.dueDate} · ${stage.done}/${stage.total} 완료`;bar.setAttribute('aria-label',bar.title);
+        bar.appendChild(el('span','',MilestoneDashboardModel.shortDates(stage.startDate,stage.dueDate,today)));lane.appendChild(bar);
+      }else lane.appendChild(el('small','guide-dashboard-stage-empty',stage.startDate?'조회 기간 밖':'일정 미정'));
+      track.appendChild(lane);
+    });timeline.appendChild(track);
+  });
   if(!data.rows.length)timeline.appendChild(el('p','guide-dashboard-empty','선택한 기간과 조건에 맞는 프로젝트 일정이 없습니다.'));scroll.appendChild(timeline);content.appendChild(scroll);
   const updateLabels=()=>{
     markerRow.replaceChildren();

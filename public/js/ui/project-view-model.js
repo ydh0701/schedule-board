@@ -6,12 +6,19 @@
     const result=stages.map(stage=>{
       const items=tasks.filter(task=>stage.id==='all' || (task.stageId || task.phaseId)===stage.id);
       const done=items.filter(task=>task.status==='done').length;
-      const dates=items.flatMap(task=>[task.startDate,task.dueDate]).filter(Boolean).sort();
+      const dates=items.filter(task=>task.startDate&&task.dueDate&&task.startDate<=task.dueDate&&Number.isFinite(Date.parse(task.startDate))&&Number.isFinite(Date.parse(task.dueDate))).flatMap(task=>[task.startDate,task.dueDate]).sort();
       return {...stage,total:items.length,done,progress:items.length?Math.round(done/items.length*100):0,startDate:dates[0]||null,dueDate:dates.at(-1)||null,state:items.length && done===items.length?'done':'upcoming'};
     });
-    const current=result.find(stage=>stage.state!=='done' && tasks.some(task=>(task.stageId||task.phaseId)===stage.id && task.status==='in_progress')) || result.find(stage=>stage.total && stage.state!=='done');
-    if(current) current.state='current';
+    result.forEach(stage=>{if(stage.state!=='done'&&tasks.some(task=>(stage.id==='all'||(task.stageId||task.phaseId)===stage.id)&&task.status==='in_progress'))stage.state='current';});
     return result;
+  }
+  function currentStageLabel(project,tasks){
+    const stages=stageSummary(project,tasks),current=stages.filter(stage=>stage.state==='current');
+    if(project.status==='completed'||stages.length&&stages.every(stage=>stage.state==='done'))return '전체 완료';
+    return current.length?'진행 단계 · '+current.map(stage=>stage.name).join(' / '):'진행 단계 미확인';
+  }
+  function dragRangeDays(delta,width,days){
+    return Number.isFinite(delta)&&width>0&&days>0&&Math.abs(delta)>=6?Math.round(-delta/width*days):0;
   }
   function filterTasks(tasks, filters={}){
     const q=String(filters.query || '').trim().toLocaleLowerCase();
@@ -86,7 +93,7 @@
     const priority=new Map([['video_partner',0],['business',1],['development',2]]),order=new Map((project.roleSnapshots||[]).map(role=>[role.id,Number(role.order||0)]));
     return [...new Set(ids)].sort((a,b)=>(priority.get(a)??3)-(priority.get(b)??3)||(order.get(a)??999)-(order.get(b)??999));
   }
-  const api={stageSummary,filterTasks,filterProjects,timelinePosition,taskPresentation,taskDateRange,syncToday,detailGroups,taskDetailSummary,orderedRoleIds,DETAIL_DISPLAY_POLICY};
+  const api={stageSummary,currentStageLabel,dragRangeDays,filterTasks,filterProjects,timelinePosition,taskPresentation,taskDateRange,syncToday,detailGroups,taskDetailSummary,orderedRoleIds,DETAIL_DISPLAY_POLICY};
   if(typeof module==='object' && module.exports) module.exports=api;
   else root.MilestoneProjectModel=api;
 })(typeof window!=='undefined'?window:globalThis);

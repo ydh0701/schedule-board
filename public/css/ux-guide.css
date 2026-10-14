@@ -670,3 +670,18 @@ body.milestone-ui{--sidebar-rail:72px;}
 .milestone-ui .guide-dashboard-tools{flex-wrap:nowrap;}
 .milestone-ui .guide-dashboard-completed-toggle{display:flex;align-items:center;gap:6px;min-height:var(--ui-toolbar-control-height);white-space:nowrap;font-size:var(--ui-font-caption);cursor:pointer;}
 @media(min-width:801px) and (max-width:1400px){.milestone-ui .guide-dashboard-tools .guide-search{min-width:120px;width:140px;}.milestone-ui .guide-dashboard-tools>.guide-dashboard-tool{padding-inline:8px;font-size:var(--ui-font-caption);}.milestone-ui .guide-dashboard-month-controls{gap:6px;}}
+.milestone-ui .guide-range-drag{cursor:grab;touch-action:pan-y;user-select:none;}
+.milestone-ui .guide-range-drag.is-dragging{cursor:grabbing;background:color-mix(in srgb,var(--accent) 8%,white);}
+.milestone-ui .guide-range-drag:focus-visible{outline:2px solid var(--accent);outline-offset:-2px;}
+.milestone-ui .guide-current-stage{font-size:var(--ui-font-caption);font-weight:600;color:var(--accent);white-space:normal;}
+.milestone-ui .guide-detail-tools,.milestone-ui .guide-team-tools,.milestone-ui .guide-dashboard-month-controls{padding:10px 12px;border:1px solid var(--line);border-radius:var(--ui-radius-module);background:var(--surface);gap:12px;}
+.milestone-ui .guide-dashboard-stage-project{position:relative;margin:12px 0;padding:8px 0;border-bottom:1px solid var(--line);}
+.milestone-ui .guide-dashboard-stage-heading{display:flex;align-items:center;flex-wrap:wrap;gap:12px;width:100%;text-align:left;background:white;border:0;padding:6px 8px;font-weight:700;color:var(--text);}
+.milestone-ui .guide-dashboard-stage-lane{position:relative;height:28px;margin:3px 0;}
+.milestone-ui .guide-dashboard-stage-label{position:relative;z-index:2;display:inline-block;max-width:42%;padding:4px 6px;background:color-mix(in srgb,white 92%,transparent);border-radius:4px;font-size:var(--ui-font-caption);pointer-events:none;}
+.milestone-ui .guide-dashboard-stage-label.current{font-weight:700;color:var(--accent);}
+.milestone-ui .guide-dashboard-stage-bar{position:absolute;top:0;height:28px;min-width:0;overflow:hidden;text-align:right;border:0;border-left:2px solid var(--project-color);border-radius:3px;background:color-mix(in srgb,var(--project-color) 24%,white);padding:4px 6px;color:var(--text);}
+.milestone-ui .guide-dashboard-stage-bar.current{background:color-mix(in srgb,var(--project-color) 40%,white);outline:1px solid var(--project-color);}
+.milestone-ui .guide-dashboard-stage-bar.done{background:#e3e6eb;border-left-color:#929ba9;}
+.milestone-ui .guide-dashboard-stage-bar span{font-size:var(--ui-font-micro);white-space:nowrap;}
+.milestone-ui .guide-dashboard-stage-empty{float:right;padding:5px 8px;color:var(--muted);}

@@ -74,6 +74,7 @@ function guideProjectCard(project,defaultExpanded){
   toggle.setAttribute('aria-label',`${project.code||project.name} 단계 ${expanded?'접기':'펼치기'}`);
   toggle.append(el('strong','',project.code||project.name),el('span','guide-project-name',project.code?project.name:''));
   const platforms=el('span','guide-platforms',(project.platforms||[]).map(platformName).join(' / '));toggle.appendChild(platforms);
+  toggle.appendChild(el('span','guide-current-stage',MilestoneProjectModel.currentStageLabel(project,items)));
   const chevron=el('span','guide-chevron');chevron.setAttribute('aria-hidden','true');toggle.appendChild(chevron);head.appendChild(toggle);
   head.appendChild(button('세부 일정 보기 →','ghost tiny guide-project-detail-link',()=>openGuideProjectDetail(project)));
   card.appendChild(head);
@@ -114,6 +115,7 @@ function renderGuideProjectDetail(main,project){
   if(!state.expanded)state.expanded=new Set();
   if(!state.completedExpanded)state.completedExpanded=new Set();
   const header=el('div','guide-detail-heading guide-project-detail-heading');header.append(el('h2','',project.name),el('span','guide-project-code',`${project.code||''}${projectIsCompleted(project)?' · 완료 프로젝트':''}`));
+  header.appendChild(el('span','guide-current-stage',MilestoneProjectModel.currentStageLabel(project,all)));
   const actions=el('div','guide-inline-actions');
   if(canManageProjects()) actions.appendChild(button('프로젝트 설정','ghost tiny',()=>openProjectEditor(project)));
   if(canManageProjects()) actions.appendChild(button(project.status==='completed'?'프로젝트 재개':'프로젝트 완료','ghost tiny',async()=>{
@@ -194,9 +196,29 @@ function guideTimelineCell(task,state){
   if(position){const bar=button(task.startDate<state.start?'‹':'','guide-timeline-bar '+(task.status==='done'?'done':task.scheduleReview?'review':''),()=>openTaskEditor(task));bar.dataset.focusTask=task.id;bar.style.left=`${position.left}%`;bar.style.width=`${position.width}%`;bar.setAttribute('aria-label',`${task.title} ${task.startDate}부터 ${task.dueDate}까지`);bar.title=`${task.title} · ${task.startDate} ~ ${task.dueDate}`;cell.appendChild(bar);}
   return cell;
 }
+function guideBindRangeDrag(surface,state,onMove){
+  surface.classList.add('guide-range-drag');surface.title='드래그하여 조회 기간 이동';
+  surface.tabIndex=0;surface.setAttribute('aria-label','조회 기간 이동 · 드래그 또는 좌우 방향키');
+  let gesture=null;
+  surface.onpointerdown=event=>{
+    if(!event.isPrimary||event.button!==0)return;
+    gesture={id:event.pointerId,x:event.clientX,width:surface.getBoundingClientRect().width};surface.setPointerCapture(event.pointerId);
+  };
+  surface.onpointermove=event=>{if(gesture&&gesture.id===event.pointerId&&Math.abs(event.clientX-gesture.x)>=6){surface.classList.add('is-dragging');event.preventDefault();}};
+  surface.onpointerup=event=>{
+    if(!gesture||gesture.id!==event.pointerId)return;
+    const days=MilestoneProjectModel.dragRangeDays(event.clientX-gesture.x,gesture.width,state.weeks*7);gesture=null;surface.classList.remove('is-dragging');
+    if(surface.hasPointerCapture(event.pointerId))surface.releasePointerCapture(event.pointerId);
+    if(days)onMove(days);
+  };
+  const cancel=()=>{gesture=null;surface.classList.remove('is-dragging');};surface.onpointercancel=cancel;surface.onlostpointercapture=cancel;
+  surface.onkeydown=event=>{if(event.key==='ArrowLeft'||event.key==='ArrowRight'){event.preventDefault();onMove(event.key==='ArrowLeft'?-7:7);}};
+}
 function guideTimelineHeader(state,labels,separateWeeks=false){
   const row=el('div','guide-gantt-head guide-gantt-row'),info=el('div','guide-gantt-info'),dates=el('div','guide-gantt-dates');
   const weeks=separateWeeks?el('div','guide-gantt-weeks-outside'):dates;
+  const move=days=>{const date=localDate(state.start);date.setDate(date.getDate()+days);state.start=dateKey(date);state.followToday=false;rerender();};
+  guideBindRangeDrag(dates,state,move);if(separateWeeks)guideBindRangeDrag(weeks,state,move);
   labels.forEach(label=>info.appendChild(el('strong','',label)));
   for(let week=0;week<state.weeks;week++){
     const from=localDate(state.start);from.setDate(from.getDate()+week*7);const until=new Date(from);until.setDate(until.getDate()+6);
