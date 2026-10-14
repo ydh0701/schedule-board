@@ -196,7 +196,7 @@ function guideTimelineCell(task,state){
   if(position){const bar=button(task.startDate<state.start?'‹':'','guide-timeline-bar '+(task.status==='done'?'done':task.scheduleReview?'review':''),()=>openTaskEditor(task));bar.dataset.focusTask=task.id;bar.style.left=`${position.left}%`;bar.style.width=`${position.width}%`;bar.setAttribute('aria-label',`${task.title} ${task.startDate}부터 ${task.dueDate}까지`);bar.title=`${task.title} · ${task.startDate} ~ ${task.dueDate}`;cell.appendChild(bar);}
   return cell;
 }
-function guideBindRangeDrag(surface,state,onMove){
+function guideBindRangeDrag(surface,state,onMove,options={}){
   surface.classList.add('guide-range-drag');surface.title='드래그하여 조회 기간 이동';
   surface.tabIndex=0;surface.setAttribute('aria-label','조회 기간 이동 · 드래그 또는 좌우 방향키');
   let gesture=null;
@@ -204,21 +204,22 @@ function guideBindRangeDrag(surface,state,onMove){
     if(!event.isPrimary||event.button!==0)return;
     gesture={id:event.pointerId,x:event.clientX,width:surface.getBoundingClientRect().width};surface.setPointerCapture(event.pointerId);
   };
-  surface.onpointermove=event=>{if(gesture&&gesture.id===event.pointerId&&Math.abs(event.clientX-gesture.x)>=6){surface.classList.add('is-dragging');event.preventDefault();}};
+  surface.onpointermove=event=>{if(gesture&&gesture.id===event.pointerId&&Math.abs(event.clientX-gesture.x)>=6){surface.classList.add('is-dragging');options.preview?.(event.clientX-gesture.x);event.preventDefault();}};
   surface.onpointerup=event=>{
     if(!gesture||gesture.id!==event.pointerId)return;
-    const days=MilestoneProjectModel.dragRangeDays(event.clientX-gesture.x,gesture.width,state.weeks*7);gesture=null;surface.classList.remove('is-dragging');
+    const days=MilestoneProjectModel.dragRangeDays(event.clientX-gesture.x,gesture.width,state.weeks*7);gesture=null;surface.classList.remove('is-dragging');options.preview?.(0);
     if(surface.hasPointerCapture(event.pointerId))surface.releasePointerCapture(event.pointerId);
     if(days)onMove(days);
   };
-  const cancel=()=>{gesture=null;surface.classList.remove('is-dragging');};surface.onpointercancel=cancel;surface.onlostpointercapture=cancel;
-  surface.onkeydown=event=>{if(event.key==='ArrowLeft'||event.key==='ArrowRight'){event.preventDefault();onMove(event.key==='ArrowLeft'?-7:7);}};
+  const cancel=()=>{gesture=null;surface.classList.remove('is-dragging');options.preview?.(0);};surface.onpointercancel=cancel;surface.onlostpointercapture=cancel;
+  surface.onkeydown=event=>{if(event.key==='ArrowLeft'||event.key==='ArrowRight'){event.preventDefault();onMove((event.key==='ArrowLeft'?-1:1)*(options.keyboardStep||7));}};
 }
 function guideTimelineHeader(state,labels,separateWeeks=false){
   const row=el('div','guide-gantt-head guide-gantt-row'),info=el('div','guide-gantt-info'),dates=el('div','guide-gantt-dates');
   const weeks=separateWeeks?el('div','guide-gantt-weeks-outside'):dates;
   const move=days=>{const date=localDate(state.start);date.setDate(date.getDate()+days);state.start=dateKey(date);state.followToday=false;rerender();};
-  guideBindRangeDrag(dates,state,move);if(separateWeeks)guideBindRangeDrag(weeks,state,move);
+  const preview=delta=>{const table=dates.closest('.guide-gantt');if(table)table.style.setProperty('--range-pan',delta+'px');};
+  guideBindRangeDrag(dates,state,move,{preview});if(separateWeeks)guideBindRangeDrag(weeks,state,move,{preview});
   labels.forEach(label=>info.appendChild(el('strong','',label)));
   for(let week=0;week<state.weeks;week++){
     const from=localDate(state.start);from.setDate(from.getDate()+week*7);const until=new Date(from);until.setDate(until.getDate()+6);

@@ -685,3 +685,20 @@ body.milestone-ui{--sidebar-rail:72px;}
 .milestone-ui .guide-dashboard-stage-bar.done{background:#e3e6eb;border-left-color:#929ba9;}
 .milestone-ui .guide-dashboard-stage-bar span{font-size:var(--ui-font-micro);white-space:nowrap;}
 .milestone-ui .guide-dashboard-stage-empty{float:right;padding:5px 8px;color:var(--muted);}
+.milestone-ui .guide-gantt :is(.guide-gantt-dates,.guide-gantt-weeks-outside,.guide-timeline-cell){overflow:hidden;}
+.milestone-ui .guide-gantt :is(.guide-gantt-days,.guide-gantt-week,.guide-timeline-cell>*){translate:var(--range-pan,0px) 0;}
+.milestone-ui .guide-gantt .guide-timeline-cell{background-position-x:var(--range-pan,0px);}
+.milestone-ui .guide-stage-timeline{--stage-label-width:176px;}
+.milestone-ui .guide-stage-month-viewport{margin-left:var(--stage-label-width);overflow:hidden;}
+.milestone-ui .guide-stage-timeline .guide-dashboard-timeline-months{translate:var(--range-pan,0px) 0;}
+.milestone-ui .guide-stage-timeline .guide-dashboard-timeline-markers{margin-left:var(--stage-label-width);overflow:hidden;}
+.milestone-ui .guide-stage-timeline .guide-dashboard-date-marker{translate:var(--range-pan,0px) 0;}
+.milestone-ui .guide-stage-timeline .guide-dashboard-stage-lane{display:grid;grid-template-columns:var(--stage-label-width) minmax(0,1fr);height:40px;margin:0;border-top:1px solid var(--line);}
+.milestone-ui .guide-stage-timeline .guide-dashboard-stage-label{display:flex;flex-direction:column;justify-content:center;max-width:none;padding:4px 8px;background:var(--surface);}
+.milestone-ui .guide-dashboard-stage-label small{font-size:var(--ui-font-micro);font-weight:400;color:var(--muted);}
+.milestone-ui .guide-stage-period-cell{position:relative;overflow:hidden;}
+.milestone-ui .guide-stage-grid-line{position:absolute;top:0;bottom:0;border-left:1px solid var(--line);translate:var(--range-pan,0px) 0;}
+.milestone-ui .guide-stage-timeline .guide-dashboard-stage-bar{top:6px;height:28px;translate:var(--range-pan,0px) 0;white-space:nowrap;text-overflow:ellipsis;}
+.milestone-ui .guide-stage-fold{text-align:left;background:var(--surface);border:0;color:var(--accent);padding:8px;font-size:var(--ui-font-caption);}
+.milestone-ui .guide-dashboard-timeline-scroll:has(.guide-stage-timeline){max-height:calc(100dvh - 284px);}
+.milestone-ui .guide-stage-month-viewport{position:sticky;top:0;z-index:5;background:var(--surface-soft);}

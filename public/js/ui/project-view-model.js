@@ -9,13 +9,14 @@
       const dates=items.filter(task=>task.startDate&&task.dueDate&&task.startDate<=task.dueDate&&Number.isFinite(Date.parse(task.startDate))&&Number.isFinite(Date.parse(task.dueDate))).flatMap(task=>[task.startDate,task.dueDate]).sort();
       return {...stage,total:items.length,done,progress:items.length?Math.round(done/items.length*100):0,startDate:dates[0]||null,dueDate:dates.at(-1)||null,state:items.length && done===items.length?'done':'upcoming'};
     });
-    result.forEach(stage=>{if(stage.state!=='done'&&tasks.some(task=>(stage.id==='all'||(task.stageId||task.phaseId)===stage.id)&&task.status==='in_progress'))stage.state='current';});
+    const current=result.find(stage=>stage.total&&stage.state!=='done');
+    if(current)current.state='current';
     return result;
   }
   function currentStageLabel(project,tasks){
     const stages=stageSummary(project,tasks),current=stages.filter(stage=>stage.state==='current');
     if(project.status==='completed'||stages.length&&stages.every(stage=>stage.state==='done'))return '전체 완료';
-    return current.length?'진행 단계 · '+current.map(stage=>stage.name).join(' / '):'진행 단계 미확인';
+    return current.length?'현재 단계 · '+current[0].name:'현재 단계 미확인';
   }
   function dragRangeDays(delta,width,days){
     return Number.isFinite(delta)&&width>0&&days>0&&Math.abs(delta)>=6?Math.round(-delta/width*days):0;
